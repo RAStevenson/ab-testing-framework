@@ -48,4 +48,5 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN"]     # test functions don't need return annotations
-"analysis/*" = ["ANN"]
+# report prose and markdown tables live in f-strings that cannot wrap
+"analysis/*" = ["ANN", "E501"]
