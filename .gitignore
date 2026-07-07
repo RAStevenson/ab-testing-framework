@@ -1,4 +1,11 @@
+# environments and secrets
 .venv/
+.env
+.env.*
+*.pem
+credentials*
+
+# python noise
 __pycache__/
 *.pyc
 *.egg-info/
@@ -6,3 +13,15 @@ build/
 dist/
 .pytest_cache/
 .ruff_cache/
+
+# local tool settings
+.claude/settings.local.json
+
+# data artifacts and models — analysis/figures/ is committed on purpose
+data/
+*.parquet
+*.pkl
+*.pt
+*.ckpt
+*.h5
+*.joblib

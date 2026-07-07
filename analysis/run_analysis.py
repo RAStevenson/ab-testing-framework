@@ -579,9 +579,9 @@ standard deviation of {sample_sd:.0f}, itself an unstable estimate under an
 infinite-variance tail). My read: the revenue evidence is directionally
 positive and consistent with the conversion result, the point estimate is
 inflated by whales, and I would not quote a revenue impact number from this
-experiment. If a revenue claim matters, the follow-up should use a
-whale-robust metric (capped revenue or spender conversion) declared in
-advance, sized for it.
+experiment. If a revenue claim matters, the follow-up should use a metric
+that a single whale cannot move (capped revenue or spender conversion),
+declared in advance and sized for it.
 
 What I would not do is run all four tests and report the one that crossed
 0.05. The tests were all planned; the disagreement itself is the finding, and

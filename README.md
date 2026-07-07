@@ -1,10 +1,10 @@
 # abkit
 
 A small A/B testing and experiment-analysis toolkit I built to show how I
-approach experimentation work end to end: not just running a z-test, but
-handling the parts that actually go wrong in practice — broken assignment,
-novelty effects, peeking, multiple comparisons, and revenue metrics with
-tails heavy enough to break the CLT at realistic sample sizes.
+approach experimentation work end to end, including the parts that actually
+go wrong in practice: broken assignment, novelty effects, peeking, multiple
+comparisons, and revenue metrics with tails heavy enough to break the CLT at
+realistic sample sizes.
 
 If you only read one thing, read [analysis/report.md](analysis/report.md).
 It walks a synthetic checkout-redesign experiment from power analysis to a
@@ -33,7 +33,7 @@ the generator actually planted.
   schedules work (the report uses the 14 realized daily information
   fractions).
 - `src/abkit/power.py` — analytic power, sample size, and MDE, plus a
-  simulation harness that the tests use to keep the formulas honest.
+  simulated-power routine that the tests use to keep the formulas honest.
 
 ## How it is tested
 
