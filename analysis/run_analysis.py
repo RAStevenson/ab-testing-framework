@@ -601,11 +601,11 @@ right test."
 
 The pipeline got the qualitative story right everywhere: it caught the broken
 first run, flagged the novelty inflation instead of shipping the headline
-number, refused the spurious secondary win, and declined to over-read an
-underpowered revenue metric. The place it cannot help is where the data
-simply do not contain the answer - the persistent lift and the revenue effect
-both need more time or a better metric, and the report says so rather than
-manufacturing certainty.
+number, and refused the spurious secondary win. On the underpowered revenue
+metric, it declined to quote an impact number at all. The place it cannot
+help is where the data simply do not contain the answer - the persistent
+lift and the revenue effect both need more time or a better metric, and the
+report says so rather than manufacturing certainty.
 
 ## Recommendation
 

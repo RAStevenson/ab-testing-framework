@@ -1,10 +1,9 @@
 # abkit
 
-A small A/B testing and experiment-analysis toolkit I built to show how I
-approach experimentation work end to end, including the parts that actually
-go wrong in practice: broken assignment, novelty effects, peeking, multiple
-comparisons, and revenue metrics with tails heavy enough to break the CLT at
-realistic sample sizes.
+A small A/B testing and experiment-analysis toolkit I wrote around the parts
+of experimentation that actually go wrong in practice: broken assignment,
+novelty effects, peeking, multiple comparisons, and revenue metrics with
+tails heavy enough to break the CLT at realistic sample sizes.
 
 If you only read one thing, read [analysis/report.md](analysis/report.md).
 It walks a synthetic checkout-redesign experiment from power analysis to a
@@ -19,8 +18,7 @@ the generator actually planted.
   modes built in as parameters: unequal allocation, sample-ratio mismatch
   from asymmetric tracking loss, a novelty effect that decays over the run,
   and zero-inflated lognormal revenue with a Pareto whale tail (infinite
-  variance by default, which is not a joke — real revenue data behaves this
-  way).
+  variance by default).
 - `src/abkit/frequentist.py` — pooled two-proportion z-test, Welch t-test,
   chi-square SRM check, and Bonferroni / Holm / Benjamini-Hochberg adjusted
   p-values.
