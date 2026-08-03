@@ -1,5 +1,7 @@
 [build-system]
-requires = ["setuptools>=68"]
+# 77 is the floor for PEP 639 license expressions (`license = "MIT"` plus
+# `license-files`), which the [project] table below uses.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +9,9 @@ name = "abkit"
 version = "0.1.0"
 description = "A/B testing and experiment-analysis toolkit: data generators, frequentist and resampling tests, sequential monitoring, power analysis"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Robert Stevenson" }]
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26",
@@ -22,6 +27,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+abkit = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -48,5 +56,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN"]     # test functions don't need return annotations
-# report prose and markdown tables live in f-strings that cannot wrap
-"analysis/*" = ["ANN", "E501"]
+# report prose and markdown tables live in f-strings that cannot wrap. The
+# annotation rules deliberately still apply here: this is the code a reader
+# looks at first, so it holds the same bar as the library.
+"analysis/*" = ["E501"]

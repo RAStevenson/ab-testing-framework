@@ -20,7 +20,13 @@ Deferred polish, roughly in the order I would pick it up.
   estimate at the stopping look is biased.
 - Stratified and clustered assignment in the generators, to demonstrate
   variance estimation when the randomization unit is not the analysis unit.
-- CI workflow (GitHub Actions): pytest + ruff check + ruff format --check,
-  and a job that regenerates the report and fails on drift.
 - Property-based tests with hypothesis for the adjustment functions
   (monotonicity, idempotence on sorted inputs, permutation invariance).
+- Coverage measurement in CI. Line coverage is currently about 96% measured
+  by hand with the stdlib `trace` module; `pytest-cov` plus a floor in the
+  workflow would keep it from sliding.
+- Cap the grid widening in `sequential._propagate`. When early boundaries are
+  infinite the support grows additively per look, which wastes resolution on
+  long schedules: at 100 looks the boundary error reaches 9e-5, near the 1e-4
+  the docstring claims. Fine for the schedules this is used on, but the fix
+  is to widen relative to `sqrt(t_k)` instead.
