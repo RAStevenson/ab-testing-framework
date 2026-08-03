@@ -91,6 +91,68 @@ def test_trimmed_mean_diff_ignores_whales():
     assert abs(np.mean(y_with_whale) - np.mean(x)) > 100
 
 
+def test_trimmed_mean_diff_is_signed_treatment_minus_control():
+    # arms with equal means cannot detect a sign flip, so use a real gap
+    rng = np.random.default_rng(39)
+    x = rng.normal(10.0, 1.0, 2000)
+    y = rng.normal(12.0, 1.0, 2000)
+    assert trimmed_mean_diff(x, y, trim=0.05) == pytest.approx(2.0, abs=0.1)
+    assert trimmed_mean_diff(y, x, trim=0.05) == pytest.approx(-2.0, abs=0.1)
+
+
+def test_trimmed_mean_diff_respects_the_trim_fraction():
+    # trim=0 must reproduce the raw mean difference exactly; a larger trim
+    # must pull a one-sided outlier's influence down
+    x = np.concatenate([np.zeros(99), [1000.0]])
+    y = np.zeros(100)
+    assert trimmed_mean_diff(x, y, trim=0.0) == pytest.approx(-10.0)
+    assert trimmed_mean_diff(x, y, trim=0.02) == pytest.approx(0.0)
+
+
+def test_bootstrap_confidence_level_widens_the_interval():
+    rng = np.random.default_rng(40)
+    x = rng.normal(0.0, 1.0, 500)
+    y = rng.normal(0.3, 1.0, 500)
+    widths = []
+    for confidence in (0.80, 0.95, 0.99):
+        r = bootstrap_mean_diff(
+            x, y, rng=np.random.default_rng(5), n_resamples=4000, confidence=confidence
+        )
+        assert r.confidence == confidence
+        widths.append(r.ci_high - r.ci_low)
+    assert widths[0] < widths[1] < widths[2]
+
+
+def test_non_finite_outcomes_are_refused_not_silently_absorbed():
+    # the permutation test is the dangerous one: NaN loses every comparison,
+    # so without validation it returns 1/(n+1), its most significant possible
+    # p-value, on data that cannot support any conclusion at all
+    rng = np.random.default_rng(41)
+    clean = rng.normal(0.0, 1.0, 100)
+    for bad in (np.nan, np.inf, -np.inf):
+        corrupted = clean.copy()
+        corrupted[7] = bad
+        for call in (
+            lambda c: permutation_test_mean_diff(
+                c, clean, rng=np.random.default_rng(0), n_permutations=200
+            ),
+            lambda c: bootstrap_mean_diff(c, clean, rng=np.random.default_rng(0), n_resamples=200),
+            lambda c: trimmed_mean_diff(c, clean),
+            lambda c: welch_ttest(c, clean),
+        ):
+            with pytest.raises(ValueError):
+                call(corrupted)
+
+
+def test_two_dimensional_input_is_refused():
+    rng = np.random.default_rng(42)
+    square = rng.normal(0.0, 1.0, (10, 10))
+    with pytest.raises(ValueError):
+        welch_ttest(square, square)
+    with pytest.raises(ValueError):
+        bootstrap_mean_diff(square, square, rng=rng, n_resamples=200)
+
+
 def test_resampling_input_validation():
     rng = np.random.default_rng(0)
     with pytest.raises(ValueError):

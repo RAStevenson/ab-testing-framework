@@ -9,9 +9,14 @@ Boundaries are computed with the standard recursive numerical-integration
 construction (Armitage-McPherson-Rowe): carry the sub-density of the
 score process over paths that have not yet crossed, and at each look
 solve for the critical value that spends exactly the increment the
-spending function allows. Accuracy is limited by the integration grid;
-with the default ``grid_points`` the boundaries are stable to about 1e-4,
-verified in the tests against closed-form two- and three-look cases.
+spending function allows.
+
+Accuracy is limited by the integration grid, which converges as O(h^2).
+With the default ``grid_points`` the boundaries are stable to about 1e-4
+for schedules up to a few dozen looks; ``test_boundaries_converge_on_grid``
+pins that directly by refining the grid, and the two- and three-look
+designs are checked against exact multivariate-normal rectangle
+probabilities from scipy, which share no code with this recursion.
 """
 
 from __future__ import annotations
@@ -65,6 +70,10 @@ def design(
     t = np.asarray(information_fractions, dtype=np.float64)
     if t.ndim != 1 or t.size == 0:
         raise ValueError("information_fractions must be a non-empty 1-d sequence")
+    # every comparison below is False against NaN, so an unchecked NaN would
+    # survive validation and resurface as an opaque failure inside the solver
+    if not np.all(np.isfinite(t)):
+        raise ValueError(f"information_fractions must all be finite, got {t.tolist()}")
     if t[0] <= 0.0 or t[-1] > 1.0 or np.any(np.diff(t) <= 0.0):
         raise ValueError(
             f"information_fractions must be strictly increasing in (0, 1], got {t.tolist()}"
@@ -73,8 +82,10 @@ def design(
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
     if spending not in _SPENDING:
         raise ValueError(f"unknown spending function {spending!r}, options: {sorted(_SPENDING)}")
-    if grid_points < 128:
-        raise ValueError(f"grid_points must be at least 128, got {grid_points}")
+    if not 128 <= grid_points <= 8192:
+        # the propagation kernel is a dense grid_points x grid_points array,
+        # so the upper bound turns a 2 GB allocation into a clear error
+        raise ValueError(f"grid_points must be in [128, 8192], got {grid_points}")
 
     cumulative = _SPENDING[spending](t, alpha)
     increments = np.diff(cumulative, prepend=0.0)
@@ -176,6 +187,10 @@ def monitor(z_values: Sequence[float], seq_design: SequentialDesign) -> Sequenti
     z = tuple(float(v) for v in z_values)
     if len(z) > len(seq_design.boundaries):
         raise ValueError(f"got {len(z)} looks but the design has only {len(seq_design.boundaries)}")
+    # a NaN z compares False against every boundary, so without this it would
+    # read as "this look did not cross" rather than "this look is unusable"
+    if not all(np.isfinite(v) for v in z):
+        raise ValueError(f"z_values must all be finite, got {z}")
     boundaries = seq_design.boundaries[: len(z)]
     stopped = None
     for i, (z_k, bound) in enumerate(zip(z, boundaries, strict=True)):
@@ -204,11 +219,23 @@ def z_from_cumulative_counts(
         raise ValueError("all four inputs must be 1-d arrays of the same length")
     if np.any(nc <= 0.0) or np.any(nt <= 0.0):
         raise ValueError("arm sizes must be positive at every look")
-    if np.any(np.diff(nc) < 0.0) or np.any(np.diff(nt) < 0.0):
+    if np.any(xc < 0.0) or np.any(xt < 0.0):
+        raise ValueError("conversion counts must be non-negative")
+    if np.any(xc > nc) or np.any(xt > nt):
+        raise ValueError("conversions cannot exceed the arm size at any look")
+    # conversions matter here as much as arm sizes: a cumulative series that
+    # goes backwards is a join or transcription error, and left unchecked it
+    # produces a large spurious z that stops the experiment
+    if (
+        np.any(np.diff(nc) < 0.0)
+        or np.any(np.diff(nt) < 0.0)
+        or np.any(np.diff(xc) < 0.0)
+        or np.any(np.diff(xt) < 0.0)
+    ):
         raise ValueError("counts must be cumulative (non-decreasing)")
 
     pooled = (xc + xt) / (nc + nt)
     se = np.sqrt(pooled * (1.0 - pooled) * (1.0 / nc + 1.0 / nt))
-    if np.any(se == 0.0):
+    if not np.all(np.isfinite(se)) or np.any(se == 0.0):
         raise ValueError("a look has all-identical outcomes; z is undefined there")
     return np.asarray((xt / nt - xc / nc) / se)

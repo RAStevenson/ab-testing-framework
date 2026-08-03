@@ -82,8 +82,14 @@ class SequentialDesign:
     """Group-sequential boundaries produced by an alpha-spending design.
 
     ``boundaries[k]`` is the two-sided critical value for ``|z|`` at look
-    ``k``; ``cumulative_alpha[k]`` is the total type I error spent through
-    that look.
+    ``k``. It is ``inf`` when the spending function allocates so little
+    alpha to that look that no finite z could stop the experiment there,
+    which is normal for the first look or two of an O'Brien-Fleming design
+    and is a design property rather than a failure.
+
+    ``cumulative_alpha[k]`` is the type I error the spending function
+    allocates through look ``k``. Where a boundary is infinite the design
+    spends slightly less than this, by at most 1e-10 per such look.
     """
 
     information_fractions: tuple[float, ...]

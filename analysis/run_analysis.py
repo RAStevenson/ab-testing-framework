@@ -16,11 +16,15 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
+from numpy.typing import NDArray
+from scipy import stats
 
 from abkit.frequentist import benjamini_hochberg, holm, srm_check, two_proportion_ztest, welch_ttest
 from abkit.generators import ExperimentData, generate_binary, generate_continuous
 from abkit.power import power_two_means, sample_size_two_proportions
 from abkit.resampling import bootstrap_mean_diff, permutation_test_mean_diff, trimmed_mean_diff
+from abkit.results import BootstrapResult, MeanComparison, RateComparison
 from abkit.sequential import design, monitor, z_from_cumulative_counts
 
 HERE = Path(__file__).parent
@@ -48,6 +52,7 @@ SEED_SECONDARY_BASE = 124_000
 SEED_REVENUE = 221
 SEED_BOOTSTRAP = 1
 SEED_PERMUTATION = 2
+SEED_NULL_SIM = 97
 
 SECONDARY_METRICS = [
     "Add-to-wishlist rate",
@@ -58,7 +63,8 @@ SECONDARY_METRICS = [
     "Newsletter signup",
 ]
 
-# palette validated with the repo's chart conventions (CVD-safe pair)
+# blue/red rather than the matplotlib default green/orange pair, which is the
+# hardest combination for red-green colour blindness to separate
 COLOR_CONTROL = "#4269d0"
 COLOR_TREATMENT = "#d4615c"
 COLOR_REFERENCE = "#8a8f98"
@@ -73,64 +79,61 @@ def pp(x: float, digits: int = 2) -> str:
     return f"{100 * x:.{digits}f} pp"
 
 
+_SMALL_NUMBERS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+
+
+def spell(n: int) -> str:
+    """Small counts spelled out, so interpolated prose still reads as prose."""
+    return _SMALL_NUMBERS[n] if n < len(_SMALL_NUMBERS) else f"{n:,}"
+
+
 def fmt_p(p: float) -> str:
     if p < 1e-4:
         return f"{p:.1e}"
     return f"{p:.4f}" if p < 0.001 else f"{p:.3f}"
 
 
-def style_axis(ax) -> None:
+def style_axis(ax: Axes, *, grid_axis: str = "y") -> None:
     ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(True, axis="y", alpha=0.25, linewidth=0.8)
+    ax.grid(True, axis=grid_axis, alpha=0.25, linewidth=0.8)
     ax.set_axisbelow(True)
 
 
-def rate_test(data: ExperimentData) -> object:
+def rate_test(data: ExperimentData) -> RateComparison:
     return two_proportion_ztest(
         int(data.control.sum()), data.n_control, int(data.treatment.sum()), data.n_treatment
     )
 
 
+def lift_se(r: RateComparison) -> float:
+    """Unpooled standard error of the absolute lift in a rate comparison."""
+    return float(
+        np.sqrt(
+            r.rate_control * (1.0 - r.rate_control) / r.n_control
+            + r.rate_treatment * (1.0 - r.rate_treatment) / r.n_treatment
+        )
+    )
+
+
 def fig_daily_rates(data: ExperimentData) -> None:
     days = np.arange(N_DAYS)
-    rows = {0: [], 1: []}
+    control_rates, treatment_rates, lifts, errs = [], [], [], []
     for d in days:
         sub = data.subset(data.day == d)
-        rows[0].append(sub.control.mean())
-        rows[1].append(sub.treatment.mean())
+        control_rates.append(sub.control.mean() * 100)
+        treatment_rates.append(sub.treatment.mean() * 100)
+        r = rate_test(sub)
+        lifts.append(r.absolute_lift * 100)
+        errs.append((r.ci_high - r.ci_low) / 2 * 100)
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6.4), sharex=True)
-    ax1.plot(days, np.array(rows[0]) * 100, color=COLOR_CONTROL, linewidth=2, label="Control")
-    ax1.plot(days, np.array(rows[1]) * 100, color=COLOR_TREATMENT, linewidth=2, label="Treatment")
-    ax1.annotate(
-        "Treatment",
-        (days[-1], rows[1][-1] * 100),
-        xytext=(6, 5),
-        textcoords="offset points",
-        color=COLOR_INK,
-        fontsize=9,
-        va="center",
-    )
-    ax1.annotate(
-        "Control",
-        (days[-1], rows[0][-1] * 100),
-        xytext=(6, -10),
-        textcoords="offset points",
-        color=COLOR_INK,
-        fontsize=9,
-        va="center",
-    )
+    ax1.plot(days, control_rates, color=COLOR_CONTROL, linewidth=2, label="Control")
+    ax1.plot(days, treatment_rates, color=COLOR_TREATMENT, linewidth=2, label="Treatment")
     ax1.set_ylabel("Conversion rate (%)")
     ax1.set_title("Daily conversion rate by arm", loc="left", color=COLOR_INK)
     ax1.legend(frameon=False, loc="upper right")
     style_axis(ax1)
 
-    lifts, errs = [], []
-    for d in days:
-        sub = data.subset(data.day == d)
-        r = rate_test(sub)
-        lifts.append(r.absolute_lift * 100)
-        errs.append((r.ci_high - r.ci_low) / 2 * 100)
     ax2.errorbar(
         days,
         lifts,
@@ -162,7 +165,11 @@ def fig_daily_rates(data: ExperimentData) -> None:
     plt.close(fig)
 
 
-def fig_sequential(days: np.ndarray, z_path: np.ndarray, boundaries: np.ndarray) -> None:
+def fig_sequential(
+    days: NDArray[np.int64],
+    z_path: NDArray[np.float64],
+    boundaries: NDArray[np.float64],
+) -> None:
     fig, ax = plt.subplots(figsize=(8, 4.4))
     ax.plot(
         days + 1,
@@ -195,6 +202,18 @@ def fig_sequential(days: np.ndarray, z_path: np.ndarray, boundaries: np.ndarray)
     # be infinite (no alpha spent yet) and are not drawn
     finite = boundaries[np.isfinite(boundaries)]
     ax.set_ylim(top=1.2 * max(np.abs(z_path).max(), finite.max()))
+    # an infinite boundary is a real design property, not missing data: label
+    # it so the gap at the left of the step line reads as "cannot stop here"
+    for look in np.nonzero(~np.isfinite(boundaries))[0] + 1:
+        ax.annotate(
+            "no alpha spent:\nstopping impossible",
+            (look, ax.get_ylim()[1]),
+            xytext=(4, -6),
+            textcoords="offset points",
+            color=COLOR_INK,
+            fontsize=8,
+            va="top",
+        )
     ax.set_title(
         "Daily monitoring: observed z against spending boundaries", loc="left", color=COLOR_INK
     )
@@ -205,7 +224,7 @@ def fig_sequential(days: np.ndarray, z_path: np.ndarray, boundaries: np.ndarray)
     plt.close(fig)
 
 
-def fig_secondary(naive: np.ndarray, adjusted: np.ndarray) -> None:
+def fig_secondary(naive: NDArray[np.float64], adjusted: NDArray[np.float64]) -> None:
     fig, ax = plt.subplots(figsize=(8, 4.0))
     y = np.arange(len(SECONDARY_METRICS))
     ax.scatter(naive, y, s=55, color=COLOR_CONTROL, label="Unadjusted p", zorder=3)
@@ -234,19 +253,25 @@ def fig_secondary(naive: np.ndarray, adjusted: np.ndarray) -> None:
     )
     ax.legend(frameon=False, loc="lower right", fontsize=9)
     ax.invert_yaxis()
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(True, axis="x", alpha=0.25, linewidth=0.8)
-    ax.set_axisbelow(True)
+    style_axis(ax, grid_axis="x")
     fig.tight_layout()
     fig.savefig(FIGURES / "secondary_pvalues.png", dpi=150)
     plt.close(fig)
 
 
-def fig_revenue(data: ExperimentData, welch, boot, trimmed: float) -> None:
+def fig_revenue(
+    data: ExperimentData,
+    welch: MeanComparison,
+    boot: BootstrapResult,
+    trimmed: float,
+) -> None:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.2))
     spender_c = data.control[data.control > 0]
     spender_t = data.treatment[data.treatment > 0]
-    bins = np.geomspace(1, max(spender_c.max(), spender_t.max()), 60)
+    spenders = np.concatenate([spender_c, spender_t])
+    # the log bins start at 1, which drops the handful of sub-dollar spends;
+    # they are irrelevant to a figure about the upper tail
+    bins = np.geomspace(1, spenders.max(), 60)
     ax1.hist(
         spender_c, bins=bins, histtype="step", linewidth=2, color=COLOR_CONTROL, label="Control"
     )
@@ -258,7 +283,8 @@ def fig_revenue(data: ExperimentData, welch, boot, trimmed: float) -> None:
     ax1.set_xlabel("Spend per spender (log scale)")
     ax1.set_ylabel("Users (log scale)")
     ax1.set_title(
-        "Spend distribution: the tail runs to 100x the median",
+        f"Spend distribution: the tail runs to {spenders.max() / np.median(spenders):,.0f}x "
+        "the median spend",
         loc="left",
         color=COLOR_INK,
         fontsize=10,
@@ -266,22 +292,28 @@ def fig_revenue(data: ExperimentData, welch, boot, trimmed: float) -> None:
     ax1.legend(frameon=False, fontsize=9)
     style_axis(ax1)
 
-    labels = ["Welch 95% CI", "Bootstrap 95% CI", "Trimmed diff (1%)"]
-    centers = [welch.difference, boot.estimate, trimmed]
-    los = [welch.ci_low, boot.ci_low, trimmed]
-    his = [welch.ci_high, boot.ci_high, trimmed]
-    y = np.arange(len(labels))
+    # Welch and the bootstrap estimate the same quantity and are drawn on the
+    # same footing. The trimmed difference is a diagnostic, not a rival
+    # estimate of the mean effect: trimming 1% of each tail of a 94%-zero
+    # distribution removes zeros from the bottom and real spenders from the
+    # top, so it targets a different population quantity entirely.
     ax2.axvline(0, color=COLOR_REFERENCE, linewidth=1.5, linestyle="--")
-    for yi, (lo, hi, c) in enumerate(zip(los, his, centers, strict=True)):
+    intervals = [
+        ("Welch 95% CI", welch.difference, welch.ci_low, welch.ci_high),
+        ("Bootstrap 95% CI", boot.estimate, boot.ci_low, boot.ci_high),
+    ]
+    for yi, (_, center, lo, hi) in enumerate(intervals):
         ax2.plot([lo, hi], [yi, yi], color=COLOR_CONTROL, linewidth=2)
-        ax2.plot(c, yi, "o", color=COLOR_INK, markersize=7)
-    ax2.set_yticks(y, labels)
+        ax2.plot(center, yi, "o", color=COLOR_INK, markersize=7)
+    ax2.plot(trimmed, len(intervals), "D", color=COLOR_TREATMENT, markersize=7)
+    labels = [label for label, *_ in intervals] + ["Trimmed diff (1%)\ndifferent estimand"]
+    ax2.set_yticks(np.arange(len(labels)), labels)
     ax2.set_xlabel("Revenue per user difference (treatment - control)")
-    ax2.set_title("Same data, three answers", loc="left", color=COLOR_INK, fontsize=10)
+    ax2.set_title(
+        "Same data, two verdicts at the 0.05 line", loc="left", color=COLOR_INK, fontsize=10
+    )
     ax2.invert_yaxis()
-    ax2.spines[["top", "right"]].set_visible(False)
-    ax2.grid(True, axis="x", alpha=0.25, linewidth=0.8)
-    ax2.set_axisbelow(True)
+    style_axis(ax2, grid_axis="x")
     fig.tight_layout()
     fig.savefig(FIGURES / "revenue.png", dpi=150)
     plt.close(fig)
@@ -384,6 +416,12 @@ forecast on, for the reason in the next section.
     late = data.subset(data.day >= 10)
     early_r = rate_test(early)
     late_r = rate_test(late)
+    # two non-overlapping CIs are not a test of the difference between them,
+    # so test it directly; the windows are disjoint, hence independent
+    decay_diff = early_r.absolute_lift - late_r.absolute_lift
+    decay_se = float(np.hypot(lift_se(early_r), lift_se(late_r)))
+    decay_z = decay_diff / decay_se
+    decay_p = float(2.0 * stats.norm.sf(abs(decay_z)))
     fig_daily_rates(data)
     md.append(f"""## 4. Novelty check
 
@@ -399,6 +437,12 @@ Splitting the window confirms it:
 |---|---|---|---|
 | Days 0-2 | {pp(early_r.absolute_lift)} | {pp(early_r.ci_low)} to {pp(early_r.ci_high)} | {fmt_p(early_r.p_value)} |
 | Days 10-13 | {pp(late_r.absolute_lift)} | {pp(late_r.ci_low)} to {pp(late_r.ci_high)} | {fmt_p(late_r.p_value)} |
+
+Two non-overlapping intervals are not by themselves evidence that the windows
+differ, so I tested the decay directly rather than eyeballing the table: the
+early-minus-late difference is {pp(decay_diff)} (SE {pp(decay_se)}),
+z = {decay_z:.2f}, p = {fmt_p(decay_p)}. The fade is real, not an artifact of
+reading two intervals side by side.
 
 The early window carries most of the headline effect. The late window - the
 best available proxy for the persistent effect - shows
@@ -426,9 +470,15 @@ to measure the effect after habituation.
     seq = design(fractions.tolist(), alpha=0.05, spending="obrien-fleming")
     outcome = monitor(z_path.tolist(), seq)
     naive_crossings = np.nonzero(np.abs(z_path) >= 1.96)[0]
-    # the prose below narrates a specific replay; fail loudly if a code
-    # change alters the story instead of silently describing the wrong one
-    assert naive_crossings.size > 0 and outcome.stopped_at_look is not None
+    # the prose below narrates a specific replay; fail loudly if a code change
+    # alters the story instead of silently describing the wrong one. A bare
+    # assert would vanish under python -O, which is exactly when it matters.
+    if naive_crossings.size == 0 or outcome.stopped_at_look is None:
+        raise RuntimeError(
+            "sequential replay no longer matches the narrative in section 5: "
+            f"naive crossings={naive_crossings.tolist()}, "
+            f"spending-design stop={outcome.stopped_at_look}"
+        )
     first_naive = int(naive_crossings[0]) + 1
     naive_lift = (
         xt[first_naive - 1] / nt[first_naive - 1] - xc[first_naive - 1] / nc[first_naive - 1]
@@ -436,12 +486,17 @@ to measure the effect after habituation.
     fig_sequential(look_days, z_path, np.array(seq.boundaries))
 
     # type I error of both rules under the null, on the realized look schedule
-    rng_null = np.random.default_rng(97)
+    rng_null = np.random.default_rng(SEED_NULL_SIM)
     n_sims = 100_000
     increments = rng_null.normal(size=(n_sims, N_DAYS)) * np.sqrt(np.diff(fractions, prepend=0.0))
     z_null = np.cumsum(increments, axis=1) / np.sqrt(fractions)
     naive_alpha = float(np.any(np.abs(z_null) >= 1.96, axis=1).mean())
     spent_alpha = float(np.any(np.abs(z_null) >= np.array(seq.boundaries), axis=1).mean())
+    n_unspendable = int(np.sum(~np.isfinite(np.array(seq.boundaries))))
+    unspendable_phrase = (
+        "the first look has" if n_unspendable == 1 else f"the first {n_unspendable} looks have"
+    )
+    max_fraction_drift = float(np.max(np.abs(fractions - (look_days + 1) / N_DAYS)))
 
     md.append(f"""## 5. What daily monitoring would have decided
 
@@ -450,16 +505,26 @@ replayed the experiment as {N_DAYS} daily looks two ways: a naive rule that
 calls the result at the first |z| > 1.96, and an O'Brien-Fleming alpha-spending
 design built on the realized information fractions (`abkit.sequential`).
 
+Using realized rather than planned fractions is what the spending-function
+approach is for, and it does not cost anything here: the look *schedule* was
+fixed in advance at one look per day, and the realized fractions differ from
+an even {N_DAYS}-way split by at most {max_fraction_drift:.4f}. What would void the
+guarantee is choosing the looks after seeing the data, which is a different
+thing entirely.
+
 ![Sequential monitoring](figures/sequential.png)
 
 The naive rule would have stopped at **look {first_naive}**, when the novelty
 effect was near its peak, locking in a cumulative lift of
 {pp(naive_lift)} - about {naive_lift / TRUE_LIFT:.0f}x the persistent effect.
 The spending design first crosses at **look {outcome.stopped_at_look}**,
-spending almost no alpha in the noisy early days. Under a true null on this
-exact look schedule, simulation (100,000 runs) puts the naive rule's
-false-positive rate at {pct(naive_alpha, 1)} against the nominal 5%; the
-spending design holds {pct(spent_alpha, 1)}.
+spending almost no alpha in the noisy early days. In fact it spends so little
+that {unspendable_phrase} no finite boundary at all - under O'Brien-Fleming
+there is no z-statistic on day 1 large enough to stop the experiment, which is
+why the boundary line in the figure starts at look {n_unspendable + 1}.
+Under a true null on this exact look schedule, simulation ({n_sims:,} runs)
+puts the naive rule's false-positive rate at {pct(naive_alpha, 1)} against the
+nominal 5%; the spending design holds {pct(spent_alpha, 1)}.
 
 Early stopping is a tool for catching regressions quickly, not for shipping
 winners early: even the correctly-stopped estimate is biased upward by the
@@ -480,7 +545,11 @@ novelty effect at that point in the run.
     bh_ps = benjamini_hochberg(naive_arr)
     fig_secondary(naive_arr, holm_ps)
 
-    winner = int(np.argmin(naive_arr))
+    # the smallest p-value, whichever direction it points; calling it a "win"
+    # without checking the sign is how a regression gets shipped as a feature
+    flagged = int(np.argmin(naive_arr))
+    flagged_verdict = "win" if lifts[flagged] > 0 else "regression"
+    family_error = 1.0 - (1.0 - 0.05) ** len(SECONDARY_METRICS)
     rows = "\n".join(
         f"| {name} | {pp(lifts[i])} | {fmt_p(naive_arr[i])} | {fmt_p(holm_ps[i])} "
         f"| {fmt_p(bh_ps[i])} |"
@@ -488,20 +557,29 @@ novelty effect at that point in the run.
     )
     md.append(f"""## 6. Secondary metrics and multiple comparisons
 
-Six secondary metrics were tracked. None of them was actually moved by the
-treatment (the generator applied zero lift to all six), which makes this a
-live-fire test of the correction machinery.
+{spell(len(SECONDARY_METRICS)).capitalize()} secondary metrics were tracked. None of them was actually moved by
+the treatment (the generator applied zero lift to all {spell(len(SECONDARY_METRICS))}), which makes
+this a live-fire test of the correction machinery.
 
 | Metric | Observed lift | Unadjusted p | Holm p | BH q |
 |---|---|---|---|---|
 {rows}
 
-Read naively, **{SECONDARY_METRICS[winner]}** looks like a significant win at
-p = {fmt_p(naive_arr[winner])}. That is exactly the trap: with six true nulls,
-the chance of at least one unadjusted p below 0.05 is about 26%. Both the
-Holm adjustment (family-wise control, the right tool for a ship decision) and
-Benjamini-Hochberg (FDR control, the right tool for a screening pass) push
-every metric back above the line.
+Read naively, **{SECONDARY_METRICS[flagged]}** clears the line at
+p = {fmt_p(naive_arr[flagged])} - and note the direction: the observed lift is
+{pp(lifts[flagged])}, so the naive reading is a {flagged_verdict}, not the win a
+scan of the p-value column alone would suggest. That is the trap twice over.
+With {spell(len(SECONDARY_METRICS))} true nulls the chance of at least one unadjusted p below 0.05 is
+{family_error:.0%}, so a flagged metric is the expected outcome rather than a
+discovery. Both the Holm adjustment (family-wise control, the right tool for a
+ship decision) and Benjamini-Hochberg (FDR control, the right tool for a
+screening pass) push every metric back above the line.
+
+The seed here was chosen to land on a run that exhibits the false positive:
+across fresh draws only about a quarter of runs produce exactly one nominally
+significant metric, and most produce none. That is a deliberate choice to show
+the machinery working, not a typical draw, and it seemed worth saying out loud
+in a document whose whole argument is about not reading luck as signal.
 
 ![Secondary metric p-values](figures/secondary_pvalues.png)
 """)
@@ -539,6 +617,12 @@ every metric back above the line.
     )
     true_rev_diff = SPEND_RATE_LIFT * mean_spend
     sample_sd = np.concatenate([revenue.control, revenue.treatment]).std(ddof=1)
+    # what the 1% trim actually removes, given a mostly-zero distribution
+    zero_share = float(np.mean(revenue.outcome == 0.0))
+    trim_zeros = int(0.01 * revenue.control.size)
+    trim_spender_share = trim_zeros / int((revenue.control > 0).sum())
+    control_raw_mean = float(revenue.control.mean())
+    control_trim_mean = float(stats.trim_mean(revenue.control, 0.01))
     apparent_power = power_two_means(
         true_rev_diff, float(sample_sd), min(welch.n_control, welch.n_treatment)
     )
@@ -548,10 +632,10 @@ every metric back above the line.
 
 Revenue per user is the metric leadership actually asks about, and it is the
 one this experiment cannot answer cleanly. The distribution is zero-inflated
-(about {pct(SPEND_RATE, 0)} of users spend anything) with a Pareto tail: the
-generator gives roughly 1 in 125 spenders a "whale" draw whose distribution
-has infinite variance. This is not an exotic choice; real revenue data looks
-like this.
+({pct(zero_share, 0)} of users spend nothing) with a Pareto tail: the generator
+gives roughly 1 in {1 / WHALE_RATE:.0f} spenders a "whale" draw whose distribution has
+infinite variance. This is not an exotic choice; real revenue data looks like
+this.
 
 ![Revenue distributions and interval comparison](figures/revenue.png)
 
@@ -560,33 +644,54 @@ like this.
 | Welch t-test | {welch.difference:+.2f} per user | 95% CI {welch.ci_low:+.2f} to {welch.ci_high:+.2f}, p = {fmt_p(welch.p_value)} |
 | Percentile bootstrap | {boot.estimate:+.2f} per user | 95% CI {boot.ci_low:+.2f} to {boot.ci_high:+.2f} |
 | Permutation test | {perm.observed:+.2f} per user | p = {fmt_p(perm.p_value)} |
-| Trimmed mean diff (1%) | {trimmed:+.2f} per user | - |
+| Trimmed mean diff (1%) | {trimmed:+.2f} per user | different estimand, see below |
 
-The methods genuinely disagree. The Welch test says not significant
-(p = {fmt_p(welch.p_value)}); the permutation test says significant
-(p = {fmt_p(perm.p_value)}); the bootstrap interval
-({boot.ci_low:+.2f} to {boot.ci_high:+.2f}) excludes zero, but its lower
-bound is a whisker above it. The trimmed estimate, which discards the top and bottom 1% of each
-arm, is far below the raw difference of {welch.difference:+.2f} - the raw
-estimate is carried substantially by a handful of whales that happened to
-land in the treatment arm.
+The first three estimate the same quantity and disagree about it. The Welch
+test says not significant (p = {fmt_p(welch.p_value)}); the permutation test says
+significant (p = {fmt_p(perm.p_value)}); the bootstrap interval
+({boot.ci_low:+.2f} to {boot.ci_high:+.2f}) excludes zero, but its lower bound is a whisker
+above it.
+
+The Welch/permutation split is not just noise, and it is worth being precise
+about. The permutation test is exact under the sharp null that the two arms
+have *identical distributions*, and the treatment here does change the
+distribution - it raises the probability of spending at all. So the permutation
+test can correctly reject while the *mean* difference, which is what Welch is
+estimating, stays badly determined by a few large draws. Two tests, two
+questions, and only one of them is the one leadership asked.
+
+The trimmed difference is a diagnostic, not a fourth estimate of the same
+thing, and the table above would be misleading if it were read as one. With
+{pct(zero_share, 0)} of users at zero, trimming 1% from each tail of each arm cuts
+{trim_zeros:,} zeros off the bottom and about {pct(trim_spender_share, 0)} of the *spenders* off
+the top. It therefore targets a different population quantity: the control
+arm's own mean falls from {control_raw_mean:.2f} to {control_trim_mean:.2f} with no treatment
+effect involved at all. The useful signal is that {trimmed:+.2f} and
+{welch.difference:+.2f} are far apart, which says the raw difference rests on the
+part of the distribution the trim removes - but any heavy right tail produces
+that gap, so it points at fragility rather than proving whales specifically.
 
 There is no analysis trick that resolves this, because the ambiguity is real:
 the true effect the generator planted is {true_rev_diff:+.2f} per user, and
 with this tail the experiment only had roughly
 {pct(apparent_power, 0)} power to detect it (using the realized sample
 standard deviation of {sample_sd:.0f}, itself an unstable estimate under an
-infinite-variance tail). My read: the revenue evidence is directionally
-positive and consistent with the conversion result, the point estimate is
-inflated by whales, and I would not quote a revenue impact number from this
-experiment. If a revenue claim matters, the follow-up should use a metric
-that a single whale cannot move (capped revenue or spender conversion),
-declared in advance and sized for it.
+infinite-variance tail). It is worth being explicit about what the whales are
+here: the generator draws whale amounts from the same distribution in both
+arms, so every bit of the whale imbalance between arms is sampling noise *by
+construction*. A method that reads that imbalance as effect is reading noise,
+and we know it is noise because we built the data.
 
-What I would not do is run all four tests and report the one that crossed
-0.05. The tests were all planned; the disagreement itself is the finding, and
-it says "underpowered for this metric," not "significant if you pick the
-right test."
+My read: the revenue evidence is directionally positive and consistent with
+the conversion result, the point estimate rests on draws that carry no signal,
+and I would not quote a revenue impact number from this experiment. If a
+revenue claim matters, the follow-up should use a metric that a single whale
+cannot move (capped revenue or spender conversion), declared in advance and
+sized for it.
+
+What I would not do is run all four and report the one that crossed 0.05. They
+were all planned; the disagreement itself is the finding, and it says
+"underpowered for this metric," not "significant if you pick the right test."
 """)
 
     # ------------------------------------------------------- ground truth
@@ -595,7 +700,7 @@ right test."
 | Quantity | Truth | Headline estimate | Best estimate |
 |---|---|---|---|
 | Persistent conversion lift | {pp(TRUE_LIFT, 1)} | {pp(primary.absolute_lift)} | {pp(late_r.absolute_lift)} (days 10-13, CI {pp(late_r.ci_low)} to {pp(late_r.ci_high)}) |
-| Day-0 novelty boost | {pp(NOVELTY_BOOST, 1)} | not separately reported | visible in figure 1 decay |
+| Day-0 novelty boost | {pp(NOVELTY_BOOST, 1)} | not separately reported | decay visible in the daily-lift panel in section 4 |
 | Secondary metric lifts | 0 on all six | one naive false positive | none significant after Holm |
 | Revenue per user diff | {true_rev_diff:+.2f} | {welch.difference:+.2f} | interval spanning zero; underpowered |
 

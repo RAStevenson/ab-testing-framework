@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from scipy import stats
 
 from abkit.frequentist import two_proportion_ztest, welch_ttest
 from abkit.power import (
@@ -34,6 +35,31 @@ def test_power_proportions_matches_simulation():
     assert simulated == pytest.approx(analytic, abs=0.025)
 
 
+def _exact_power_two_proportions(rate_c, rate_t, n, alpha=0.05):
+    """Rejection probability of the pooled z-test, summed over the binomial grid.
+
+    No Monte Carlo error and no shared code with power.py, so this pins the
+    specific variance placement the module documents (pooled under the null,
+    unpooled under the alternative) rather than merely the right ballpark.
+    """
+    k = np.arange(n + 1)
+    joint = np.outer(stats.binom.pmf(k, n, rate_c), stats.binom.pmf(k, n, rate_t))
+    pooled = (k[:, None] + k[None, :]) / (2 * n)
+    se = np.sqrt(pooled * (1.0 - pooled) * (2 / n))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        z = (k[None, :] / n - k[:, None] / n) / se
+    return float(np.sum(joint * (np.abs(z) >= stats.norm.isf(alpha / 2))))
+
+
+def test_power_proportions_matches_exact_binomial_calculation():
+    # 0.30 vs 0.45 at n=150 is the discriminating case: using the pooled
+    # variance in both places, or the unpooled one in both, moves the answer
+    # by 3e-3 to 7e-3, while the documented placement lands within 1e-4.
+    analytic = power_two_proportions(0.30, 0.45, 150)
+    exact = _exact_power_two_proportions(0.30, 0.45, 150)
+    assert analytic == pytest.approx(exact, abs=1e-3)
+
+
 def test_power_is_monotone():
     powers = [power_two_proportions(0.05, 0.06, n) for n in (1000, 5000, 20_000)]
     assert powers[0] < powers[1] < powers[2]
@@ -52,11 +78,44 @@ def test_mde_raises_when_n_hopeless():
         mde_two_proportions(0.5, 2)
 
 
+def test_mde_raises_rather_than_leaking_a_solver_error():
+    # power tends to alpha/2 as the lift vanishes, so a target at or below
+    # that has no root; this used to surface as a raw brentq bracket error
+    with pytest.raises(ValueError, match="alpha/2"):
+        mde_two_proportions(0.05, 50_000, alpha=0.05, power=0.02)
+
+
+def test_sample_size_means_is_minimal_on_knife_edge_designs():
+    # when the closed form lands exactly on an integer, floating-point error
+    # can push ceil() one past it; walking up alone would never come back
+    for target_n in (10, 50, 97, 1000):
+        z_crit = stats.norm.isf(0.025)
+        z_power = stats.norm.isf(1.0 - 0.8)
+        difference = (z_crit + z_power) * np.sqrt(2.0 / target_n)
+        n = sample_size_two_means(difference, 1.0)
+        assert n == target_n
+        assert power_two_means(difference, 1.0, n) >= 0.8
+        assert power_two_means(difference, 1.0, n - 1) < 0.8
+
+
 def test_sample_size_means_near_textbook_value():
     # delta 0.1 sd, alpha 0.05, power 0.8: classic answer is ~1,571 per arm
     n = sample_size_two_means(0.1, 1.0)
     assert 1550 <= n <= 1600
     assert power_two_means(0.1, 1.0, n) >= 0.8
+    # minimality, not just sufficiency. Without this the refinement loop hides
+    # a closed form that overshoots, since it only ever walks upward.
+    assert power_two_means(0.1, 1.0, n - 1) < 0.8
+
+
+def test_sample_size_means_matches_the_closed_form_exactly():
+    # the normal-approximation formula is exact for this power function, so
+    # the returned n must equal its ceiling rather than merely bracket it
+    for difference, sd, power in ((0.1, 1.0, 0.8), (0.5, 2.0, 0.9), (2.0, 3.5, 0.95)):
+        z_crit = stats.norm.isf(0.025)
+        z_power = stats.norm.isf(1.0 - power)
+        expected = int(np.ceil(2.0 * ((z_crit + z_power) * sd / abs(difference)) ** 2))
+        assert sample_size_two_means(difference, sd, power=power) == expected
 
 
 def test_power_means_matches_simulation():
@@ -71,6 +130,14 @@ def test_power_means_matches_simulation():
         one_experiment, rng=np.random.default_rng(52), n_sims=2000, alpha=0.05
     )
     assert simulated == pytest.approx(analytic, abs=0.03)
+
+
+def test_simulate_power_counts_the_boundary_as_a_rejection():
+    # a level-alpha test rejects at p == alpha. Discrete p-values can land
+    # there exactly, so a strict comparison would silently understate power.
+    rng = np.random.default_rng(53)
+    assert simulate_power(lambda _: 0.05, rng=rng, n_sims=10, alpha=0.05) == 1.0
+    assert simulate_power(lambda _: 0.0500001, rng=rng, n_sims=10, alpha=0.05) == 0.0
 
 
 def test_validation_errors():

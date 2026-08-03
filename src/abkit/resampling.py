@@ -4,15 +4,17 @@ These are the workhorses for heavy-tailed metrics (revenue per user)
 where the normal-theory tests in ``frequentist`` rely on a CLT that has
 not kicked in at realistic sample sizes.
 
-Both routines vectorize over resamples in fixed-size chunks so peak
-memory stays near ``_CHUNK * n * 8`` bytes regardless of the resample
-count.
+Both routines vectorize over resamples in fixed-size chunks, so peak
+memory is set by the chunk size and stays flat as the resample count
+grows. A chunk holds a few arrays of ``_CHUNK * n`` elements at once
+(random keys, the index array, and the gathered values), so budget a
+small multiple of ``_CHUNK * n * 8`` bytes rather than exactly that.
 """
 
 from __future__ import annotations
 
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 from scipy import stats
 
 from abkit.results import BootstrapResult, PermutationResult
@@ -20,11 +22,20 @@ from abkit.results import BootstrapResult, PermutationResult
 _CHUNK = 256
 
 
-def _two_samples(control: ArrayLike, treatment: ArrayLike) -> tuple[np.ndarray, np.ndarray]:
+def _two_samples(
+    control: ArrayLike, treatment: ArrayLike
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     x = np.asarray(control, dtype=np.float64)
     y = np.asarray(treatment, dtype=np.float64)
+    if x.ndim != 1 or y.ndim != 1:
+        raise ValueError(f"both arms must be 1-d, got shapes {x.shape} and {y.shape}")
     if x.size < 2 or y.size < 2:
         raise ValueError(f"need at least 2 observations per arm, got {x.size} and {y.size}")
+    # NaN fails every comparison, which in the permutation test means no
+    # resample ever counts as extreme: it would return p = 1/(n+1), its most
+    # significant possible value, on unusable data. Refuse instead.
+    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+        raise ValueError("outcomes must all be finite; found NaN or infinity")
     return x, y
 
 
@@ -101,7 +112,13 @@ def permutation_test_mean_diff(
     while done < n_permutations:
         size = min(_CHUNK, n_permutations - done)
         # argpartition on random keys draws a uniform n_t-subset per row in
-        # O(n) rather than O(n log n) for a full shuffle
+        # O(n), against O(n log n) to argsort the same keys. A per-row
+        # Fisher-Yates shuffle is also O(n), but has to materialize and
+        # permute the whole block, and measures about twice as slow here.
+        # float32 keys halve the memory; they collide for roughly 0.4% of
+        # keys at n = 100k, and ties break by position rather than at random,
+        # which biases the draw far below the Monte Carlo error of the
+        # p-value itself.
         keys = rng.random((size, pooled.size), dtype=np.float32)
         take = np.argpartition(keys, n_t - 1, axis=1)[:, :n_t]
         sums_t = pooled[take].sum(axis=1)

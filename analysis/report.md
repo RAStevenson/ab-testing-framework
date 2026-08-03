@@ -66,8 +66,14 @@ Splitting the window confirms it:
 
 | Window | Lift | 95% CI | p-value |
 |---|---|---|---|
-| Days 0-2 | 1.29 pp | 0.68 pp to 1.90 pp | 3.4e-05 |
+| Days 0-2 | 1.29 pp | 0.68 pp to 1.91 pp | 3.4e-05 |
 | Days 10-13 | 0.23 pp | -0.28 pp to 0.75 pp | 0.371 |
+
+Two non-overlapping intervals are not by themselves evidence that the windows
+differ, so I tested the decay directly rather than eyeballing the table: the
+early-minus-late difference is 1.06 pp (SE 0.41 pp),
+z = 2.60, p = 0.009. The fade is real, not an artifact of
+reading two intervals side by side.
 
 The early window carries most of the headline effect. The late window - the
 best available proxy for the persistent effect - shows
@@ -86,16 +92,26 @@ replayed the experiment as 14 daily looks two ways: a naive rule that
 calls the result at the first |z| > 1.96, and an O'Brien-Fleming alpha-spending
 design built on the realized information fractions (`abkit.sequential`).
 
+Using realized rather than planned fractions is what the spending-function
+approach is for, and it does not cost anything here: the look *schedule* was
+fixed in advance at one look per day, and the realized fractions differ from
+an even 14-way split by at most 0.0015. What would void the
+guarantee is choosing the looks after seeing the data, which is a different
+thing entirely.
+
 ![Sequential monitoring](figures/sequential.png)
 
 The naive rule would have stopped at **look 1**, when the novelty
 effect was near its peak, locking in a cumulative lift of
 1.36 pp - about 3x the persistent effect.
 The spending design first crosses at **look 4**,
-spending almost no alpha in the noisy early days. Under a true null on this
-exact look schedule, simulation (100,000 runs) puts the naive rule's
-false-positive rate at 21.9% against the nominal 5%; the
-spending design holds 4.9%.
+spending almost no alpha in the noisy early days. In fact it spends so little
+that the first look has no finite boundary at all - under O'Brien-Fleming
+there is no z-statistic on day 1 large enough to stop the experiment, which is
+why the boundary line in the figure starts at look 2.
+Under a true null on this exact look schedule, simulation (100,000 runs)
+puts the naive rule's false-positive rate at 21.9% against the
+nominal 5%; the spending design holds 4.9%.
 
 Early stopping is a tool for catching regressions quickly, not for shipping
 winners early: even the correctly-stopped estimate is biased upward by the
@@ -103,9 +119,9 @@ novelty effect at that point in the run.
 
 ## 6. Secondary metrics and multiple comparisons
 
-Six secondary metrics were tracked. None of them was actually moved by the
-treatment (the generator applied zero lift to all six), which makes this a
-live-fire test of the correction machinery.
+Six secondary metrics were tracked. None of them was actually moved by
+the treatment (the generator applied zero lift to all six), which makes
+this a live-fire test of the correction machinery.
 
 | Metric | Observed lift | Unadjusted p | Holm p | BH q |
 |---|---|---|---|---|
@@ -116,12 +132,21 @@ live-fire test of the correction machinery.
 | Coupon usage | 0.23 pp | 0.307 | 1.000 | 0.461 |
 | Newsletter signup | 0.43 pp | 0.062 | 0.309 | 0.185 |
 
-Read naively, **Account creation** looks like a significant win at
-p = 0.031. That is exactly the trap: with six true nulls,
-the chance of at least one unadjusted p below 0.05 is about 26%. Both the
-Holm adjustment (family-wise control, the right tool for a ship decision) and
-Benjamini-Hochberg (FDR control, the right tool for a screening pass) push
-every metric back above the line.
+Read naively, **Account creation** clears the line at
+p = 0.031 - and note the direction: the observed lift is
+-0.50 pp, so the naive reading is a regression, not the win a
+scan of the p-value column alone would suggest. That is the trap twice over.
+With six true nulls the chance of at least one unadjusted p below 0.05 is
+26%, so a flagged metric is the expected outcome rather than a
+discovery. Both the Holm adjustment (family-wise control, the right tool for a
+ship decision) and Benjamini-Hochberg (FDR control, the right tool for a
+screening pass) push every metric back above the line.
+
+The seed here was chosen to land on a run that exhibits the false positive:
+across fresh draws only about a quarter of runs produce exactly one nominally
+significant metric, and most produce none. That is a deliberate choice to show
+the machinery working, not a typical draw, and it seemed worth saying out loud
+in a document whose whole argument is about not reading luck as signal.
 
 ![Secondary metric p-values](figures/secondary_pvalues.png)
 
@@ -129,10 +154,10 @@ every metric back above the line.
 
 Revenue per user is the metric leadership actually asks about, and it is the
 one this experiment cannot answer cleanly. The distribution is zero-inflated
-(about 6% of users spend anything) with a Pareto tail: the
-generator gives roughly 1 in 125 spenders a "whale" draw whose distribution
-has infinite variance. This is not an exotic choice; real revenue data looks
-like this.
+(94% of users spend nothing) with a Pareto tail: the generator
+gives roughly 1 in 125 spenders a "whale" draw whose distribution has
+infinite variance. This is not an exotic choice; real revenue data looks like
+this.
 
 ![Revenue distributions and interval comparison](figures/revenue.png)
 
@@ -141,40 +166,61 @@ like this.
 | Welch t-test | +1.23 per user | 95% CI -0.25 to +2.71, p = 0.104 |
 | Percentile bootstrap | +1.23 per user | 95% CI +0.14 to +2.97 |
 | Permutation test | +1.23 per user | p = 0.029 |
-| Trimmed mean diff (1%) | +0.29 per user | - |
+| Trimmed mean diff (1%) | +0.29 per user | different estimand, see below |
 
-The methods genuinely disagree. The Welch test says not significant
-(p = 0.104); the permutation test says significant
-(p = 0.029); the bootstrap interval
-(+0.14 to +2.97) excludes zero, but its lower
-bound is a whisker above it. The trimmed estimate, which discards the top and bottom 1% of each
-arm, is far below the raw difference of +1.23 - the raw
-estimate is carried substantially by a handful of whales that happened to
-land in the treatment arm.
+The first three estimate the same quantity and disagree about it. The Welch
+test says not significant (p = 0.104); the permutation test says
+significant (p = 0.029); the bootstrap interval
+(+0.14 to +2.97) excludes zero, but its lower bound is a whisker
+above it.
+
+The Welch/permutation split is not just noise, and it is worth being precise
+about. The permutation test is exact under the sharp null that the two arms
+have *identical distributions*, and the treatment here does change the
+distribution - it raises the probability of spending at all. So the permutation
+test can correctly reject while the *mean* difference, which is what Welch is
+estimating, stays badly determined by a few large draws. Two tests, two
+questions, and only one of them is the one leadership asked.
+
+The trimmed difference is a diagnostic, not a fourth estimate of the same
+thing, and the table above would be misleading if it were read as one. With
+94% of users at zero, trimming 1% from each tail of each arm cuts
+601 zeros off the bottom and about 17% of the *spenders* off
+the top. It therefore targets a different population quantity: the control
+arm's own mean falls from 4.47 to 1.56 with no treatment
+effect involved at all. The useful signal is that +0.29 and
++1.23 are far apart, which says the raw difference rests on the
+part of the distribution the trim removes - but any heavy right tail produces
+that gap, so it points at fragility rather than proving whales specifically.
 
 There is no analysis trick that resolves this, because the ambiguity is real:
 the true effect the generator planted is +0.32 per user, and
 with this tail the experiment only had roughly
 6% power to detect it (using the realized sample
 standard deviation of 130, itself an unstable estimate under an
-infinite-variance tail). My read: the revenue evidence is directionally
-positive and consistent with the conversion result, the point estimate is
-inflated by whales, and I would not quote a revenue impact number from this
-experiment. If a revenue claim matters, the follow-up should use a metric
-that a single whale cannot move (capped revenue or spender conversion),
-declared in advance and sized for it.
+infinite-variance tail). It is worth being explicit about what the whales are
+here: the generator draws whale amounts from the same distribution in both
+arms, so every bit of the whale imbalance between arms is sampling noise *by
+construction*. A method that reads that imbalance as effect is reading noise,
+and we know it is noise because we built the data.
 
-What I would not do is run all four tests and report the one that crossed
-0.05. The tests were all planned; the disagreement itself is the finding, and
-it says "underpowered for this metric," not "significant if you pick the
-right test."
+My read: the revenue evidence is directionally positive and consistent with
+the conversion result, the point estimate rests on draws that carry no signal,
+and I would not quote a revenue impact number from this experiment. If a
+revenue claim matters, the follow-up should use a metric that a single whale
+cannot move (capped revenue or spender conversion), declared in advance and
+sized for it.
+
+What I would not do is run all four and report the one that crossed 0.05. They
+were all planned; the disagreement itself is the finding, and it says
+"underpowered for this metric," not "significant if you pick the right test."
 
 ## 8. What the generator actually did
 
 | Quantity | Truth | Headline estimate | Best estimate |
 |---|---|---|---|
 | Persistent conversion lift | 0.4 pp | 0.67 pp | 0.23 pp (days 10-13, CI -0.28 pp to 0.75 pp) |
-| Day-0 novelty boost | 0.8 pp | not separately reported | visible in figure 1 decay |
+| Day-0 novelty boost | 0.8 pp | not separately reported | decay visible in the daily-lift panel in section 4 |
 | Secondary metric lifts | 0 on all six | one naive false positive | none significant after Holm |
 | Revenue per user diff | +0.32 | +1.23 | interval spanning zero; underpowered |
 

@@ -25,9 +25,16 @@ def two_proportion_ztest(
     """Two-sided z-test for a difference in conversion rates.
 
     The test statistic uses the pooled standard error, which is the
-    correct null-hypothesis variance; the confidence interval uses the
-    unpooled (Wald) standard error, which is correct away from the null.
-    ``relative_lift`` is NaN when the control rate is zero.
+    correct null-hypothesis variance. The confidence interval is an
+    unpooled interval, which is what is correct away from the null, in
+    its Agresti-Caffo form: one success and one failure are added to each
+    arm before forming it. Plain Wald degenerates to zero width when both
+    arms sit at 0% or 100%, and undercovers near those boundaries; the
+    adjustment costs nothing at experiment sample sizes.
+
+    Because of that adjustment the interval is centred on the adjusted
+    difference rather than exactly on ``absolute_lift``, which is reported
+    unadjusted. ``relative_lift`` is NaN when the control rate is zero.
     """
     for name, count, total in (
         ("control", conversions_control, n_control),
@@ -51,7 +58,20 @@ def two_proportion_ztest(
     z = diff / se_pooled
     p_value = 2.0 * stats.norm.sf(abs(z))
 
-    se_wald = np.sqrt(rate_c * (1.0 - rate_c) / n_control + rate_t * (1.0 - rate_t) / n_treatment)
+    # Agresti-Caffo: add one success and one failure to each arm, then form a
+    # Wald interval on the adjusted rates. Plain Wald collapses to zero width
+    # when both arms sit exactly on 0 or 1, reporting a point as a 95%
+    # interval; Agresti-Caffo stays sensible there and has better coverage at
+    # rates near the boundary generally. The two are indistinguishable at
+    # experiment sample sizes. The interval is therefore centred on the
+    # adjusted difference, not on ``absolute_lift``, which stays unadjusted
+    # because that is the estimate worth reporting.
+    ac_n_c = n_control + 2.0
+    ac_n_t = n_treatment + 2.0
+    ac_c = (conversions_control + 1.0) / ac_n_c
+    ac_t = (conversions_treatment + 1.0) / ac_n_t
+    ac_diff = ac_t - ac_c
+    se_ac = np.sqrt(ac_c * (1.0 - ac_c) / ac_n_c + ac_t * (1.0 - ac_t) / ac_n_t)
     z_crit = stats.norm.ppf(0.5 + confidence / 2.0)
     return RateComparison(
         n_control=n_control,
@@ -64,8 +84,11 @@ def two_proportion_ztest(
         relative_lift=diff / rate_c if rate_c > 0.0 else float("nan"),
         statistic=float(z),
         p_value=float(p_value),
-        ci_low=float(diff - z_crit * se_wald),
-        ci_high=float(diff + z_crit * se_wald),
+        # a difference of proportions lives in [-1, 1], and the adjustment can
+        # push the interval a hair outside it at extreme rates; clipping to the
+        # parameter space can only improve coverage
+        ci_low=float(max(-1.0, ac_diff - z_crit * se_ac)),
+        ci_high=float(min(1.0, ac_diff + z_crit * se_ac)),
         confidence=confidence,
     )
 
@@ -83,8 +106,12 @@ def welch_ttest(
     """
     x = np.asarray(control, dtype=np.float64)
     y = np.asarray(treatment, dtype=np.float64)
+    if x.ndim != 1 or y.ndim != 1:
+        raise ValueError(f"both arms must be 1-d, got shapes {x.shape} and {y.shape}")
     if x.size < 2 or y.size < 2:
         raise ValueError(f"need at least 2 observations per arm, got {x.size} and {y.size}")
+    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+        raise ValueError("outcomes must all be finite; found NaN or infinity")
     if not 0.0 < confidence < 1.0:
         raise ValueError(f"confidence must be in (0, 1), got {confidence}")
 

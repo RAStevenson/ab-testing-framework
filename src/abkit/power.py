@@ -77,8 +77,9 @@ def sample_size_two_proportions(
         / delta
     ) ** 2
     n_int = max(2, int(np.ceil(n)))
-    # the closed form and the power function differ in how they place the
-    # alternative; walk to the exact threshold of the power function we report
+    # the closed form is the algebraic inverse of power_two_proportions, so
+    # these walks normally take zero steps; they exist to absorb the case
+    # where floating-point error puts ceil() on the wrong side of the integer
     while power_two_proportions(rate_control, rate_treatment, n_int, alpha=alpha) < power:
         n_int += 1
     while (
@@ -96,12 +97,26 @@ def mde_two_proportions(
     alpha: float = 0.05,
     power: float = 0.8,
 ) -> float:
-    """Minimum detectable absolute lift (upward) at the given n and power."""
+    """Minimum detectable absolute lift (upward) at the given n and power.
+
+    Power is unimodal rather than monotone in the lift: at rates near 1 the
+    alternative variance collapses and power can fall again. The solve is
+    still single-rooted because the feasibility check below requires power at
+    the largest admissible lift to clear the target, which on a unimodal
+    curve leaves exactly one crossing.
+    """
     if not 0.0 < rate_control < 1.0:
         raise ValueError(f"rate_control must be in (0, 1), got {rate_control}")
     _validate_alpha_power(alpha, power)
     if n_per_arm < 2:
         raise ValueError(f"n_per_arm must be at least 2, got {n_per_arm}")
+    # power tends to alpha/2 as the lift vanishes, so a target at or below
+    # that has no crossing at all and would surface as a raw solver error
+    if power <= alpha / 2.0:
+        raise ValueError(
+            f"power={power} is not above alpha/2={alpha / 2.0}, which every "
+            "vanishing lift already achieves; no minimum detectable effect exists"
+        )
 
     upper = 1.0 - rate_control - 1e-9
     if power_two_proportions(rate_control, rate_control + upper, n_per_arm, alpha=alpha) < power:
@@ -159,8 +174,13 @@ def sample_size_two_means(
     z_power = stats.norm.isf(1.0 - power)
     n = 2.0 * ((z_crit + z_power) * sd / abs(difference)) ** 2
     n_int = max(2, int(np.ceil(n)))
+    # both directions, for the same reason as sample_size_two_proportions:
+    # when n* lands exactly on an integer, floating-point error can push
+    # ceil() one past it, and walking up alone would never come back
     while power_two_means(difference, sd, n_int, alpha=alpha) < power:
         n_int += 1
+    while n_int > 2 and power_two_means(difference, sd, n_int - 1, alpha=alpha) >= power:
+        n_int -= 1
     return n_int
 
 
@@ -171,14 +191,20 @@ def simulate_power(
     n_sims: int = 1000,
     alpha: float = 0.05,
 ) -> float:
-    """Fraction of simulated experiments with p < alpha.
+    """Fraction of simulated experiments rejecting at ``alpha``.
 
     ``draw_p_value`` runs one full simulated experiment and analysis and
     returns its p-value. Used to cross-check the analytic formulas and to
     get power for designs they do not cover (heavy tails, unequal arms).
+
+    Rejection is ``p <= alpha``, not ``p < alpha``. The distinction is
+    invisible for continuous p-values but matters for the resampling tests
+    this exists to check: a permutation p-value with 999 permutations is a
+    multiple of 1/1000 and can land on 0.05 exactly, and a strict
+    comparison would discard that mass and understate power.
     """
     _validate_alpha_power(alpha)
     if n_sims < 1:
         raise ValueError(f"n_sims must be positive, got {n_sims}")
-    rejections = sum(draw_p_value(rng) < alpha for _ in range(n_sims))
+    rejections = sum(draw_p_value(rng) <= alpha for _ in range(n_sims))
     return rejections / n_sims
