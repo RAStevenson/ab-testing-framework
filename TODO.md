@@ -8,9 +8,9 @@ Deferred polish, roughly in the order I would pick it up.
 - Bootstrap over arbitrary statistics (median, trimmed mean, quantiles).
   The current implementation is mean-only so it can stay fully vectorized;
   a general version needs a chunked apply path.
-- CUPED / regression adjustment. The single biggest practical win for
-  experiment sensitivity; needs the generators to emit a pre-experiment
-  covariate first.
+- CUPED / regression adjustment. It is the single biggest practical win for
+  experiment sensitivity, but it needs the generators to emit a
+  pre-experiment covariate first.
 - Futility (beta-spending) boundaries in `sequential.py`, so monitoring can
   stop hopeless experiments early, not just clear winners.
 - Confidence interval for relative lift via the delta method; the point
@@ -27,6 +27,6 @@ Deferred polish, roughly in the order I would pick it up.
   workflow would keep it from sliding.
 - Cap the grid widening in `sequential._propagate`. When early boundaries are
   infinite the support grows additively per look, which wastes resolution on
-  long schedules: at 100 looks the boundary error reaches 9e-5, near the 1e-4
-  the docstring claims. Fine for the schedules this is used on, but the fix
-  is to widen relative to `sqrt(t_k)` instead.
+  long schedules; at 100 looks the boundary error reaches 9e-5, near the 1e-4
+  the docstring claims. That is fine for the schedules this is used on, but
+  the fix is to widen relative to `sqrt(t_k)` instead.

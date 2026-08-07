@@ -6,8 +6,8 @@ read the primary metric, check for novelty, replay the monitoring decisions,
 correct the secondary metric screen, and work one genuinely ambiguous metric
 to a recommendation.
 
-Because the data are synthetic, the true effects are known, which is the
-point: at the end I compare what the analysis concluded against what the
+Because the data are synthetic, the true effects are known, and that is the
+point. At the end I compare what the analysis concluded against what the
 generator actually did. Everything here is produced by `run_analysis.py`
 with fixed seeds; the library functions it calls live in `src/abkit/`.
 
@@ -22,7 +22,7 @@ split, giving roughly 60,000 per arm - some margin over the minimum.
 
 ## 2. Assignment validation, and the run we threw away
 
-The first launch of this experiment had a client bug: the treatment redirect
+The first launch of this experiment had a client bug. The treatment redirect
 dropped the tracking beacon for a slice of users who bounced without
 converting. Nothing about the metric looks wrong on the surface - the
 treatment "won" with an observed lift of 0.75 pp - but
@@ -57,7 +57,7 @@ forecast on, for the reason in the next section.
 ## 4. Novelty check
 
 The daily lift drifts downward over the experiment, which is the classic
-signature of a novelty effect: existing users react to the change itself, and
+signature of a novelty effect. Existing users react to the change itself, and
 that reaction fades.
 
 ![Daily conversion rates and daily lift](figures/daily_rates.png)
@@ -70,7 +70,7 @@ Splitting the window confirms it:
 | Days 10-13 | 0.23 pp | -0.28 pp to 0.75 pp | 0.371 |
 
 Two non-overlapping intervals are not by themselves evidence that the windows
-differ, so I tested the decay directly rather than eyeballing the table: the
+differ, so I tested the decay directly rather than eyeballing the table. The
 early-minus-late difference is 1.06 pp (SE 0.41 pp),
 z = 2.60, p = 0.009. The fade is real, not an artifact of
 reading two intervals side by side.
@@ -79,8 +79,8 @@ The early window carries most of the headline effect. The late window - the
 best available proxy for the persistent effect - shows
 0.23 pp with a confidence interval wide enough to include
 both zero and the +0.4 pp the experiment was powered for. So the
-honest summary is: the treatment very likely helps, the headline
-0.67 pp overstates the long-run effect, and the
+honest summary is that the treatment very likely helps, that the headline
+0.67 pp overstates the long-run effect, and that the
 14-day window cannot pin the persistent lift precisely. I would report
 the late-window interval, not the headline, and keep a small holdback running
 to measure the effect after habituation.
@@ -93,7 +93,7 @@ calls the result at the first |z| > 1.96, and an O'Brien-Fleming alpha-spending
 design built on the realized information fractions (`abkit.sequential`).
 
 Using realized rather than planned fractions is what the spending-function
-approach is for, and it does not cost anything here: the look *schedule* was
+approach is for, and it does not cost anything here. The look *schedule* was
 fixed in advance at one look per day, and the realized fractions differ from
 an even 14-way split by at most 0.0015. What would void the
 guarantee is choosing the looks after seeing the data, which is a different
@@ -114,7 +114,7 @@ puts the naive rule's false-positive rate at 21.9% against the
 nominal 5%; the spending design holds 4.9%.
 
 Early stopping is a tool for catching regressions quickly, not for shipping
-winners early: even the correctly-stopped estimate is biased upward by the
+winners early. Even the correctly-stopped estimate is biased upward by the
 novelty effect at that point in the run.
 
 ## 6. Secondary metrics and multiple comparisons
@@ -133,7 +133,7 @@ this a live-fire test of the correction machinery.
 | Newsletter signup | 0.43 pp | 0.062 | 0.309 | 0.185 |
 
 Read naively, **Account creation** clears the line at
-p = 0.031 - and note the direction: the observed lift is
+p = 0.031 - and note the direction. The observed lift is
 -0.50 pp, so the naive reading is a regression, not the win a
 scan of the p-value column alone would suggest. That is the trap twice over.
 With six true nulls the chance of at least one unadjusted p below 0.05 is
@@ -142,8 +142,8 @@ discovery. Both the Holm adjustment (family-wise control, the right tool for a
 ship decision) and Benjamini-Hochberg (FDR control, the right tool for a
 screening pass) push every metric back above the line.
 
-The seed here was chosen to land on a run that exhibits the false positive:
-across fresh draws only about a quarter of runs produce exactly one nominally
+The seed here was chosen to land on a run that exhibits the false positive.
+Across fresh draws only about a quarter of runs produce exactly one nominally
 significant metric, and most produce none. That is a deliberate choice to show
 the machinery working, not a typical draw, and it seemed worth saying out loud
 in a document whose whole argument is about not reading luck as signal.
@@ -154,7 +154,7 @@ in a document whose whole argument is about not reading luck as signal.
 
 Revenue per user is the metric leadership actually asks about, and it is the
 one this experiment cannot answer cleanly. The distribution is zero-inflated
-(94% of users spend nothing) with a Pareto tail: the generator
+(94% of users spend nothing) with a Pareto tail. The generator
 gives roughly 1 in 125 spenders a "whale" draw whose distribution has
 infinite variance. This is not an exotic choice; real revenue data looks like
 this.
@@ -186,27 +186,28 @@ The trimmed difference is a diagnostic, not a fourth estimate of the same
 thing, and the table above would be misleading if it were read as one. With
 94% of users at zero, trimming 1% from each tail of each arm cuts
 601 zeros off the bottom and about 17% of the *spenders* off
-the top. It therefore targets a different population quantity: the control
+the top. It therefore targets a different population quantity. The control
 arm's own mean falls from 4.47 to 1.56 with no treatment
 effect involved at all. The useful signal is that +0.29 and
 +1.23 are far apart, which says the raw difference rests on the
 part of the distribution the trim removes - but any heavy right tail produces
 that gap, so it points at fragility rather than proving whales specifically.
 
-There is no analysis trick that resolves this, because the ambiguity is real:
-the true effect the generator planted is +0.32 per user, and
+There is no analysis trick that resolves this, because the ambiguity is real.
+The true effect the generator planted is +0.32 per user, and
 with this tail the experiment only had roughly
 6% power to detect it (using the realized sample
 standard deviation of 130, itself an unstable estimate under an
 infinite-variance tail). It is worth being explicit about what the whales are
-here: the generator draws whale amounts from the same distribution in both
+here. The generator draws whale amounts from the same distribution in both
 arms, so every bit of the whale imbalance between arms is sampling noise *by
 construction*. A method that reads that imbalance as effect is reading noise,
 and we know it is noise because we built the data.
 
-My read: the revenue evidence is directionally positive and consistent with
-the conversion result, the point estimate rests on draws that carry no signal,
-and I would not quote a revenue impact number from this experiment. If a
+My read is that the revenue evidence is directionally positive and consistent
+with the conversion result, that the point estimate rests on draws carrying no
+signal, and that I would not quote a revenue impact number from this
+experiment. If a
 revenue claim matters, the follow-up should use a metric that a single whale
 cannot move (capped revenue or spender conversion), declared in advance and
 sized for it.
@@ -224,7 +225,7 @@ were all planned; the disagreement itself is the finding, and it says
 | Secondary metric lifts | 0 on all six | one naive false positive | none significant after Holm |
 | Revenue per user diff | +0.32 | +1.23 | interval spanning zero; underpowered |
 
-The pipeline got the qualitative story right everywhere: it caught the broken
+The pipeline got the qualitative story right everywhere. It caught the broken
 first run, flagged the novelty inflation instead of shipping the headline
 number, and refused the spurious secondary win. On the underpowered revenue
 metric, it declined to quote an impact number at all. The place it cannot
