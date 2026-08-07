@@ -519,7 +519,7 @@ effect was near its peak, locking in a cumulative lift of
 {pp(naive_lift)} - about {naive_lift / TRUE_LIFT:.0f}x the persistent effect.
 The spending design first crosses at **look {outcome.stopped_at_look}**,
 spending almost no alpha in the noisy early days. In fact it spends so little
-that {unspendable_phrase} no finite boundary at all - under O'Brien-Fleming
+that {unspendable_phrase} no finite boundary at all. Under O'Brien-Fleming
 there is no z-statistic on day 1 large enough to stop the experiment, which is
 why the boundary line in the figure starts at look {n_unspendable + 1}.
 Under a true null on this exact look schedule, simulation ({n_sims:,} runs)
@@ -550,6 +550,7 @@ novelty effect at that point in the run.
     flagged = int(np.argmin(naive_arr))
     flagged_verdict = "win" if lifts[flagged] > 0 else "regression"
     family_error = 1.0 - (1.0 - 0.05) ** len(SECONDARY_METRICS)
+    exactly_one = len(SECONDARY_METRICS) * 0.05 * (1.0 - 0.05) ** (len(SECONDARY_METRICS) - 1)
     rows = "\n".join(
         f"| {name} | {pp(lifts[i])} | {fmt_p(naive_arr[i])} | {fmt_p(holm_ps[i])} "
         f"| {fmt_p(bh_ps[i])} |"
@@ -576,7 +577,7 @@ ship decision) and Benjamini-Hochberg (FDR control, the right tool for a
 screening pass) push every metric back above the line.
 
 The seed here was chosen to land on a run that exhibits the false positive.
-Across fresh draws only about a quarter of runs produce exactly one nominally
+Across fresh draws only about {exactly_one:.0%} of runs produce exactly one nominally
 significant metric, and most produce none. That is a deliberate choice to show
 the machinery working, not a typical draw, and it seemed worth saying out loud
 in a document whose whole argument is about not reading luck as signal.
@@ -652,13 +653,13 @@ significant (p = {fmt_p(perm.p_value)}); the bootstrap interval
 ({boot.ci_low:+.2f} to {boot.ci_high:+.2f}) excludes zero, but its lower bound is a whisker
 above it.
 
-The Welch/permutation split is not just noise, and it is worth being precise
-about. The permutation test is exact under the sharp null that the two arms
+The Welch/permutation split has a specific cause. The permutation test is
+exact under the sharp null that the two arms
 have *identical distributions*, and the treatment here does change the
 distribution - it raises the probability of spending at all. So the permutation
 test can correctly reject while the *mean* difference, which is what Welch is
-estimating, stays badly determined by a few large draws. Two tests, two
-questions, and only one of them is the one leadership asked.
+estimating, stays badly determined by a few large draws. The two tests ask
+two different questions, and only one of them is the one leadership asked.
 
 The trimmed difference is a diagnostic, not a fourth estimate of the same
 thing, and the table above would be misleading if it were read as one. With
@@ -676,8 +677,7 @@ The true effect the generator planted is {true_rev_diff:+.2f} per user, and
 with this tail the experiment only had roughly
 {pct(apparent_power, 0)} power to detect it (using the realized sample
 standard deviation of {sample_sd:.0f}, itself an unstable estimate under an
-infinite-variance tail). It is worth being explicit about what the whales are
-here. The generator draws whale amounts from the same distribution in both
+infinite-variance tail). The generator draws whale amounts from the same distribution in both
 arms, so every bit of the whale imbalance between arms is sampling noise *by
 construction*. A method that reads that imbalance as effect is reading noise,
 and we know it is noise because we built the data.

@@ -115,9 +115,10 @@ The permutation test gives each user a random key and takes `argpartition` of
 those keys to pick a treatment-sized subset. That keeps a whole chunk of
 permutations inside one vectorized call, and costs O(n) per permutation where
 `argsort` of the same keys would cost O(n log n). At the report's scale of
-10,000 permutations over 120,000 pooled users, that is about 10 s against 28 s
-for `argsort` and 22 s for a per-row Fisher-Yates shuffle, which is also O(n)
-but has to materialize and permute the full block.
+10,000 permutations over 120,000 pooled users, that measured roughly 3x
+faster than `argsort` and about twice as fast as a per-row Fisher-Yates
+shuffle, which is also O(n) but has to materialize and permute the full
+block.
 
 The bootstrap interval is percentile rather than BCa. Percentile undercovers
 slightly on skewed data; the coverage test measures 90-98% against a nominal
