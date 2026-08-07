@@ -114,9 +114,11 @@ null, where the interval lives.
 The permutation test gives each user a random key and takes `argpartition` of
 those keys to pick a treatment-sized subset. That keeps a whole chunk of
 permutations inside one vectorized call, and costs O(n) per permutation where
-`argsort` of the same keys would cost O(n log n). At the report's scale of
-10,000 permutations over 120,000 pooled users, that measured roughly 3x
-faster than `argsort` and about twice as fast as a per-row Fisher-Yates
+`argsort` of the same keys would cost O(n log n). The script
+`analysis/bench_permutation.py` times both against a per-row Fisher-Yates
+shuffle at the report's scale of 10,000 permutations over 120,000 pooled
+users; on a 2026-08-07 run (Windows 11, 32-core AMD, numpy 2.4.6)
+argpartition measured 3.0x faster than `argsort` and 2.5x faster than the
 shuffle, which is also O(n) but has to materialize and permute the full
 block.
 
