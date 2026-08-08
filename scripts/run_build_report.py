@@ -4,12 +4,15 @@ Fully deterministic: every random draw flows from the fixed seeds below,
 so re-running the script reproduces the committed report byte for byte
 (figures may differ across matplotlib versions).
 
-Run with: .venv/Scripts/python analysis/run_analysis.py
+Run with: python scripts/run_build_report.py (from the repo root)
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import matplotlib
 
@@ -27,8 +30,8 @@ from abkit.resampling import bootstrap_mean_diff, permutation_test_mean_diff, tr
 from abkit.results import BootstrapResult, MeanComparison, RateComparison
 from abkit.sequential import design, monitor, z_from_cumulative_counts
 
-HERE = Path(__file__).parent
-FIGURES = HERE / "figures"
+ANALYSIS = Path(__file__).resolve().parents[1] / "analysis"
+FIGURES = ANALYSIS / "figures"
 
 # experiment configuration (the "truth" the analysis tries to recover)
 N_USERS = 120_000
@@ -335,7 +338,7 @@ to a recommendation.
 
 Because the data are synthetic, the true effects are known, and that is the
 point. At the end I compare what the analysis concluded against what the
-generator actually did. Everything here is produced by `run_analysis.py`
+generator actually did. Everything here is produced by `scripts/run_build_report.py`
 with fixed seeds; the library functions it calls live in `src/abkit/`.
 
 ## 1. Design and power
@@ -721,8 +724,8 @@ more weeks to measure the post-novelty effect, and define a capped revenue
 metric before the follow-up starts.
 """)
 
-    (HERE / "report.md").write_text("\n".join(md), encoding="utf-8")
-    print(f"wrote {HERE / 'report.md'} and {len(list(FIGURES.glob('*.png')))} figures")
+    (ANALYSIS / "report.md").write_text("\n".join(md), encoding="utf-8")
+    print(f"wrote {ANALYSIS / 'report.md'} and {len(list(FIGURES.glob('*.png')))} figures")
 
 
 if __name__ == "__main__":

@@ -16,10 +16,15 @@ if the mirror has drifted from the implementation. The draw cost does
 not depend on the outcome values, so the arms are plain standard normal
 draws rather than the report's revenue mixture.
 
-Run with: .venv/Scripts/python analysis/bench_permutation.py
+Run with: python scripts/run_bench_permutation.py (from the repo root)
 """
 
 from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import datetime
 import os

@@ -8,7 +8,7 @@ to a recommendation.
 
 Because the data are synthetic, the true effects are known, and that is the
 point. At the end I compare what the analysis concluded against what the
-generator actually did. Everything here is produced by `run_analysis.py`
+generator actually did. Everything here is produced by `scripts/run_build_report.py`
 with fixed seeds; the library functions it calls live in `src/abkit/`.
 
 ## 1. Design and power

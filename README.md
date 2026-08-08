@@ -10,7 +10,7 @@ Fourteen daily peeks at a fixed |z| > 1.96 turn a nominal 5% false-positive
 rate into 21.9%. An O'Brien-Fleming spending design, built on the same
 fourteen looks at the sample sizes they actually reached, holds it at 4.9%.
 Both figures come from
-100,000 simulated null runs at a fixed seed, and `python analysis/run_analysis.py`
+100,000 simulated null runs at a fixed seed, and `python scripts/run_build_report.py`
 reproduces them.
 
 ![Daily monitoring against spending boundaries](analysis/figures/sequential.png)
@@ -76,13 +76,17 @@ rather than manufacture a significant result.
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python -m pip install -e '.[dev]'  # .venv/bin/python on Unix; quotes matter in zsh
+.venv/Scripts/python -m pip install -r requirements.txt  # .venv/bin/python on Unix
 .venv/Scripts/python -m pytest
-.venv/Scripts/python analysis/run_analysis.py    # regenerates the report and figures
+.venv/Scripts/python scripts/run_build_report.py         # regenerates the report and figures
 ```
 
-Python 3.11+. The library depends only on numpy and scipy; matplotlib is a
-dev dependency used by the analysis script. Rerunning the analysis reproduces
+Python 3.11+. No install step: the entry scripts and `tests/conftest.py` put
+`src/` on the import path themselves, so a fresh clone runs as-is once the
+dependencies are present. An editable install
+(`pip install -e '.[dev]'`) still works if you prefer one. The library
+depends only on numpy and scipy; matplotlib is a
+dev dependency used by the report script. Rerunning the analysis reproduces
 `report.md` byte for byte, though figures can shift across matplotlib
 versions. CI regenerates the report on every push and fails if the committed
 copy has drifted. There is no hidden global random-number state anywhere in
@@ -102,7 +106,7 @@ stopping look is biased upward rather than correcting it. The bootstrap
 handles mean differences only, so it can stay fully vectorized. Users are
 assigned independently of one another, so nothing here demonstrates variance
 estimation when the randomization unit differs from the analysis unit. The
-full list is in [TODO.md](TODO.md).
+relative lift is reported as a point estimate without a confidence interval.
 
 ## Decisions worth flagging
 
@@ -115,7 +119,7 @@ The permutation test gives each user a random key and takes `argpartition` of
 those keys to pick a treatment-sized subset. That keeps a whole chunk of
 permutations inside one vectorized call, and costs O(n) per permutation where
 `argsort` of the same keys would cost O(n log n). The script
-`analysis/bench_permutation.py` times both against a per-row Fisher-Yates
+`scripts/run_bench_permutation.py` times both against a per-row Fisher-Yates
 shuffle at the report's scale of 10,000 permutations over 120,000 pooled
 users; on a 2026-08-07 run (Windows 11, 32-core AMD, numpy 2.4.6)
 argpartition measured 3.0x faster than `argsort` and 2.5x faster than the
@@ -125,11 +129,24 @@ block.
 The bootstrap interval is percentile rather than BCa. Percentile undercovers
 slightly on skewed data; the coverage test measures 90-98% against a nominal
 95% on lognormal arms at n = 400. That is acceptable for mean differences at
-experiment scale, and BCa is the first item in TODO.md.
+experiment scale.
 
 Results come back as frozen dataclasses because `result.p_value` reads better
 in a review than `result[3]`.
 
-Deferred work is in [TODO.md](TODO.md). The conventions I held myself to
-(full type hints, explicit generators, no swallowed errors) are in
-[CLAUDE.md](CLAUDE.md).
+## Conventions
+
+The library holds itself to a few rules throughout. Every public function
+carries full type hints, with `numpy.typing.NDArray[np.float64]` for
+arrays, and returns a frozen dataclass rather than a tuple. Randomness
+always flows through an explicit `numpy.random.Generator` parameter; there
+is no module-level seeding and none of the legacy `np.random.*` API. There
+is no error swallowing. The library has no `except` blocks, inputs fail
+with an explicit `ValueError`, and the report builder is the one documented
+place a failure may be caught, logged, and skipped. Comments explain
+non-obvious decisions only.
+
+On the statistics side, tests are two-sided unless the function name says
+otherwise, p-value adjustment functions take and return arrays in the
+original order, and anything approximate states its accuracy in its
+docstring and has a test pinning it against a published or simulated value.

@@ -59,4 +59,4 @@ ignore = [
 # report prose and markdown tables live in f-strings that cannot wrap. The
 # annotation rules deliberately still apply here: this is the code a reader
 # looks at first, so it holds the same bar as the library.
-"analysis/*" = ["E501"]
+"scripts/*" = ["E501"]

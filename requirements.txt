@@ -1,0 +1,10 @@
+# Direct dependencies only, pinned to the versions this repo was last run
+# with. pyproject.toml carries the loose ranges; this file is the
+# reproducibility record.
+numpy==2.4.6
+scipy==1.17.1
+
+# dev
+matplotlib==3.11.0
+pytest==9.1.1
+ruff==0.15.20

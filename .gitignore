@@ -15,7 +15,8 @@ dist/
 .ruff_cache/
 
 # local tool settings
-.claude/settings.local.json
+.claude/
+CLAUDE.md
 
 # data artifacts and models — analysis/figures/ is committed on purpose
 data/

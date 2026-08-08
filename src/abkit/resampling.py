@@ -115,7 +115,7 @@ def permutation_test_mean_diff(
         # O(n), against O(n log n) to argsort the same keys. A per-row
         # Fisher-Yates shuffle is also O(n), but has to materialize and
         # permute the whole block, and measures about 2.5x slower here
-        # (timed by analysis/bench_permutation.py, run of 2026-08-07).
+        # (timed by scripts/run_bench_permutation.py, run of 2026-08-07).
         # float32 keys halve the memory; they collide for roughly 0.4% of
         # keys at n = 100k, and ties break by position rather than at random,
         # which biases the draw far below the Monte Carlo error of the
