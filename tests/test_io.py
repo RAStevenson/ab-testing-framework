@@ -147,7 +147,7 @@ class TestValidatorRules:
 
     def test_alias_normalized_fires(self, dirty: Experiment) -> None:
         assert self._count(dirty, "alias_normalized") == 1
-        assert np.sum(dirty.rows["group"] == "treatment") == 4  # u03 kept as treatment
+        assert np.sum(dirty.rows["arm"] == "treatment") == 4  # u03 kept as treatment
 
     def test_null_row_dropped_fires(self, dirty: Experiment) -> None:
         assert self._count(dirty, "null_row_dropped") == 1  # u04, empty arm
@@ -163,7 +163,10 @@ class TestValidatorRules:
 
     def test_surviving_row_count(self, dirty: Experiment) -> None:
         # 13 data rows, 4 dropped (null arm, duplicate, negative, uncoercible)
-        assert dirty.rows["group"].size == 9
+        assert dirty.rows["arm"].size == 9
+
+    def test_rows_use_canonical_keys(self, dirty: Experiment) -> None:
+        assert set(dirty.rows) == {"arm", "day", "user_id", "converted", "spend"}
 
     def test_unmapped_arm_raises(self, tmp_path: Path) -> None:
         cfg = load_config(_write_config(tmp_path, _config_text()))  # no alias table

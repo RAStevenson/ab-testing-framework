@@ -245,7 +245,7 @@ def _aggregates_from_rows(
     for arm in arms:
         arm_mask = rows[arm_col] == arm
         for metric in metrics:
-            values = rows[metric.column][arm_mask]
+            values = rows[metric.name][arm_mask]
             n, mean, variance = _aggregate(values)
             out.append(ArmAggregate(arm, metric.name, None, n, mean, variance))
             if checkpoints is not None and day_col is not None:
@@ -275,6 +275,12 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     An arm label that is not in ``arms.labels`` after normalization
     raises ValueError (``unmapped_arm_error``): silently dropping an arm
     would fabricate a split.
+
+    The returned ``rows`` dict uses CANONICAL keys, not the file's column
+    names: ``"arm"``, ``"day"`` and ``"user_id"`` for the structural
+    columns, each metric under its metric NAME, and any extra aliased
+    covariate columns under their raw names. Consumers therefore never
+    need the config to interpret an Experiment.
     """
     columns = config["columns"]
     arm_col: str = columns["arm"]
@@ -371,14 +377,20 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     if not kept[arm_col]:
         raise ValueError(f"no usable rows in {data_path.name} after validation")
 
-    rows: dict[str, NDArray] = {}
-    for column in declared:
-        if column in (arm_col, user_col) or column in extra_alias_cols:
-            rows[column] = np.asarray(kept[column], dtype=object)
-        else:
-            rows[column] = np.asarray(kept[column], dtype=np.float64)
+    # canonical keys so consumers never need the config to read an Experiment;
+    # metrics are keyed per metric NAME, so two metrics sharing one source
+    # column each get their own entry
+    rows: dict[str, NDArray] = {"arm": np.asarray(kept[arm_col], dtype=object)}
+    if day_col:
+        rows["day"] = np.asarray(kept[day_col], dtype=np.float64)
+    if user_col:
+        rows["user_id"] = np.asarray(kept[user_col], dtype=object)
+    for metric in metrics:
+        rows[metric.name] = np.asarray(kept[metric.column], dtype=np.float64)
+    for column in extra_alias_cols:
+        rows[column] = np.asarray(kept[column], dtype=object)
 
-    checkpoints = tuple(float(v) for v in np.unique(rows[day_col])) if day_col is not None else None
+    checkpoints = tuple(float(v) for v in np.unique(rows["day"])) if day_col is not None else None
     validation = tuple(
         ValidationEvent(rule, counts[rule], examples[rule]) for rule in sorted(counts)
     )
@@ -390,7 +402,9 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
         metrics=metrics,
         alpha=config["experiment"]["alpha"],
         rows=rows,
-        aggregates=_aggregates_from_rows(rows, arm_col, day_col, labels, metrics, checkpoints),
+        aggregates=_aggregates_from_rows(
+            rows, "arm", "day" if day_col else None, labels, metrics, checkpoints
+        ),
         checkpoints=checkpoints,
         truth=config.get("truth"),
         validation=validation,

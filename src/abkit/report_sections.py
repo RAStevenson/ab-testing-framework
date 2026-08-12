@@ -1,0 +1,785 @@
+"""Presence-gated section builders: from an Experiment to SectionSpecs.
+
+Each ``sec_*`` function runs one analysis over an ``abkit.io.Experiment``
+and returns a ``SectionSpec`` for the report engine, or ``None`` when the
+analysis is impossible even though the capability gate passed (an
+all-constant metric, say). ``default_sections`` assembles the standard
+report in order. Prose here is the neutral template voice shared by every
+data source; a flagship builder may append its own commentary paragraphs
+to any section body before rendering.
+
+Figures are drawn at section-build time into the given directory.
+matplotlib is imported lazily inside the figure helpers, so the library's
+runtime dependencies stay numpy + scipy for everything except report
+building, matching the existing split where matplotlib is a dev
+dependency of the report scripts.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import numpy as np
+from numpy.typing import NDArray
+from scipy import stats
+
+from abkit.frequentist import (
+    benjamini_hochberg,
+    holm,
+    srm_check,
+    two_proportion_ztest,
+    welch_ttest,
+    welch_ttest_from_stats,
+)
+from abkit.io import ArmAggregate, Experiment, MetricSpec, capabilities, interval_from_cumulative
+from abkit.power import mde_two_proportions
+from abkit.report import FigureSpec, SectionSpec
+from abkit.resampling import bootstrap_mean_diff, permutation_test_mean_diff, trimmed_mean_diff
+from abkit.results import BootstrapResult, MeanComparison, RateComparison
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+
+from abkit.sequential import (
+    design,
+    monitor,
+    z_from_cumulative_counts,
+    z_from_cumulative_stats,
+)
+
+COLOR_CONTROL = "#4269d0"
+COLOR_TREATMENT = "#d4615c"
+COLOR_REFERENCE = "#8a8f98"
+COLOR_INK = "#31343a"
+_EXTRA_ARM_COLORS = ("#7fc97f", "#beaed4", "#fdc086")
+
+
+def pct(x: float, digits: int = 2) -> str:
+    return f"{100 * x:.{digits}f}%"
+
+
+def pp(x: float, digits: int = 2) -> str:
+    return f"{100 * x:.{digits}f} pp"
+
+
+def fmt_p(p: float) -> str:
+    if p < 1e-4:
+        return f"{p:.1e}"
+    return f"{p:.4f}" if p < 0.001 else f"{p:.3f}"
+
+
+def _style_axis(ax: Axes, *, grid_axis: str = "y") -> None:
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(True, axis=grid_axis, alpha=0.25, linewidth=0.8)
+    ax.set_axisbelow(True)
+
+
+def _arm_color(index: int) -> str:
+    if index == 0:
+        return COLOR_CONTROL
+    if index == 1:
+        return COLOR_TREATMENT
+    return _EXTRA_ARM_COLORS[(index - 2) % len(_EXTRA_ARM_COLORS)]
+
+
+def _primary(exp: Experiment) -> MetricSpec:
+    return next(m for m in exp.metrics if m.primary)
+
+
+def _contrasts(exp: Experiment) -> list[tuple[str, str]]:
+    return [(exp.arms[0], arm) for arm in exp.arms[1:]]
+
+
+def _agg(exp: Experiment, arm: str, metric: str, checkpoint: float | None) -> ArmAggregate:
+    for a in exp.aggregates:
+        if a.arm == arm and a.metric == metric and a.checkpoint == checkpoint:
+            return a
+    raise ValueError(f"no aggregate for ({arm}, {metric}, {checkpoint})")
+
+
+def _series(exp: Experiment, arm: str, metric: str) -> tuple[NDArray, NDArray, NDArray]:
+    """Cumulative (n, mean, variance) arrays for one arm and metric, in
+    checkpoint order. Raises if the experiment has no time axis."""
+    cells = sorted(
+        (
+            a
+            for a in exp.aggregates
+            if a.arm == arm and a.metric == metric and a.checkpoint is not None
+        ),
+        key=lambda a: a.checkpoint,
+    )
+    if not cells:
+        raise ValueError(f"no per-checkpoint aggregates for ({arm}, {metric})")
+    return (
+        np.array([c.n for c in cells], dtype=np.float64),
+        np.array([c.mean for c in cells], dtype=np.float64),
+        np.array([c.variance for c in cells], dtype=np.float64),
+    )
+
+
+def _window(
+    n: NDArray, mean: NDArray, variance: NDArray, start: int, end: int
+) -> tuple[int, float, float]:
+    """(n, mean, ddof=1 variance) over cumulative checkpoints start..end-1,
+    via the same sum-of-squares identity as interval_from_cumulative."""
+    sums = n * mean
+    squares = (n - 1.0) * variance + n * mean**2
+    lo_n = 0.0 if start == 0 else n[start - 1]
+    lo_s = 0.0 if start == 0 else sums[start - 1]
+    lo_q = 0.0 if start == 0 else squares[start - 1]
+    w_n = n[end - 1] - lo_n
+    if w_n < 2:
+        raise ValueError(f"window {start}:{end} has fewer than 2 observations")
+    w_mean = (sums[end - 1] - lo_s) / w_n
+    w_var = max(((squares[end - 1] - lo_q) - w_n * w_mean**2) / (w_n - 1.0), 0.0)
+    return int(w_n), float(w_mean), float(w_var)
+
+
+def _successes(agg: ArmAggregate) -> int:
+    return int(round(agg.mean * agg.n))
+
+
+def _cell_test(
+    exp: Experiment, treatment_arm: str, metric: MetricSpec
+) -> RateComparison | MeanComparison:
+    """The appropriate two-sample test for one (contrast, metric) cell,
+    chosen by metric kind and data shape."""
+    control = _agg(exp, exp.arms[0], metric.name, None)
+    treatment = _agg(exp, treatment_arm, metric.name, None)
+    if metric.kind == "binary":
+        return two_proportion_ztest(
+            _successes(control), control.n, _successes(treatment), treatment.n
+        )
+    if exp.rows is not None:
+        mask_c = exp.rows["arm"] == exp.arms[0]
+        mask_t = exp.rows["arm"] == treatment_arm
+        return welch_ttest(exp.rows[metric.name][mask_c], exp.rows[metric.name][mask_t])
+    return welch_ttest_from_stats(
+        control.n, control.mean, control.variance, treatment.n, treatment.mean, treatment.variance
+    )
+
+
+def _effect_and_p(result: RateComparison | MeanComparison) -> tuple[str, float]:
+    if isinstance(result, RateComparison):
+        return pp(result.absolute_lift), result.p_value
+    return f"{result.difference:+.3f}", result.p_value
+
+
+def _contrast_label(exp: Experiment, treatment_arm: str) -> str:
+    return f"{treatment_arm} vs {exp.arms[0]}"
+
+
+def sec_validation(exp: Experiment) -> SectionSpec:
+    """Always renders: what the intake did to the data before any statistic."""
+    sizes = ", ".join(f"{arm} {_agg(exp, arm, _primary(exp).name, None).n:,}" for arm in exp.arms)
+    if exp.validation:
+        rows = "\n".join(f"| {e.rule} | {e.count} | {e.detail} |" for e in exp.validation)
+        body = (
+            f"Arm sizes after validation: {sizes} (denominators are the primary "
+            "metric's). Every change the intake made or refused is listed here, "
+            "because silently cleaned data is how an analysis stops being about "
+            "the experiment that actually ran.\n\n"
+            "| Rule | Rows | Where |\n|---|---|---|\n" + rows
+        )
+    else:
+        body = (
+            f"Arm sizes: {sizes} (denominators are the primary metric's). "
+            "The intake altered nothing and dropped nothing; the data passed "
+            "every validation rule as delivered."
+        )
+    return SectionSpec(key="validation", title="Data validation", body=body)
+
+
+def sec_design_power(exp: Experiment) -> SectionSpec | None:
+    """Sensitivity at the realized sample size, for a binary primary metric."""
+    metric = _primary(exp)
+    if metric.kind != "binary":
+        return None
+    control = _agg(exp, exp.arms[0], metric.name, None)
+    treatment = _agg(exp, exp.arms[1], metric.name, None)
+    if not 0.0 < control.mean < 1.0:
+        return None
+    n_per_arm = min(control.n, treatment.n)
+    mde = mde_two_proportions(control.mean, n_per_arm, alpha=exp.alpha)
+    body = (
+        f"At the realized sample size ({n_per_arm:,} in the smaller arm of the "
+        f"first contrast) and the control rate of {pct(control.mean, 1)}, the "
+        f"smallest absolute lift this experiment could detect with 80% power at "
+        f"alpha {exp.alpha} is {pp(mde, 2)} (the minimum detectable effect, or "
+        "MDE). Effects smaller than that could be real and still produce an "
+        "unremarkable p-value here; that is a property of the sample size, not "
+        "evidence of absence."
+    )
+    return SectionSpec(key="design_power", title="Sensitivity at this sample size", body=body)
+
+
+def sec_srm(exp: Experiment) -> SectionSpec:
+    """Assignment validation: intended-split chi-square when the split is
+    declared, ratio-stability over time when it is not but a time axis
+    exists, and a stated non-test otherwise."""
+    metric = _primary(exp)
+    caps = capabilities(exp)
+    if "intended_split" in caps:
+        lines = ["| Contrast | Control n | Treatment n | Chi-square | p |", "|---|---|---|---|---|"]
+        worst_p = 1.0
+        for control_arm, treatment_arm in _contrasts(exp):
+            i_c = exp.arms.index(control_arm)
+            i_t = exp.arms.index(treatment_arm)
+            share = exp.intended_split[i_t] / (exp.intended_split[i_c] + exp.intended_split[i_t])
+            n_c = _agg(exp, control_arm, metric.name, None).n
+            n_t = _agg(exp, treatment_arm, metric.name, None).n
+            r = srm_check(n_c, n_t, expected_treatment_share=share)
+            worst_p = min(worst_p, r.p_value)
+            lines.append(
+                f"| {_contrast_label(exp, treatment_arm)} | {n_c:,} | {n_t:,} "
+                f"| {r.statistic:.2f} | {fmt_p(r.p_value)} |"
+            )
+        verdict = (
+            "No contrast fails the check (conventional alarm threshold p < 1e-3), "
+            "so the realized split is consistent with the declared one."
+            if worst_p >= 1e-3
+            else "At least one contrast FAILS the check: users went missing or were "
+            "assigned asymmetrically, and no downstream statistic can repair that. "
+            "The results below describe the data as collected, under that cloud."
+        )
+        body = (
+            "A sample-ratio mismatch check (SRM) asks whether the number of users "
+            "who actually landed in each arm matches the intended split; a failure "
+            "means the assignment or logging lost users asymmetrically, which "
+            "biases every metric in ways no downstream statistic can fix.\n\n"
+            + "\n".join(lines)
+            + "\n\n"
+            + verdict
+        )
+    elif "time_axis" in caps:
+        lines = ["| Contrast | Checkpoints | Chi-square | df | p |", "|---|---|---|---|---|"]
+        worst_p = 1.0
+        for control_arm, treatment_arm in _contrasts(exp):
+            nc = _series(exp, control_arm, metric.name)[0]
+            nt = _series(exp, treatment_arm, metric.name)[0]
+            ic = np.diff(nc, prepend=0.0)
+            it = np.diff(nt, prepend=0.0)
+            keep = (ic > 0) | (it > 0)
+            ic, it = ic[keep], it[keep]
+            share = it.sum() / (ic.sum() + it.sum())
+            expected_t = (ic + it) * share
+            expected_c = (ic + it) * (1.0 - share)
+            statistic = float(
+                np.sum((it - expected_t) ** 2 / expected_t + (ic - expected_c) ** 2 / expected_c)
+            )
+            df = int(ic.size - 1)
+            p = float(stats.chi2.sf(statistic, df=df)) if df > 0 else float("nan")
+            worst_p = min(worst_p, p)
+            lines.append(
+                f"| {_contrast_label(exp, treatment_arm)} | {ic.size} | {statistic:.2f} "
+                f"| {df} | {fmt_p(p)} |"
+            )
+        verdict = (
+            "The arm ratio is stable across checkpoints in every contrast "
+            "(alarm threshold p < 1e-3), which is the strongest assignment check "
+            "available without a declared split."
+            if worst_p >= 1e-3
+            else "The arm ratio SHIFTS over time in at least one contrast (p < 1e-3). "
+            "A ratio that drifts mid-experiment is sample-ratio-mismatch evidence "
+            "regardless of what split was intended, and it dates the breakage."
+        )
+        body = (
+            "The intended allocation for this experiment is not on record, so a "
+            "direct sample-ratio mismatch (SRM) test against it is impossible. "
+            "What can be tested without it is RATIO STABILITY. Whichever split was "
+            "intended, it was presumably constant, so the share of new users "
+            "landing in each arm should not change across checkpoints. The test "
+            "below is a chi-square for homogeneity of the per-checkpoint "
+            "assignment counts (denominators from the primary metric).\n\n"
+            + "\n".join(lines)
+            + "\n\n"
+            + verdict
+        )
+    else:
+        sizes = ", ".join(f"{arm} {_agg(exp, arm, metric.name, None).n:,}" for arm in exp.arms)
+        body = (
+            f"Observed arm sizes: {sizes}. The intended allocation is not on "
+            "record and the data has no time axis, so neither a direct "
+            "sample-ratio mismatch test nor a ratio-stability test is possible. "
+            "The sizes are reported for the reader's own judgement, and that "
+            "absence of a check is itself worth knowing."
+        )
+    return SectionSpec(key="srm", title="Assignment validation", body=body)
+
+
+def sec_primary(exp: Experiment) -> SectionSpec:
+    """The primary metric, per contrast."""
+    metric = _primary(exp)
+    lines = ["| Contrast | Effect | 95% CI | p |", "|---|---|---|---|"]
+    for _, treatment_arm in _contrasts(exp):
+        r = _cell_test(exp, treatment_arm, metric)
+        if isinstance(r, RateComparison):
+            effect = pp(r.absolute_lift)
+            ci = f"{pp(r.ci_low)} to {pp(r.ci_high)}"
+        else:
+            effect = f"{r.difference:+.3f}"
+            ci = f"{r.ci_low:+.3f} to {r.ci_high:+.3f}"
+        lines.append(
+            f"| {_contrast_label(exp, treatment_arm)} | {effect} | {ci} | {fmt_p(r.p_value)} |"
+        )
+    body = (
+        f"The primary metric is **{metric.name}** ({metric.kind}). Each treatment "
+        "arm is compared against control; the test is a pooled two-proportion "
+        "z-test for binary metrics and a Welch t-test for continuous ones.\n\n" + "\n".join(lines)
+    )
+    return SectionSpec(key="primary", title="Primary metric", body=body)
+
+
+def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
+    """Early-versus-late effect comparison over the time axis."""
+    metric = _primary(exp)
+    k = len(exp.checkpoints)
+    w = max(1, k // 3)
+    control_arm = exp.arms[0]
+    try:
+        series_c = _series(exp, control_arm, metric.name)
+    except ValueError:
+        return None
+
+    lines = ["| Contrast | Early effect | Late effect | Decay z | p |", "|---|---|---|---|---|"]
+    for _, treatment_arm in _contrasts(exp):
+        series_t = _series(exp, treatment_arm, metric.name)
+        try:
+            e_c = _window(*series_c, 0, w)
+            l_c = _window(*series_c, k - w, k)
+            e_t = _window(*series_t, 0, w)
+            l_t = _window(*series_t, k - w, k)
+        except ValueError:
+            return None
+        early = e_t[1] - e_c[1]
+        late = l_t[1] - l_c[1]
+        se_early = np.sqrt(e_c[2] / e_c[0] + e_t[2] / e_t[0])
+        se_late = np.sqrt(l_c[2] / l_c[0] + l_t[2] / l_t[0])
+        if se_early == 0.0 or se_late == 0.0:
+            return None
+        decay_z = float((early - late) / np.hypot(se_early, se_late))
+        decay_p = float(2.0 * stats.norm.sf(abs(decay_z)))
+        early_s = pp(early) if metric.kind == "binary" else f"{early:+.3f}"
+        late_s = pp(late) if metric.kind == "binary" else f"{late:+.3f}"
+        lines.append(
+            f"| {_contrast_label(exp, treatment_arm)} | {early_s} | {late_s} "
+            f"| {decay_z:.2f} | {fmt_p(decay_p)} |"
+        )
+
+    _fig_novelty(exp, metric, figdir)
+    body = (
+        "A treatment effect that fades within the run is the signature of a "
+        "novelty effect, where users react to the change itself and the "
+        "reaction decays. The comparison below tests the first "
+        f"{w} checkpoint(s) against the last {w} directly, because two "
+        "separately-significant windows are not by themselves evidence that the "
+        "windows differ. Interval values are recovered from the cumulative "
+        "series by differencing; {{fig:novelty}} shows the per-interval means.\n\n"
+        + "\n".join(lines)
+        + "\n\nA significant decay means the end-of-run headline overstates the "
+        "persistent effect, and the late window is the honest number to quote."
+    )
+    return SectionSpec(
+        key="novelty",
+        title="Effect stability over time",
+        body=body,
+        requires=frozenset({"time_axis"}),
+        figures=(FigureSpec("novelty", "novelty.png", f"Per-interval {metric.name} by arm"),),
+    )
+
+
+def _fig_novelty(exp: Experiment, metric: MetricSpec, figdir: Path) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(8, 4.2))
+    for i, arm in enumerate(exp.arms):
+        n, mean, var = _series(exp, arm, metric.name)
+        int_n, int_mean, _ = interval_from_cumulative(n, mean, var)
+        checkpoints = np.asarray(exp.checkpoints, dtype=np.float64)
+        ax.plot(
+            checkpoints,
+            int_mean,
+            color=_arm_color(i),
+            linewidth=2,
+            marker="o",
+            markersize=4,
+            label=arm,
+        )
+    ax.set_xlabel("Checkpoint")
+    ax.set_ylabel(f"Interval mean of {metric.name}")
+    ax.set_title("Per-interval means by arm", loc="left", color=COLOR_INK)
+    ax.legend(frameon=False, fontsize=9)
+    _style_axis(ax)
+    fig.tight_layout()
+    figdir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(figdir / "novelty.png", dpi=150)
+    plt.close(fig)
+
+
+def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
+    """Replay of the run as sequential looks under an alpha-spending design,
+    against the naive fixed-threshold rule. First contrast only: a
+    monitoring design guards one comparison."""
+    metric = _primary(exp)
+    control_arm, treatment_arm = _contrasts(exp)[0]
+    try:
+        nc, mean_c, var_c = _series(exp, control_arm, metric.name)
+        nt, mean_t, var_t = _series(exp, treatment_arm, metric.name)
+    except ValueError:
+        return None
+    total = nc + nt
+    if total[-1] <= 0 or np.any(np.diff(total) <= 0):
+        return None
+    fractions = total / total[-1]
+    if metric.kind == "binary":
+        xc = np.round(mean_c * nc)
+        xt = np.round(mean_t * nt)
+        z_path = z_from_cumulative_counts(xc, nc, xt, nt)
+    else:
+        z_path = z_from_cumulative_stats(nc, mean_c, var_c, nt, mean_t, var_t)
+    seq = design(fractions.tolist(), alpha=exp.alpha, spending="obrien-fleming")
+    outcome = monitor(z_path.tolist(), seq)
+    naive_crossings = np.nonzero(np.abs(z_path) >= 1.96)[0]
+    naive_look = int(naive_crossings[0]) + 1 if naive_crossings.size else None
+
+    _fig_sequential(z_path, np.array(seq.boundaries), figdir)
+
+    if outcome.stopped_at_look is not None:
+        spend_sentence = (
+            f"The spending design first crosses at look {outcome.stopped_at_look} "
+            f"of {len(fractions)}, at which point stopping is justified with the "
+            "full run's false-positive guarantee intact."
+        )
+    else:
+        spend_sentence = (
+            f"The spending design never crosses in {len(fractions)} looks: under "
+            "monitoring priced for peeking, this run does not support stopping "
+            "early in either direction."
+        )
+    if naive_look is not None:
+        naive_sentence = f"The naive rule would have called the result at look {naive_look}" + (
+            ", earlier than the spending design and on evidence the design "
+            "does not consider sufficient."
+            if outcome.stopped_at_look is None or naive_look < outcome.stopped_at_look
+            else "."
+        )
+    else:
+        naive_sentence = "The naive rule never fires either; the two agree on this run."
+
+    body = (
+        "Anyone watching a dashboard peeks. Checking the result at every "
+        "checkpoint against a fixed |z| > 1.96 threshold (the naive rule) "
+        "inflates the false-positive rate well beyond the nominal alpha, "
+        "because every look is another chance to be fooled. An alpha-spending "
+        "design prices the peeking by allocating the total alpha across the "
+        "realized look schedule and computing a boundary for each look "
+        "(O'Brien-Fleming spending, stingy early and generous late). "
+        "{{fig:sequential}} shows the observed |z| path against both rules "
+        f"for the first contrast ({_contrast_label(exp, treatment_arm)}), which "
+        "is the comparison a monitoring design would have guarded.\n\n"
+        + spend_sentence
+        + " "
+        + naive_sentence
+        + "\n\nEven a correctly-stopped estimate is biased away from zero at the "
+        "stopping look; monitoring is a tool for catching regressions early, "
+        "not for shipping winners early."
+    )
+    return SectionSpec(
+        key="sequential",
+        title="What sequential monitoring would have decided",
+        body=body,
+        requires=frozenset({"time_axis"}),
+        figures=(
+            FigureSpec(
+                "sequential",
+                "sequential.png",
+                "Observed |z| against spending boundaries and the naive threshold",
+            ),
+        ),
+    )
+
+
+def _fig_sequential(z_path: NDArray, boundaries: NDArray, figdir: Path) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    looks = np.arange(1, z_path.size + 1)
+    fig, ax = plt.subplots(figsize=(8, 4.4))
+    ax.plot(
+        looks,
+        np.abs(z_path),
+        color=COLOR_CONTROL,
+        linewidth=2,
+        marker="o",
+        markersize=5,
+        label="Observed |z|",
+    )
+    finite = np.isfinite(boundaries)
+    ax.plot(
+        looks[finite],
+        boundaries[finite],
+        color=COLOR_INK,
+        linewidth=2,
+        drawstyle="steps-mid",
+        label="O'Brien-Fleming boundary",
+    )
+    ax.axhline(
+        1.96,
+        color=COLOR_REFERENCE,
+        linewidth=1.5,
+        linestyle="--",
+        label="Naive fixed threshold (1.96)",
+    )
+    ax.set_xlabel("Look")
+    ax.set_ylabel("|z|")
+    top_vals = [float(np.abs(z_path).max()), 1.96]
+    if finite.any():
+        top_vals.append(float(boundaries[finite].max()))
+    ax.set_ylim(top=1.2 * max(top_vals))
+    ax.set_title("Sequential monitoring replay", loc="left", color=COLOR_INK)
+    ax.legend(frameon=False, loc="upper right", fontsize=9)
+    _style_axis(ax)
+    fig.tight_layout()
+    figdir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(figdir / "sequential.png", dpi=150)
+    plt.close(fig)
+
+
+def sec_corrections(exp: Experiment, figdir: Path) -> SectionSpec | None:
+    """Multiple-comparison corrections over the non-primary family."""
+    metric_primary = _primary(exp)
+    family: list[tuple[MetricSpec, str]] = [
+        (m, t) for m in exp.metrics if not m.primary for _, t in _contrasts(exp)
+    ]
+    if not family:
+        family = [(metric_primary, t) for _, t in _contrasts(exp)]
+    if len(family) < 2:
+        return None
+    results = [_cell_test(exp, arm, m) for m, arm in family]
+    naive = np.array([r.p_value for r in results])
+    holm_ps = holm(naive)
+    bh_ps = benjamini_hochberg(naive)
+
+    lines = [
+        "| Metric | Contrast | Effect | Unadjusted p | Holm p | BH q |",
+        "|---|---|---|---|---|---|",
+    ]
+    for (m, arm), r, h, b in zip(family, results, holm_ps, bh_ps, strict=True):
+        effect, p = _effect_and_p(r)
+        lines.append(
+            f"| {m.name} | {_contrast_label(exp, arm)} | {effect} | {fmt_p(p)} "
+            f"| {fmt_p(float(h))} | {fmt_p(float(b))} |"
+        )
+    n_naive = int(np.sum(naive < exp.alpha))
+    n_holm = int(np.sum(holm_ps < exp.alpha))
+    family_error = 1.0 - (1.0 - exp.alpha) ** len(family)
+    body = (
+        f"This experiment carries {len(family)} non-primary comparisons. Testing "
+        "each at alpha "
+        f"{exp.alpha} without adjustment gives a "
+        f"{family_error:.0%} chance of at least one false alarm even if nothing "
+        "moved, so the family is adjusted two ways: Holm, which controls the "
+        "chance of ANY false claim (the right standard for a ship decision), "
+        "and Benjamini-Hochberg, which controls the false-discovery RATE (the "
+        "right standard for a screen that feeds follow-ups).\n\n"
+        + "\n".join(lines)
+        + f"\n\nUnadjusted, {n_naive} comparison(s) clear alpha; after Holm, "
+        f"{n_holm} survive. {{{{fig:corrections}}}} shows each comparison's "
+        "p-value before and after adjustment."
+    )
+    _fig_corrections([f"{m.name}, {arm}" for m, arm in family], naive, holm_ps, exp.alpha, figdir)
+    return SectionSpec(
+        key="corrections",
+        title="Multiple comparisons",
+        body=body,
+        requires=frozenset({"multi_metric"}),
+        figures=(
+            FigureSpec(
+                "corrections", "corrections.png", "Unadjusted versus Holm-adjusted p-values"
+            ),
+        ),
+    )
+
+
+def _fig_corrections(
+    labels: list[str], naive: NDArray, adjusted: NDArray, alpha: float, figdir: Path
+) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(8, 0.55 * len(labels) + 1.8))
+    y = np.arange(len(labels))
+    ax.scatter(naive, y, s=55, color=COLOR_CONTROL, label="Unadjusted p", zorder=3)
+    ax.scatter(adjusted, y, s=55, color=COLOR_TREATMENT, marker="s", label="Holm p", zorder=3)
+    for yi in y:
+        ax.plot([naive[yi], adjusted[yi]], [yi, yi], color=COLOR_REFERENCE, linewidth=1, zorder=2)
+    ax.axvline(alpha, color=COLOR_REFERENCE, linewidth=1.5, linestyle="--")
+    ax.set_yticks(y, labels)
+    ax.set_xscale("log")
+    ax.set_xlabel("p-value (log scale)")
+    ax.set_title("Adjustment across the comparison family", loc="left", color=COLOR_INK)
+    ax.legend(frameon=False, fontsize=9)
+    ax.invert_yaxis()
+    _style_axis(ax, grid_axis="x")
+    fig.tight_layout()
+    figdir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(figdir / "corrections.png", dpi=150)
+    plt.close(fig)
+
+
+def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> SectionSpec | None:
+    """Resampling-based analysis of a heavy-tailed continuous metric."""
+    metric = (
+        _primary(exp)
+        if _primary(exp).kind == "continuous"
+        else next((m for m in exp.metrics if m.kind == "continuous"), None)
+    )
+    if metric is None:
+        return None
+    control_arm, treatment_arm = _contrasts(exp)[0]
+    x = exp.rows[metric.name][exp.rows["arm"] == control_arm]
+    y = exp.rows[metric.name][exp.rows["arm"] == treatment_arm]
+    if x.size < 2 or y.size < 2 or (x.var(ddof=1) == 0.0 and y.var(ddof=1) == 0.0):
+        return None
+    welch = welch_ttest(x, y)
+    boot = bootstrap_mean_diff(x, y, rng=rng, n_resamples=10_000)
+    perm = permutation_test_mean_diff(x, y, rng=rng, n_permutations=10_000)
+    trimmed = trimmed_mean_diff(x, y, trim=0.01)
+    zero_share = float(np.mean(np.concatenate([x, y]) == 0.0))
+
+    _fig_heavy_tail(x, y, welch, boot, trimmed, metric.name, figdir)
+    agreement = (
+        "The three same-estimand methods agree here, which is what a well-behaved tail looks like."
+        if (welch.p_value < exp.alpha) == (perm.p_value < exp.alpha)
+        and (boot.ci_low > 0) == (welch.ci_low > 0)
+        else "The methods DISAGREE at the alpha line. That disagreement is the "
+        "finding. It says the estimate rests on the tail, and the honest move "
+        "is to report it rather than quote whichever method crossed the line."
+    )
+    body = (
+        f"**{metric.name}** is the kind of metric where a few extreme users can "
+        "carry the average"
+        + (f" ({pct(zero_share, 0)} of users sit at zero here)" if zero_share > 0.5 else "")
+        + ", so it gets four looks that stress the tail differently: a Welch "
+        "t-test (relies on the normal approximation of the mean), a percentile "
+        "bootstrap (resamples the observed tail), a permutation test (exact "
+        "under the null that the arms' distributions are identical), and a "
+        "trimmed-mean difference (a diagnostic for tail dependence, "
+        "deliberately a different estimand).\n\n"
+        f"| Method | Estimate | Interval / p |\n|---|---|---|\n"
+        f"| Welch t-test | {welch.difference:+.3f} | 95% CI {welch.ci_low:+.3f} "
+        f"to {welch.ci_high:+.3f}, p = {fmt_p(welch.p_value)} |\n"
+        f"| Percentile bootstrap | {boot.estimate:+.3f} | 95% CI {boot.ci_low:+.3f} "
+        f"to {boot.ci_high:+.3f} |\n"
+        f"| Permutation test | {perm.observed:+.3f} | p = {fmt_p(perm.p_value)} |\n"
+        f"| Trimmed mean diff (1%) | {trimmed:+.3f} | different estimand |\n\n"
+        f"{{{{fig:heavy_tail}}}} shows the distributions and the interval "
+        f"comparison for the first contrast ({_contrast_label(exp, treatment_arm)}). " + agreement
+    )
+    return SectionSpec(
+        key="heavy_tail",
+        title=f"Heavy-tailed metric: {metric.name}",
+        body=body,
+        requires=frozenset({"user_rows", "continuous_metric"}),
+        figures=(
+            FigureSpec("heavy_tail", "heavy_tail.png", "Distribution and interval comparison"),
+        ),
+    )
+
+
+def _fig_heavy_tail(
+    x: NDArray,
+    y: NDArray,
+    welch: MeanComparison,
+    boot: BootstrapResult,
+    trimmed: float,
+    metric_name: str,
+    figdir: Path,
+) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.2))
+    pos_x, pos_y = x[x > 0], y[y > 0]
+    if pos_x.size and pos_y.size:
+        top = float(max(pos_x.max(), pos_y.max()))
+        bins = np.geomspace(max(min(pos_x.min(), pos_y.min()), 1e-9), top, 40)
+        ax1.hist(
+            pos_x, bins=bins, histtype="step", linewidth=2, color=COLOR_CONTROL, label="control"
+        )
+        ax1.hist(
+            pos_y, bins=bins, histtype="step", linewidth=2, color=COLOR_TREATMENT, label="treatment"
+        )
+        ax1.set_xscale("log")
+        ax1.set_yscale("log")
+    ax1.set_xlabel(f"{metric_name} per user, positive values (log scale)")
+    ax1.set_ylabel("Users (log scale)")
+    ax1.set_title("Positive-value distribution by arm", loc="left", color=COLOR_INK, fontsize=10)
+    ax1.legend(frameon=False, fontsize=9)
+    _style_axis(ax1)
+
+    ax2.axvline(0, color=COLOR_REFERENCE, linewidth=1.5, linestyle="--")
+    intervals = [
+        ("Welch 95% CI", welch.difference, welch.ci_low, welch.ci_high),
+        ("Bootstrap 95% CI", boot.estimate, boot.ci_low, boot.ci_high),
+    ]
+    for yi, (_, center, lo, hi) in enumerate(intervals):
+        ax2.plot([lo, hi], [yi, yi], color=COLOR_CONTROL, linewidth=2)
+        ax2.plot(center, yi, "o", color=COLOR_INK, markersize=7)
+    ax2.plot(trimmed, len(intervals), "D", color=COLOR_TREATMENT, markersize=7)
+    labels = [label for label, *_ in intervals] + ["Trimmed diff (1%)\ndifferent estimand"]
+    ax2.set_yticks(np.arange(len(labels)), labels)
+    ax2.set_xlabel(f"{metric_name} difference (treatment - control)")
+    ax2.set_title("Interval comparison", loc="left", color=COLOR_INK, fontsize=10)
+    ax2.invert_yaxis()
+    _style_axis(ax2, grid_axis="x")
+    fig.tight_layout()
+    figdir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(figdir / "heavy_tail.png", dpi=150)
+    plt.close(fig)
+
+
+def sec_truth(exp: Experiment) -> SectionSpec:
+    """For synthetic data only: the parameters the generator actually used."""
+    rows = "\n".join(f"| {k} | {v} |" for k, v in sorted(exp.truth.items()))
+    body = (
+        "This data is SYNTHETIC, and that is disclosed here rather than in a "
+        "footnote. The generator's parameters below are the exam key the "
+        "analysis above can be scored against. No real-data section of any "
+        "report produced by this pipeline carries this section, which is "
+        "itself the honest signal of which results came from manufactured "
+        "data.\n\n| Parameter | Value |\n|---|---|\n" + rows
+    )
+    return SectionSpec(
+        key="truth",
+        title="What the generator actually did",
+        body=body,
+        requires=frozenset({"truth"}),
+    )
+
+
+def default_sections(exp: Experiment, rng: np.random.Generator, figdir: Path) -> list[SectionSpec]:
+    """The standard report, in order, with impossible sections omitted."""
+    caps = capabilities(exp)
+    candidates = [
+        sec_validation(exp),
+        sec_design_power(exp),
+        sec_srm(exp),
+        sec_primary(exp),
+        sec_novelty(exp, figdir) if "time_axis" in caps else None,
+        sec_sequential(exp, figdir) if "time_axis" in caps else None,
+        sec_corrections(exp, figdir) if "multi_metric" in caps else None,
+        sec_heavy_tail(exp, rng, figdir) if {"user_rows", "continuous_metric"} <= caps else None,
+        sec_truth(exp) if "truth" in caps else None,
+    ]
+    return [s for s in candidates if s is not None]
