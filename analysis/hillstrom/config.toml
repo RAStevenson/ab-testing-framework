@@ -12,16 +12,15 @@ The data is Kevin Hillstrom's MineThatData E-Mail Analytics And Data
 Mining Challenge (2008): 64,000 customers of a retailer randomly
 assigned in thirds to a men's merchandise e-mail, a women's merchandise
 e-mail, or no e-mail, with site visits, conversion, and dollars spent
-tracked for the following two weeks. It is real, user-level, and the
-standard public benchmark for incremental-lift analysis. The publisher
+tracked for the following two weeks. It is real user-level data and a
+widely used public benchmark for incremental-lift analysis. The publisher
 never stated a license, so the file is fetched from its original URL by
 scripts/run_fetch_hillstrom.py (SHA-256 pinned there) rather than
 redistributed in this repository. The data carries no per-day fields,
 so the time-based sections do not appear below; that omission is the
 report adapting to the data. It does carry a genuine data wart, the
 misspelled category value the validation section records normalizing,
-which is exactly the kind of cleaning a real intake has to own out
-loud."""
+which is the kind of cleaning a real intake has to own out loud."""
 
 [input]
 shape = "user_rows"

@@ -116,7 +116,16 @@ def render_report(
                 )
             return str(section_number[key])
         if key not in figure_number:
-            raise ReportBuildError(f"{where} references unknown figure {key!r}")
+            supplied = {f.key for sec in sections for f in sec.figures}
+            raise ReportBuildError(
+                f"{where} references figure {key!r} which "
+                + (
+                    "belongs to a section that did not render under the current data"
+                    if key in supplied
+                    else "does not exist"
+                )
+                + "; gate the referencing text on the same requirements"
+            )
         return f"Figure {figure_number[key]}"
 
     out: list[str] = [header.rstrip() + "\n"]

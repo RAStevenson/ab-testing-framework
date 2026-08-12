@@ -9,7 +9,9 @@ conversion, and spend outcomes over the following two weeks
 Its publisher never stated a license, so this repository does NOT
 redistribute the file. This script downloads it from the original,
 still-live URL into data/hillstrom/ (gitignored), verifies the pinned
-SHA-256, and refuses a file that does not match, so the committed
+SHA-256, and refuses a file that does not match (keeping the rejected
+bytes beside the cache for review; note the 60s timeout is per socket
+operation, not a total-download deadline), so the committed
 analysis can never silently describe different data. Downloading at run
 time from the source is the same pattern TensorFlow Datasets and
 causeinfer use for this dataset.
@@ -57,18 +59,24 @@ def main() -> int:
         print(f"error: download failed: {error}", file=sys.stderr)
         return 2
 
-    digest = hashlib.sha256(tmp.read_bytes()).hexdigest()
-    if digest != EXPECTED_SHA256:
-        tmp.unlink()
-        print(
-            f"error: downloaded file has sha256 {digest}, but this repo pins "
-            f"{EXPECTED_SHA256}. The upstream file has changed; review it "
-            "before re-pinning, because the committed analysis describes the "
-            "pinned version.",
-            file=sys.stderr,
-        )
+    try:
+        digest = hashlib.sha256(tmp.read_bytes()).hexdigest()
+        if digest != EXPECTED_SHA256:
+            rejected = DEST.with_suffix(".rejected")
+            tmp.replace(rejected)
+            print(
+                f"error: downloaded file has sha256 {digest}, but this repo pins "
+                f"{EXPECTED_SHA256}. The bytes are kept at {rejected} for "
+                "review (the payload may also be an error page rather than the "
+                "CSV); re-pin only after reviewing, because the committed "
+                "analysis describes the pinned version.",
+                file=sys.stderr,
+            )
+            return 2
+        tmp.replace(DEST)
+    except OSError as error:
+        print(f"error: could not finalize the download: {error}", file=sys.stderr)
         return 2
-    tmp.replace(DEST)
     print(f"fetched and verified: {DEST} ({DEST.stat().st_size:,} bytes)")
     print(
         "data: Kevin Hillstrom, MineThatData E-Mail Analytics And Data "

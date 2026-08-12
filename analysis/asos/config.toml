@@ -1,4 +1,4 @@
-# The ASOS real-data demo: a deep dive on one experiment from the ASOS
+# The ASOS real-data demo: a close read of one experiment from the ASOS
 # Digital Experiments Dataset, plus (via --sweep) a whole-archive
 # summary. Reproduce with:
 #   python scripts/run_analyze_experiment.py --config analysis/asos/config.toml --sweep
@@ -14,11 +14,12 @@ Couturier, McCoy, NeurIPS 2021, DOI 10.17605/OSF.IO/64JSB, CC BY 4.0;
 provenance and integrity notes in data/asos/LICENSE-DATA.md). Metrics
 are anonymized by the publisher; metric 1 is binary and metrics 2 to 4
 are right-skewed continuous quantities, so those are the only honest
-names available. The deep dive reads experiment 54a85a, chosen by a rule
-fixed before any results were seen: the one experiment the dataset's own
-datasheet flags for a possible primacy effect, provided its variances
-are complete at every checkpoint, with the complete-variance experiment
-having the most checkpoints as the fallback. 54a85a met the condition.
+names available. The single-experiment analysis below reads experiment
+54a85a, chosen by a rule that does not look at results. The rule takes
+the one experiment the dataset's own datasheet flags for a possible
+primacy effect, provided its variances are complete at every checkpoint,
+with the complete-variance experiment having the most checkpoints as the
+fallback. 54a85a met the condition.
 Because no user-level rows exist, the resampling analyses do not appear
 below; that omission is the report adapting to the data rather than an
 oversight."""

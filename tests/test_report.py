@@ -83,7 +83,21 @@ class TestFailures:
 
     def test_reference_to_unknown_figure_fails_build(self) -> None:
         sections = [SectionSpec(key="a", title="A", body="See {{fig:ghost}}.")]
-        with pytest.raises(ReportBuildError, match="unknown figure"):
+        with pytest.raises(ReportBuildError, match="does not exist"):
+            render_report("# T", sections, frozenset(), "f")
+
+    def test_reference_to_dropped_sections_figure_names_the_gate(self) -> None:
+        sections = [
+            SectionSpec(key="a", title="A", body="See {{fig:decay}}."),
+            SectionSpec(
+                key="timed",
+                title="B",
+                body="{{fig:decay}}",
+                requires=frozenset({"time_axis"}),
+                figures=(FigureSpec("decay", "d.png", "Decay"),),
+            ),
+        ]
+        with pytest.raises(ReportBuildError, match="did not render under the current data"):
             render_report("# T", sections, frozenset(), "f")
 
     def test_duplicate_section_keys_fail_build(self) -> None:

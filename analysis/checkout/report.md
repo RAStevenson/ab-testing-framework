@@ -10,7 +10,8 @@ Because the data are synthetic, the true effects are known, and that is the
 point. At the end I compare what the analysis concluded against what the
 generator actually did. Everything here is produced by `scripts/run_build_checkout_report.py`
 with fixed seeds; the library functions it calls live in `src/abkit/`, and the
-document is rendered by the same engine that analyzes a user's own data.
+document is rendered by the same engine that renders reports on a user's own
+data (`run_analyze_experiment.py`).
 
 ## 1. Design and power
 
@@ -71,8 +72,8 @@ Splitting the window confirms it:
 | Days 0-2 | 1.29 pp | 0.68 pp to 1.91 pp | 3.4e-05 |
 | Days 10-13 | 0.23 pp | -0.28 pp to 0.75 pp | 0.371 |
 
-Two non-overlapping intervals are not by themselves evidence that the windows
-differ, so I tested the decay directly rather than eyeballing the table. The
+Comparing two confidence intervals by eye is not a test of the difference
+between them, so I tested the decay directly rather than eyeballing the table. The
 early-minus-late difference is 1.06 pp (SE 0.41 pp),
 z = 2.60, p = 0.009. The fade is real, not an artifact of
 reading two intervals side by side.
@@ -106,12 +107,14 @@ z path.
 
 The naive rule would have stopped at **look 1**, when the novelty
 effect was near its peak, locking in a cumulative lift of
-1.36 pp - about 3x the persistent effect.
+1.36 pp - about 3.4x the persistent effect.
 The spending design first crosses at **look 4**,
 spending almost no alpha in the noisy early days. In fact it spends so little
-that the first look has no finite boundary at all. Under O'Brien-Fleming
-there is no z-statistic on day 1 large enough to stop the experiment, which is
-why the boundary line in the figure starts at look 2.
+that the first look has no finite boundary at all: the alpha allocated there
+falls below the library's 1e-10 floor, where the boundary would exceed 6.4
+sigma and the look is treated as unspendable, so no realistic day-1
+z-statistic can stop the experiment, and the boundary line in the figure
+starts at look 2.
 Under a true null on this exact look schedule, simulation (100,000 runs)
 puts the naive rule's false-positive rate at 21.9% against the
 nominal 5%; the spending design holds 4.9%.
@@ -146,8 +149,8 @@ ship decision) and Benjamini-Hochberg (FDR control, the right tool for a
 screening pass) push every metric back above the line.
 
 The seed here was chosen to land on a run that exhibits the false positive.
-Across fresh draws only about 23% of runs produce exactly one nominally
-significant metric, and most produce none. That is a deliberate choice to show
+Under six independent true nulls only about 23% of runs would produce exactly
+one nominally significant metric, and most would produce none. That is a deliberate choice to show
 the machinery working, not a typical draw, and it seemed worth saying out loud
 in a document whose whole argument is about not reading luck as signal.
 Figure 3 shows the adjustment pulling the flagged metric
@@ -205,7 +208,7 @@ with this tail the experiment only had roughly
 6% power to detect it (using the realized sample
 standard deviation of 130, itself an unstable estimate under an
 infinite-variance tail). The generator draws whale amounts from the same distribution in both
-arms, so every bit of the whale imbalance between arms is sampling noise *by
+arms, so which arm the largest whales landed in is sampling noise *by
 construction*. A method that reads that imbalance as effect is reading noise,
 and we know it is noise because we built the data.
 
@@ -228,7 +231,7 @@ were all planned; the disagreement itself is the finding, and it says
 | Persistent conversion lift | 0.4 pp | 0.67 pp | 0.23 pp (days 10-13, CI -0.28 pp to 0.75 pp) |
 | Day-0 novelty boost | 0.8 pp | not separately reported | decay visible in the daily-lift panel in section 4 |
 | Secondary metric lifts | 0 on all six | one naive false positive | none significant after Holm |
-| Revenue per user diff | +0.32 | +1.23 | interval spanning zero; underpowered |
+| Revenue per user diff | +0.32 | +1.23 | Welch interval spanning zero; underpowered |
 
 The pipeline got the qualitative story right everywhere. It caught the broken
 first run, flagged the novelty inflation instead of shipping the headline
@@ -238,7 +241,7 @@ help is where the data simply do not contain the answer - the persistent
 lift and the revenue effect both need more time or a better metric, and the
 report says so rather than manufacturing certainty.
 
-## Recommendation
+### Recommendation
 
 Ship the redesign on the strength of the conversion result, quote the
 late-window interval rather than the headline, keep a 5% holdback for four

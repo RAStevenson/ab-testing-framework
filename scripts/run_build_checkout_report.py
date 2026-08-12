@@ -86,6 +86,16 @@ SEED_PERMUTATION = int(_TRUTH["seeds"]["permutation"])
 SEED_NULL_SIM = int(_TRUTH["seeds"]["null_sim"])
 
 SECONDARY_METRICS = list(_TRUTH["secondary_metrics"])
+ALPHA = float(_CFG["experiment"]["alpha"])
+# the naive rule being replayed is the conventional dashboard threshold,
+# which practitioners quote to two decimals (1.96 at alpha 0.05)
+Z_NAIVE = float(np.round(stats.norm.isf(ALPHA / 2.0), 2))
+
+if N_DAYS != 14:
+    raise RuntimeError(
+        "the novelty windows (days 0-2 vs 10-13) and their prose labels are "
+        "written for the 14-day design; change them together with n_days"
+    )
 
 _SMALL_NUMBERS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
 
@@ -337,17 +347,18 @@ Because the data are synthetic, the true effects are known, and that is the
 point. At the end I compare what the analysis concluded against what the
 generator actually did. Everything here is produced by `scripts/run_build_checkout_report.py`
 with fixed seeds; the library functions it calls live in `src/abkit/`, and the
-document is rendered by the same engine that analyzes a user's own data."""
+document is rendered by the same engine that renders reports on a user's own
+data (`run_analyze_experiment.py`)."""
 
     # ------------------------------------------------------------- design
-    n_required = sample_size_two_proportions(BASE_RATE, BASE_RATE + TRUE_LIFT)
+    n_required = sample_size_two_proportions(BASE_RATE, BASE_RATE + TRUE_LIFT, alpha=ALPHA)
     sections.append(
         SectionSpec(
             key="design_power",
             title="Design and power",
             body=f"""The primary metric is checkout conversion, baseline {pct(BASE_RATE, 1)}. The
 smallest effect worth shipping was set at +{pp(TRUE_LIFT, 1)} absolute. For a
-two-sided test at alpha 0.05 and 80% power, that needs
+two-sided test at alpha {ALPHA} and 80% power, that needs
 **{n_required:,} users per arm** (`sample_size_two_proportions`), so the
 experiment was sized at {N_USERS:,} users over {N_DAYS} days with a 50/50
 split, giving roughly {N_USERS // 2:,} per arm - some margin over the minimum.""",
@@ -423,17 +434,27 @@ forecast on, for the reason in the next section.""",
         )
     )
 
+    if primary.p_value >= 1e-3:
+        raise RuntimeError(
+            "the primary result is narrated as comfortably significant but "
+            f"p = {primary.p_value}; rewrite the section 3 prose"
+        )
+
     # ------------------------------------------------------- novelty check
     early = data.subset(data.day < 3)
     late = data.subset(data.day >= 10)
     early_r = rate_test(early)
     late_r = rate_test(late)
-    # two non-overlapping CIs are not a test of the difference between them,
+    # comparing two CIs by eye is not a test of the difference between them,
     # so test it directly; the windows are disjoint, hence independent
     decay_diff = early_r.absolute_lift - late_r.absolute_lift
     decay_se = float(np.hypot(lift_se(early_r), lift_se(late_r)))
     decay_z = decay_diff / decay_se
     decay_p = float(2.0 * stats.norm.sf(abs(decay_z)))
+    if decay_p >= 0.05:
+        raise RuntimeError(
+            f"the novelty narrative asserts a real fade but decay p = {decay_p}; rewrite section 4"
+        )
     fig_daily_rates(data)
     sections.append(
         SectionSpec(
@@ -451,8 +472,8 @@ Splitting the window confirms it:
 | Days 0-2 | {pp(early_r.absolute_lift)} | {pp(early_r.ci_low)} to {pp(early_r.ci_high)} | {fmt_p(early_r.p_value)} |
 | Days 10-13 | {pp(late_r.absolute_lift)} | {pp(late_r.ci_low)} to {pp(late_r.ci_high)} | {fmt_p(late_r.p_value)} |
 
-Two non-overlapping intervals are not by themselves evidence that the windows
-differ, so I tested the decay directly rather than eyeballing the table. The
+Comparing two confidence intervals by eye is not a test of the difference
+between them, so I tested the decay directly rather than eyeballing the table. The
 early-minus-late difference is {pp(decay_diff)} (SE {pp(decay_se)}),
 z = {decay_z:.2f}, p = {fmt_p(decay_p)}. The fade is real, not an artifact of
 reading two intervals side by side.
@@ -488,9 +509,9 @@ to measure the effect after habituation.""",
     )
     fractions = (nc + nt) / (nc[-1] + nt[-1])
     z_path = z_from_cumulative_counts(xc, nc, xt, nt)
-    seq = design(fractions.tolist(), alpha=0.05, spending="obrien-fleming")
+    seq = design(fractions.tolist(), alpha=ALPHA, spending="obrien-fleming")
     outcome = monitor(z_path.tolist(), seq)
-    naive_crossings = np.nonzero(np.abs(z_path) >= 1.96)[0]
+    naive_crossings = np.nonzero(np.abs(z_path) >= Z_NAIVE)[0]
     # the prose below narrates a specific replay; fail loudly if a code change
     # alters the story instead of silently describing the wrong one. A bare
     # assert would vanish under python -O, which is exactly when it matters.
@@ -501,6 +522,11 @@ to measure the effect after habituation.""",
             f"spending-design stop={outcome.stopped_at_look}"
         )
     first_naive = int(naive_crossings[0]) + 1
+    if first_naive >= outcome.stopped_at_look:
+        raise RuntimeError(
+            "section 5 narrates the naive rule firing before the spending "
+            f"design ({first_naive} vs {outcome.stopped_at_look}); rewrite it"
+        )
     naive_lift = (
         xt[first_naive - 1] / nt[first_naive - 1] - xc[first_naive - 1] / nc[first_naive - 1]
     )
@@ -511,7 +537,7 @@ to measure the effect after habituation.""",
     n_sims = 100_000
     increments = rng_null.normal(size=(n_sims, N_DAYS)) * np.sqrt(np.diff(fractions, prepend=0.0))
     z_null = np.cumsum(increments, axis=1) / np.sqrt(fractions)
-    naive_alpha = float(np.any(np.abs(z_null) >= 1.96, axis=1).mean())
+    naive_alpha = float(np.any(np.abs(z_null) >= Z_NAIVE, axis=1).mean())
     spent_alpha = float(np.any(np.abs(z_null) >= np.array(seq.boundaries), axis=1).mean())
     n_unspendable = int(np.sum(~np.isfinite(np.array(seq.boundaries))))
     unspendable_phrase = (
@@ -525,7 +551,7 @@ to measure the effect after habituation.""",
             title="What daily monitoring would have decided",
             body=f"""Everyone peeks. The question is whether the peeking is accounted for. I
 replayed the experiment as {N_DAYS} daily looks two ways: a naive rule that
-calls the result at the first |z| > 1.96, and an O'Brien-Fleming alpha-spending
+calls the result at the first |z| > {Z_NAIVE:.2f}, and an O'Brien-Fleming alpha-spending
 design built on the realized information fractions (`abkit.sequential`).
 
 Using realized rather than planned fractions is what the spending-function
@@ -538,15 +564,17 @@ z path.
 
 The naive rule would have stopped at **look {first_naive}**, when the novelty
 effect was near its peak, locking in a cumulative lift of
-{pp(naive_lift)} - about {naive_lift / TRUE_LIFT:.0f}x the persistent effect.
+{pp(naive_lift)} - about {naive_lift / TRUE_LIFT:.1f}x the persistent effect.
 The spending design first crosses at **look {outcome.stopped_at_look}**,
 spending almost no alpha in the noisy early days. In fact it spends so little
-that {unspendable_phrase} no finite boundary at all. Under O'Brien-Fleming
-there is no z-statistic on day 1 large enough to stop the experiment, which is
-why the boundary line in the figure starts at look {n_unspendable + 1}.
+that {unspendable_phrase} no finite boundary at all: the alpha allocated there
+falls below the library's 1e-10 floor, where the boundary would exceed 6.4
+sigma and the look is treated as unspendable, so no realistic day-1
+z-statistic can stop the experiment, and the boundary line in the figure
+starts at look {n_unspendable + 1}.
 Under a true null on this exact look schedule, simulation ({n_sims:,} runs)
 puts the naive rule's false-positive rate at {pct(naive_alpha, 1)} against the
-nominal 5%; the spending design holds {pct(spent_alpha, 1)}.
+nominal {pct(ALPHA, 0)}; the spending design holds {pct(spent_alpha, 1)}.
 
 Early stopping is a tool for catching regressions quickly, not for shipping
 winners early. Even the correctly-stopped estimate is biased upward by the
@@ -573,8 +601,15 @@ novelty effect at that point in the run.""",
     # without checking the sign is how a regression gets shipped as a feature
     flagged = int(np.argmin(naive_arr))
     flagged_verdict = "win" if lifts[flagged] > 0 else "regression"
-    family_error = 1.0 - (1.0 - 0.05) ** len(SECONDARY_METRICS)
-    exactly_one = len(SECONDARY_METRICS) * 0.05 * (1.0 - 0.05) ** (len(SECONDARY_METRICS) - 1)
+    family_error = 1.0 - (1.0 - ALPHA) ** len(SECONDARY_METRICS)
+    exactly_one = len(SECONDARY_METRICS) * ALPHA * (1.0 - ALPHA) ** (len(SECONDARY_METRICS) - 1)
+    if int(np.sum(naive_arr < ALPHA)) != 1 or bool(np.any(holm_ps < ALPHA)):
+        # the prose AND fig_secondary's baked-in title both narrate exactly
+        # one naive false positive that the adjustment removes
+        raise RuntimeError(
+            "section 6 and its figure narrate exactly one naive false positive "
+            f"removed by Holm; naive={naive_arr.tolist()}, rewrite them"
+        )
     rows = "\n".join(
         f"| {name} | {pp(lifts[i])} | {fmt_p(naive_arr[i])} | {fmt_p(holm_ps[i])} "
         f"| {fmt_p(bh_ps[i])} |"
@@ -603,8 +638,8 @@ ship decision) and Benjamini-Hochberg (FDR control, the right tool for a
 screening pass) push every metric back above the line.
 
 The seed here was chosen to land on a run that exhibits the false positive.
-Across fresh draws only about {exactly_one:.0%} of runs produce exactly one nominally
-significant metric, and most produce none. That is a deliberate choice to show
+Under {spell(len(SECONDARY_METRICS))} independent true nulls only about {exactly_one:.0%} of runs would produce exactly
+one nominally significant metric, and most would produce none. That is a deliberate choice to show
 the machinery working, not a typical draw, and it seemed worth saying out loud
 in a document whose whole argument is about not reading luck as signal.
 {{{{fig:secondary_pvalues}}}} shows the adjustment pulling the flagged metric
@@ -644,6 +679,13 @@ back across the line.""",
         n_permutations=10_000,
     )
     trimmed = trimmed_mean_diff(revenue.control, revenue.treatment, trim=0.01)
+    if welch.p_value < ALPHA or perm.p_value >= ALPHA or boot.ci_low <= 0.0:
+        raise RuntimeError(
+            "section 7 narrates Welch not significant, permutation significant, "
+            "and a bootstrap interval excluding zero; the computed values no "
+            f"longer support that (welch p={welch.p_value}, perm "
+            f"p={perm.p_value}, boot low={boot.ci_low}); rewrite it"
+        )
 
     mean_spend = (1 - WHALE_RATE) * np.exp(LOG_MEAN + LOG_SIGMA**2 / 2) + (
         WHALE_RATE * WHALE_SCALE * WHALE_SHAPE / (WHALE_SHAPE - 1)
@@ -711,7 +753,7 @@ with this tail the experiment only had roughly
 {pct(apparent_power, 0)} power to detect it (using the realized sample
 standard deviation of {sample_sd:.0f}, itself an unstable estimate under an
 infinite-variance tail). The generator draws whale amounts from the same distribution in both
-arms, so every bit of the whale imbalance between arms is sampling noise *by
+arms, so which arm the largest whales landed in is sampling noise *by
 construction*. A method that reads that imbalance as effect is reading noise,
 and we know it is noise because we built the data.
 
@@ -743,8 +785,8 @@ were all planned; the disagreement itself is the finding, and it says
 |---|---|---|---|
 | Persistent conversion lift | {pp(TRUE_LIFT, 1)} | {pp(primary.absolute_lift)} | {pp(late_r.absolute_lift)} (days 10-13, CI {pp(late_r.ci_low)} to {pp(late_r.ci_high)}) |
 | Day-0 novelty boost | {pp(NOVELTY_BOOST, 1)} | not separately reported | decay visible in the daily-lift panel in section {{{{sec:novelty}}}} |
-| Secondary metric lifts | 0 on all six | one naive false positive | none significant after Holm |
-| Revenue per user diff | {true_rev_diff:+.2f} | {welch.difference:+.2f} | interval spanning zero; underpowered |
+| Secondary metric lifts | 0 on all {spell(len(SECONDARY_METRICS))} | one naive false positive | none significant after Holm |
+| Revenue per user diff | {true_rev_diff:+.2f} | {welch.difference:+.2f} | Welch interval spanning zero; underpowered |
 
 The pipeline got the qualitative story right everywhere. It caught the broken
 first run, flagged the novelty inflation instead of shipping the headline
@@ -754,7 +796,7 @@ help is where the data simply do not contain the answer - the persistent
 lift and the revenue effect both need more time or a better metric, and the
 report says so rather than manufacturing certainty.
 
-## Recommendation
+### Recommendation
 
 Ship the redesign on the strength of the conversion result, quote the
 late-window interval rather than the headline, keep a 5% holdback for four

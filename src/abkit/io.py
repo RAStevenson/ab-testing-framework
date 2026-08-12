@@ -34,6 +34,7 @@ from numpy.typing import NDArray
 
 _METRIC_KINDS = ("binary", "continuous")
 _INPUT_SHAPES = ("user_rows", "aggregates")
+_RESERVED_COLUMN_KEYS = ("arm", "day", "user_id")
 
 
 @dataclass(frozen=True)
@@ -149,6 +150,11 @@ def load_config(path: Path) -> dict:
             raise ValueError(f"arms.labels needs at least 2 unique labels, got {labels!r}")
         if not all(isinstance(v, str) and v for v in labels):
             raise ValueError(f"arms.labels must be non-empty strings, got {labels!r}")
+        folded = [v.casefold() for v in labels]
+        if len(set(folded)) != len(folded):
+            # row arm values are matched casefolded, so labels differing only
+            # by case would collapse into one arm with no error
+            raise ValueError(f"arms.labels must be unique ignoring case, got {labels!r}")
         split = arms.get("intended_split")
         if split is not None and (
             not isinstance(split, list)
@@ -177,6 +183,25 @@ def load_config(path: Path) -> dict:
         missing_keys = [k for k in required if not isinstance(agg.get(k), str)]
         if missing_keys:
             raise ValueError(f"[aggregates] is missing column names for: {missing_keys}")
+        has_col = isinstance(agg.get("experiment_id_column"), str)
+        has_id = "experiment_id" in agg
+        if has_col != has_id:
+            raise ValueError(
+                "[aggregates] experiment_id_column and experiment_id must be set together"
+            )
+        arms_cfg = cfg.get("arms")
+        if arms_cfg is not None and not isinstance(arms_cfg, dict):
+            raise ValueError("[arms] must be a table when present")
+        split = (arms_cfg or {}).get("intended_split")
+        if split is not None and (
+            not isinstance(split, list)
+            or not all(isinstance(v, (int, float)) and v > 0 for v in split)
+            or abs(sum(split) - 1.0) > 1e-9
+        ):
+            raise ValueError(
+                "arms.intended_split must be positive shares summing to 1 "
+                "(one per arm in control-first, sorted-variant order)"
+            )
 
     metrics = cfg.get("metrics")
     if not isinstance(metrics, list) or not metrics:
@@ -184,13 +209,23 @@ def load_config(path: Path) -> dict:
     seen_names: set[str] = set()
     n_primary = 0
     for m in metrics:
+        if not isinstance(m, dict):
+            raise ValueError(f"every [[metrics]] entry must be a table, got {m!r}")
         if not isinstance(m.get("name"), str) or not m["name"]:
             raise ValueError(f"every [[metrics]] entry needs a string 'name', got {m!r}")
+        if m["name"] in _RESERVED_COLUMN_KEYS:
+            # metric arrays are stored under their names next to the
+            # structural arrays; a collision would silently corrupt them
+            raise ValueError(
+                f"metric name {m['name']!r} is reserved for a structural column; rename it"
+            )
         if m["name"] in seen_names:
             raise ValueError(f"duplicate metric name {m['name']!r}")
         seen_names.add(m["name"])
         if m.get("kind") not in _METRIC_KINDS:
             raise ValueError(f"metric {m['name']!r} kind must be one of {_METRIC_KINDS}")
+        if not isinstance(m.get("primary", False), bool):
+            raise ValueError(f"metric {m['name']!r} primary must be a boolean, not a string")
         m.setdefault("column", m["name"])
         m.setdefault("primary", False)
         m.setdefault("nonnegative", False)
@@ -199,8 +234,15 @@ def load_config(path: Path) -> dict:
         raise ValueError(f"exactly one metric must set primary = true, found {n_primary}")
 
     columns = cfg.setdefault("columns", {})
+    if not isinstance(columns, dict):
+        raise ValueError("[columns] must be a table")
     if inp["shape"] == "user_rows" and not isinstance(columns.get("arm"), str):
         raise ValueError("user_rows input needs [columns] with an 'arm' column name")
+    for key in ("day", "user_id"):
+        # an empty string here silently half-declares the column; normalize
+        # to absent so every later check sees one representation
+        if not columns.get(key):
+            columns.pop(key, None)
     aliases = columns.setdefault("aliases", {})
     alias_tables_ok = isinstance(aliases, dict) and all(
         isinstance(v, dict) and all(isinstance(x, str) for x in v.values())
@@ -302,7 +344,9 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     extra_alias_cols = [c for c in aliases if c not in declared]
     declared.extend(extra_alias_cols)
 
-    with open(data_path, newline="", encoding="utf-8") as fh:
+    # utf-8-sig: Excel's "CSV UTF-8" writes a byte-order mark that would
+    # otherwise glue itself onto the first column name
+    with open(data_path, newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         header = reader.fieldnames or []
         missing = [c for c in declared if c not in header]
@@ -335,11 +379,12 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
                 f"label in {labels}; add it to arms.labels or [columns.aliases.{arm_col}]"
             )
 
-        if user_col:
-            uid = (row[user_col] or "").strip()
-            if uid in seen_users:
-                event("duplicate_user_dropped", index)
-                continue
+        uid = (row[user_col] or "").strip() if user_col else ""
+        if uid and uid in seen_users:
+            # a BLANK id is treated as missing, never as a duplicate of
+            # every other blank id
+            event("duplicate_user_dropped", index)
+            continue
 
         values: dict[str, float] = {}
         drop = False
@@ -355,22 +400,44 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
                 event("uncoercible_dropped", index)
                 drop = True
                 break
+            if not np.isfinite(value):
+                # float("nan") and float("inf") parse without error and would
+                # poison every mean while validation reported a clean load
+                event("uncoercible_dropped", index)
+                drop = True
+                break
             if metric.nonnegative and value < 0.0:
                 event("negative_value_dropped", index)
+                drop = True
+                break
+            if metric.kind == "binary" and value not in (0.0, 1.0):
+                event("nonbinary_dropped", index)
                 drop = True
                 break
             values[metric.column] = value
         if drop:
             continue
 
+        if day_col:
+            day_raw = (row[day_col] or "").strip()
+            try:
+                day_value = float(day_raw)
+            except ValueError:
+                event("uncoercible_dropped", index)
+                continue
+            if not np.isfinite(day_value):
+                event("uncoercible_dropped", index)
+                continue
+
         if user_col:
-            seen_users.add(uid)
+            if uid:
+                seen_users.add(uid)
             kept[user_col].append(uid)
         kept[arm_col].append(arm)
         for column, value in values.items():
             kept[column].append(value)
         if day_col:
-            kept[day_col].append(float(row[day_col]))
+            kept[day_col].append(day_value)
         for column in extra_alias_cols:
             raw = (row[column] or "").strip()
             mapped = aliases[column].get(raw, raw)
@@ -434,7 +501,7 @@ def load_aggregates(config: dict, data_path: Path) -> Experiment:
     filter_col = agg.get("experiment_id_column")
     filter_val = agg.get("experiment_id")
 
-    with open(data_path, newline="", encoding="utf-8") as fh:
+    with open(data_path, newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         header = reader.fieldnames or []
         needed = [agg[k] for k in ("variant", "metric", "checkpoint")] + [
@@ -473,18 +540,37 @@ def load_aggregates(config: dict, data_path: Path) -> Experiment:
     # cells[(arm, metric_name)] -> list of (checkpoint, n, mean, variance)
     cells: dict[tuple[str, str], list[tuple[float, int, float, float]]] = {}
     control_seen: dict[tuple[str, float], tuple[int, float, float]] = {}
+
+    def _number(row: dict, key: str, index: int) -> float:
+        raw = (row[agg[key]] or "").strip()
+        try:
+            value = float(raw)
+        except ValueError:
+            raise ValueError(f"unparseable {key} value {raw!r} at data row {index}") from None
+        return value
+
     for index, row in enumerate(raw_rows, start=2):
         metric = metric_by_column.get((row[agg["metric"]] or "").strip())
         if metric is None:
             continue  # metrics not declared in config are simply not analyzed
-        checkpoint = float(row[agg["checkpoint"]])
+        checkpoint = _number(row, "checkpoint", index)
         variant_arm = f"variant_{(row[agg['variant']] or '').strip()}"
         for arm, prefix in ((("control"), "control"), ((variant_arm), "treatment")):
-            n = int(float(row[agg[f"count_{prefix}"]]))
-            mean = float(row[agg[f"mean_{prefix}"]])
-            variance = float(row[agg[f"variance_{prefix}"]])
+            n_float = _number(row, f"count_{prefix}", index)
+            if n_float != int(n_float):
+                raise ValueError(f"non-integer count {n_float} at data row {index} ({arm})")
+            n = int(n_float)
+            mean = _number(row, f"mean_{prefix}", index)
+            variance = _number(row, f"variance_{prefix}", index)
             if n <= 0:
                 raise ValueError(f"nonpositive count {n} at data row {index} ({arm})")
+            if not np.isfinite(mean) or not np.isfinite(variance):
+                # NaN answers False to every comparison, so without this it
+                # would sail through and detonate inside a test far away
+                raise ValueError(
+                    f"non-finite statistics at data row {index} ({arm}); "
+                    "clean or exclude the row before analysis"
+                )
             if variance < 0.0:
                 raise ValueError(f"negative variance {variance} at data row {index} ({arm})")
             if arm == "control":
@@ -516,6 +602,35 @@ def load_aggregates(config: dict, data_path: Path) -> Experiment:
             aggregates.append(ArmAggregate(arm, metric_name, checkpoint, n, mean, variance))
         final_cp, n, mean, variance = series[-1]
         aggregates.append(ArmAggregate(arm, metric_name, None, n, mean, variance))
+
+    # every declared metric must actually be present for every arm, and every
+    # arm must share the same checkpoint grid per metric: sections combine
+    # arm series positionally, so a missing metric or an offset grid would
+    # surface as a far-away crash or, worse, silently misaligned statistics
+    grids: dict[str, tuple[float, ...]] = {}
+    for metric in metrics:
+        for arm in arms:
+            cell_cps = tuple(
+                sorted(
+                    a.checkpoint
+                    for a in aggregates
+                    if a.arm == arm and a.metric == metric.name and a.checkpoint is not None
+                )
+            )
+            if not any(a.arm == arm and a.metric == metric.name for a in aggregates):
+                raise ValueError(
+                    f"declared metric {metric.name!r} (column {metric.column!r}) has no "
+                    f"data for arm {arm!r}"
+                    + (f" in experiment {filter_val!r}" if filter_col else "")
+                )
+            reference = grids.setdefault(metric.name, cell_cps)
+            if cell_cps != reference:
+                raise ValueError(
+                    f"checkpoint grids differ across arms for metric {metric.name!r}: "
+                    f"{arm!r} has {len(cell_cps)} checkpoints where "
+                    f"{arms[0]!r} has {len(reference)}; the archive rows are not "
+                    "aligned and positional analysis would be wrong"
+                )
 
     checkpoints = tuple(sorted({a.checkpoint for a in aggregates if a.checkpoint is not None}))
     arms_cfg = config.get("arms") or {}

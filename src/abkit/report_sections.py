@@ -38,7 +38,6 @@ from abkit.io import (
     MetricSpec,
     _metric_specs,
     capabilities,
-    interval_from_cumulative,
 )
 from abkit.power import mde_two_proportions
 from abkit.report import FigureSpec, SectionSpec
@@ -68,6 +67,11 @@ def pct(x: float, digits: int = 2) -> str:
 
 def pp(x: float, digits: int = 2) -> str:
     return f"{100 * x:.{digits}f} pp"
+
+
+def pp_signed(x: float, digits: int = 2) -> str:
+    """Signed percentage-point difference, so effect columns read one way."""
+    return f"{100 * x:+.{digits}f} pp"
 
 
 def fmt_p(p: float) -> str:
@@ -140,6 +144,8 @@ def _window(
         raise ValueError(f"window {start}:{end} has fewer than 2 observations")
     w_mean = (sums[end - 1] - lo_s) / w_n
     w_var = max(((squares[end - 1] - lo_q) - w_n * w_mean**2) / (w_n - 1.0), 0.0)
+    if not (np.isfinite(w_mean) and np.isfinite(w_var)):
+        raise ValueError(f"window {start}:{end} has non-finite statistics")
     return int(w_n), float(w_mean), float(w_var)
 
 
@@ -160,6 +166,9 @@ def _ratio_stability(nc: NDArray, nt: NDArray) -> tuple[float, int, float, int]:
     it = np.diff(np.asarray(nt, dtype=np.float64), prepend=0.0)
     keep = (ic > 0) | (it > 0)
     ic, it = ic[keep], it[keep]
+    if ic.sum() == 0.0 or it.sum() == 0.0:
+        # one arm never gained a user; a split test has nothing to test
+        return float("nan"), 0, float("nan"), int(ic.size)
     share = it.sum() / (ic.sum() + it.sum())
     expected_t = (ic + it) * share
     expected_c = (ic + it) * (1.0 - share)
@@ -217,7 +226,7 @@ def _cell_test(
 
 def _effect_and_p(result: RateComparison | MeanComparison) -> tuple[str, float]:
     if isinstance(result, RateComparison):
-        return pp(result.absolute_lift), result.p_value
+        return pp_signed(result.absolute_lift), result.p_value
     return f"{result.difference:+.3f}", result.p_value
 
 
@@ -229,7 +238,7 @@ def sec_validation(exp: Experiment) -> SectionSpec:
     """Always renders: what the intake did to the data before any statistic."""
     sizes = ", ".join(f"{arm} {_agg(exp, arm, _primary(exp).name, None).n:,}" for arm in exp.arms)
     if exp.validation:
-        rows = "\n".join(f"| {e.rule} | {e.count} | {e.detail} |" for e in exp.validation)
+        rows = "\n".join(f"| {e.rule} | {e.count:,} | {e.detail} |" for e in exp.validation)
         body = (
             f"Arm sizes after validation: {sizes} (denominators are the primary "
             "metric's). Every change the intake made or refused is listed here, "
@@ -313,7 +322,21 @@ def sec_srm(exp: Experiment) -> SectionSpec:
         for control_arm, treatment_arm in _contrasts(exp):
             nc = _series(exp, control_arm, metric.name)[0]
             nt = _series(exp, treatment_arm, metric.name)[0]
+            if np.any(np.diff(nc) < 0) or np.any(np.diff(nt) < 0):
+                # a decreasing cumulative count would feed negative
+                # interval counts into the chi-square; say so instead
+                lines.append(
+                    f"| {_contrast_label(exp, treatment_arm)} | - | not testable "
+                    "(cumulative counts decrease) | - | - |"
+                )
+                continue
             statistic, df, p, n_intervals = _ratio_stability(nc, nt)
+            if not np.isfinite(p):
+                lines.append(
+                    f"| {_contrast_label(exp, treatment_arm)} | {n_intervals} | "
+                    "not testable (degenerate split) | - | - |"
+                )
+                continue
             worst_p = min(worst_p, p)
             lines.append(
                 f"| {_contrast_label(exp, treatment_arm)} | {n_intervals} | {statistic:.2f} "
@@ -321,8 +344,8 @@ def sec_srm(exp: Experiment) -> SectionSpec:
             )
         verdict = (
             "The arm ratio is stable across checkpoints in every contrast "
-            "(alarm threshold p < 1e-3), which is the strongest assignment check "
-            "available without a declared split."
+            "(alarm threshold p < 1e-3), which is what can still be checked "
+            "without a declared split."
             if worst_p >= 1e-3
             else "The arm ratio SHIFTS over time in at least one contrast (p < 1e-3). "
             "A ratio that drifts mid-experiment is sample-ratio-mismatch evidence "
@@ -359,8 +382,8 @@ def sec_primary(exp: Experiment) -> SectionSpec:
     for _, treatment_arm in _contrasts(exp):
         r = _cell_test(exp, treatment_arm, metric)
         if isinstance(r, RateComparison):
-            effect = pp(r.absolute_lift)
-            ci = f"{pp(r.ci_low)} to {pp(r.ci_high)}"
+            effect = pp_signed(r.absolute_lift)
+            ci = f"{pp_signed(r.ci_low)} to {pp_signed(r.ci_high)}"
         else:
             effect = f"{r.difference:+.3f}"
             ci = f"{r.ci_low:+.3f} to {r.ci_high:+.3f}"
@@ -391,13 +414,18 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
     trim_note = (
         ""
         if k == k_full
-        else f"\n\nThe final {k_full - k} checkpoint(s) are EXCLUDED from this "
-        "section. The variance implied for the increment between the last two "
-        "checkpoints is negative, which no real accumulation of observations "
-        "can produce, so the final published statistics do not describe a "
-        "superset of the previous checkpoint (a settled recompute or late "
-        "correction is the usual cause). The exclusion is stated here rather "
-        "than applied silently."
+        else "\n\n"
+        + (
+            "The final checkpoint is EXCLUDED from this section"
+            if k_full - k == 1
+            else f"The final {k_full - k} checkpoints are EXCLUDED from this section"
+        )
+        + ". The variance implied for the first excluded increment is "
+        "negative, which no real accumulation of observations can produce, "
+        "so the statistics published there do not describe a superset of "
+        "the previous checkpoint (a settled recompute or late correction "
+        "is the usual cause). The exclusion is stated here rather than "
+        "applied silently."
     )
     w = max(1, k // 3)
 
@@ -419,8 +447,8 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
             return None
         decay_z = float((early - late) / np.hypot(se_early, se_late))
         decay_p = float(2.0 * stats.norm.sf(abs(decay_z)))
-        early_s = pp(early) if metric.kind == "binary" else f"{early:+.3f}"
-        late_s = pp(late) if metric.kind == "binary" else f"{late:+.3f}"
+        early_s = pp_signed(early) if metric.kind == "binary" else f"{early:+.3f}"
+        late_s = pp_signed(late) if metric.kind == "binary" else f"{late:+.3f}"
         lines.append(
             f"| {_contrast_label(exp, treatment_arm)} | {early_s} | {late_s} "
             f"| {decay_z:.2f} | {fmt_p(decay_p)} |"
@@ -431,13 +459,27 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "A treatment effect that fades within the run is the signature of a "
         "novelty effect, where users react to the change itself and the "
         "reaction decays. The comparison below tests the first "
-        f"{w} checkpoint(s) against the last {w} directly, because two "
+        + (f"{w} checkpoints" if w != 1 else "checkpoint")
+        + f" against the last {w} directly, because two "
         "separately-significant windows are not by themselves evidence that the "
         "windows differ. Interval values are recovered from the cumulative "
         "series by differencing; {{fig:novelty}} shows the per-interval means.\n\n"
         + "\n".join(lines)
-        + "\n\nA significant decay means the end-of-run headline overstates the "
-        "persistent effect, and the late window is the honest number to quote." + trim_note
+        + "\n\nA significant z means the early and late windows genuinely "
+        "differ, so the end-of-run number blends two regimes. A positive z is "
+        "an effect that faded (novelty); a negative z is an effect that grew "
+        "over the run (the primacy pattern); either way the late window is "
+        "the honest number to quote."
+        + (
+            ""
+            if exp.rows is not None
+            else "\n\nOne assumption to hold onto for aggregate archives: "
+            "differencing cumulative statistics treats each increment as new "
+            "users only. An archive that recomputes its metrics over all "
+            "enrolled users at each checkpoint blurs the increments, and this "
+            "test is approximate there."
+        )
+        + trim_note
     )
     return SectionSpec(
         key="novelty",
@@ -458,7 +500,13 @@ def _fig_novelty(exp: Experiment, metric: MetricSpec, figdir: Path, k_use: int) 
     for i, arm in enumerate(exp.arms):
         n, mean, var = _series(exp, arm, metric.name)
         n, mean, var = n[:k_use], mean[:k_use], var[:k_use]
-        int_n, int_mean, _ = interval_from_cumulative(n, mean, var)
+        # computed directly rather than via interval_from_cumulative so a
+        # checkpoint where this arm gained no users plots as a gap instead
+        # of raising; means are exact, and the figure needs no variances
+        int_n = np.diff(n, prepend=0.0)
+        int_sums = np.diff(n * mean, prepend=0.0)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            int_mean = np.where(int_n > 0, int_sums / np.maximum(int_n, 1.0), np.nan)
         checkpoints = np.asarray(exp.checkpoints[:k_use], dtype=np.float64)
         ax.plot(
             checkpoints,
@@ -500,26 +548,44 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
     trim_note = (
         ""
         if k_use == k_full
-        else f"\n\nAs in the effect-stability analysis, the final {k_full - k_use} "
-        "checkpoint(s) are excluded because their cumulative statistics are "
-        f"internally inconsistent; the replay covers the {k_use} consistent looks."
+        else "\n\nAs in the effect-stability analysis, "
+        + (
+            "the final checkpoint is excluded"
+            if k_full - k_use == 1
+            else f"the final {k_full - k_use} checkpoints are excluded"
+        )
+        + " because the cumulative statistics there are internally "
+        f"inconsistent; the replay covers the {k_use} consistent looks."
     )
-    total = nc + nt
-    if total[-1] <= 0 or np.any(np.diff(total) <= 0):
+    # statistical information for a two-sample z is the inverse summed
+    # variance scale 1/(1/nc + 1/nt), which equals a share of the total
+    # count only when the arm ratio is constant across looks
+    info = 1.0 / (1.0 / nc + 1.0 / nt)
+    if info[-1] <= 0 or np.any(np.diff(info) <= 0):
         return None
-    fractions = total / total[-1]
+    fractions = info / info[-1]
     if metric.kind == "binary":
         xc = np.round(mean_c * nc)
         xt = np.round(mean_t * nt)
-        z_path = z_from_cumulative_counts(xc, nc, xt, nt)
+        if np.any(np.diff(xc) < 0) or np.any(np.diff(xt) < 0):
+            # published means at limited precision can reconstruct a
+            # count series that dips by one; the stats-based z needs no
+            # reconstruction and its divergence from the pooled form is
+            # documented on z_from_cumulative_stats
+            z_path = z_from_cumulative_stats(nc, mean_c, var_c, nt, mean_t, var_t)
+        else:
+            z_path = z_from_cumulative_counts(xc, nc, xt, nt)
     else:
         z_path = z_from_cumulative_stats(nc, mean_c, var_c, nt, mean_t, var_t)
     seq = design(fractions.tolist(), alpha=exp.alpha, spending="obrien-fleming")
     outcome = monitor(z_path.tolist(), seq)
-    naive_crossings = np.nonzero(np.abs(z_path) >= 1.96)[0]
+    # the naive rule is the conventional dashboard threshold, quoted and
+    # applied at two decimals as practitioners actually use it
+    z_naive = float(np.round(stats.norm.isf(exp.alpha / 2.0), 2))
+    naive_crossings = np.nonzero(np.abs(z_path) >= z_naive)[0]
     naive_look = int(naive_crossings[0]) + 1 if naive_crossings.size else None
 
-    _fig_sequential(z_path, np.array(seq.boundaries), figdir)
+    _fig_sequential(z_path, np.array(seq.boundaries), z_naive, figdir)
 
     if outcome.stopped_at_look is not None:
         spend_sentence = (
@@ -529,9 +595,9 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
         )
     else:
         spend_sentence = (
-            f"The spending design never crosses in {len(fractions)} looks: under "
-            "monitoring priced for peeking, this run does not support stopping "
-            "early in either direction."
+            f"The spending design never crosses in {len(fractions)} looks, so "
+            "under monitoring priced for peeking this run does not support "
+            "stopping early in either direction."
         )
     if naive_look is not None:
         naive_sentence = f"The naive rule would have called the result at look {naive_look}" + (
@@ -545,7 +611,7 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
 
     body = (
         "Anyone watching a dashboard peeks. Checking the result at every "
-        "checkpoint against a fixed |z| > 1.96 threshold (the naive rule) "
+        f"checkpoint against a fixed |z| > {z_naive:.2f} threshold (the naive rule) "
         "inflates the false-positive rate well beyond the nominal alpha, "
         "because every look is another chance to be fooled. An alpha-spending "
         "design prices the peeking by allocating the total alpha across the "
@@ -559,7 +625,16 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
         + naive_sentence
         + "\n\nEven a correctly-stopped estimate is biased away from zero at the "
         "stopping look; monitoring is a tool for catching regressions early, "
-        "not for shipping winners early." + trim_note
+        "not for shipping winners early."
+        + (
+            ""
+            if len(fractions) <= 48
+            else f"\n\nOne numerical caveat at this look count: the boundaries "
+            "come from a recursive numerical integration whose accuracy is "
+            "pinned by test up to a few dozen looks, so treat the "
+            f"{len(fractions)}-look boundary values as approximate."
+        )
+        + trim_note
     )
     return SectionSpec(
         key="sequential",
@@ -576,7 +651,7 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
     )
 
 
-def _fig_sequential(z_path: NDArray, boundaries: NDArray, figdir: Path) -> None:
+def _fig_sequential(z_path: NDArray, boundaries: NDArray, z_naive: float, figdir: Path) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -603,15 +678,15 @@ def _fig_sequential(z_path: NDArray, boundaries: NDArray, figdir: Path) -> None:
         label="O'Brien-Fleming boundary",
     )
     ax.axhline(
-        1.96,
+        z_naive,
         color=COLOR_REFERENCE,
         linewidth=1.5,
         linestyle="--",
-        label="Naive fixed threshold (1.96)",
+        label=f"Naive fixed threshold ({z_naive:.2f})",
     )
     ax.set_xlabel("Look")
     ax.set_ylabel("|z|")
-    top_vals = [float(np.abs(z_path).max()), 1.96]
+    top_vals = [float(np.abs(z_path).max()), z_naive]
     if finite.any():
         top_vals.append(float(boundaries[finite].max()))
     ax.set_ylim(top=1.2 * max(top_vals))
@@ -653,17 +728,29 @@ def sec_corrections(exp: Experiment, figdir: Path) -> SectionSpec | None:
     n_holm = int(np.sum(holm_ps < exp.alpha))
     family_error = 1.0 - (1.0 - exp.alpha) ** len(family)
     body = (
-        f"This experiment carries {len(family)} non-primary comparisons. Testing "
-        "each at alpha "
-        f"{exp.alpha} without adjustment gives a "
+        (
+            f"This experiment carries {len(family)} comparisons beyond the primary result. "
+            if any(not m.primary for m, _ in family)
+            else f"With one metric and several arms, the family is the primary "
+            f"metric's {len(family)} contrasts. "
+        )
+        + "Testing each at alpha "
+        f"{exp.alpha} without adjustment gives roughly a "
         f"{family_error:.0%} chance of at least one false alarm even if nothing "
-        "moved, so the family is adjusted two ways: Holm, which controls the "
+        "moved (treating the comparisons as independent, which shared arms "
+        "make approximate), so the family is adjusted two ways: Holm, which controls the "
         "chance of ANY false claim (the right standard for a ship decision), "
         "and Benjamini-Hochberg, which controls the false-discovery RATE (the "
         "right standard for a screen that feeds follow-ups).\n\n"
         + "\n".join(lines)
-        + f"\n\nUnadjusted, {n_naive} comparison(s) clear alpha; after Holm, "
-        f"{n_holm} survive. {{{{fig:corrections}}}} shows each comparison's "
+        + (
+            f"\n\nUnadjusted, {n_naive} comparison"
+            + ("" if n_naive == 1 else "s")
+            + (" clears" if n_naive == 1 else " clear")
+            + f" alpha; after Holm, {n_holm}"
+            + (" survives" if n_holm == 1 else " survive")
+        )
+        + ". {{fig:corrections}} shows each comparison's "
         "p-value before and after adjustment."
     )
     _fig_corrections([f"{m.name}, {arm}" for m, arm in family], naive, holm_ps, exp.alpha, figdir)
@@ -729,10 +816,12 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
     zero_share = float(np.mean(np.concatenate([x, y]) == 0.0))
 
     _fig_heavy_tail(x, y, welch, boot, trimmed, metric.name, figdir)
+    boot_excludes_zero = (boot.ci_low > 0.0) == (boot.ci_high > 0.0)
+    welch_significant = welch.p_value < exp.alpha
     agreement = (
         "The three same-estimand methods agree here, which is what a well-behaved tail looks like."
-        if (welch.p_value < exp.alpha) == (perm.p_value < exp.alpha)
-        and (boot.ci_low > 0) == (welch.ci_low > 0)
+        if welch_significant == (perm.p_value < exp.alpha)
+        and boot_excludes_zero == welch_significant
         else "The methods DISAGREE at the alpha line. That disagreement is the "
         "finding. It says the estimate rests on the tail, and the honest move "
         "is to report it rather than quote whichever method crossed the line."
@@ -944,16 +1033,26 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
                 except ValueError:
                     cells_skipped += 1
                     continue
-                if n_c < 2 or n_t < 2 or not np.isfinite(var_c) or not np.isfinite(var_t):
+                if n_c < 2 or n_t < 2 or not np.isfinite(mean_c) or not np.isfinite(mean_t):
                     cells_skipped += 1
                     continue
                 if metric.kind == "binary":
+                    # a proportion test needs valid rates, not variances
+                    if not (0.0 <= mean_c <= 1.0 and 0.0 <= mean_t <= 1.0):
+                        cells_skipped += 1
+                        continue
                     result = two_proportion_ztest(
                         int(round(mean_c * n_c)), n_c, int(round(mean_t * n_t)), n_t
                     )
                     p_values.append(result.p_value)
                 else:
-                    if var_c / n_c + var_t / n_t == 0.0:
+                    if (
+                        not np.isfinite(var_c)
+                        or not np.isfinite(var_t)
+                        or var_c < 0.0
+                        or var_t < 0.0
+                        or var_c / n_c + var_t / n_t == 0.0
+                    ):
                         cells_skipped += 1
                         continue
                     p_values.append(
@@ -965,28 +1064,29 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
 
     unstable_list = ", ".join(unstable) if unstable else "none"
     body = (
-        f"The deep dive above reads one experiment closely; this section asks "
+        f"The sections above read one experiment closely; this one asks "
         f"two mechanical questions of every experiment in the archive "
-        f"({len(experiments)} total). First, assignment stability: with no "
-        "intended splits on record, the checkable property is that each "
-        "experiment's arm ratio holds constant across its checkpoints "
-        "(primary-metric denominators, worst contrast per experiment). "
-        f"{analyzed} experiments were testable; {stability_skipped} had too "
-        "few usable checkpoints to test and are counted rather than hidden. "
-        f"Experiments flagged at the conventional p < 1e-3 alarm: "
+        f"({len(experiments)} total). The first question is assignment "
+        "stability. With no intended splits on record, the checkable "
+        "property is that each experiment's arm ratio holds constant "
+        "across its checkpoints (primary-metric denominators, worst "
+        f"contrast per experiment). {analyzed} experiments were testable; "
+        f"{stability_skipped} could not be tested (too few usable "
+        "checkpoints or a degenerate split) and are counted rather than "
+        f"hidden. Experiments flagged at the conventional p < 1e-3 alarm: "
         f"{unstable_list}.\n\n"
-        f"Second, multiplicity at scale: each experiment's full end-of-run "
-        "comparison family (every metric on every variant) was tested "
-        f"unadjusted and after a per-experiment Holm correction. "
+        f"The second question is multiplicity at scale. Each experiment's "
+        "full end-of-run comparison family (every metric on every variant) "
+        f"was tested unadjusted and after a per-experiment Holm correction. "
         f"{naive_any} of {len(experiments)} experiments show at least one "
         f"nominally significant comparison before correction; {holm_any} "
         "still do after it. The gap between those two counts is the multiple-"
         "comparisons trap measured on real experiments rather than argued "
         "from theory."
         + (
-            f" ({cells_skipped} comparison cells were skipped for missing or "
-            "degenerate statistics, matching the dataset's documented missing "
-            "variances.)"
+            f" ({cells_skipped} comparison cells were skipped because their "
+            "published statistics were missing or unusable; the skips are "
+            "counted here rather than hidden.)"
             if cells_skipped
             else ""
         )

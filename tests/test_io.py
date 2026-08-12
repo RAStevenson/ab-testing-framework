@@ -257,3 +257,147 @@ class TestIntervalFromCumulative:
             interval_from_cumulative(
                 np.array([10, 12]), np.array([1.0, 5.0]), np.array([100.0, 0.0])
             )
+
+
+class TestBatteryRegressions:
+    """Pins for the 2026-08-12 review findings: each was a demonstrated
+    silent-corruption or unhelpful-crash path before its fix."""
+
+    def test_reserved_metric_name_rejected(self, tmp_path: Path) -> None:
+        text = _config_text(
+            metrics=(
+                '[[metrics]]\nname = "day"\ncolumn = "converted"\nkind = "binary"\nprimary = true\n'
+            )
+        )
+        with pytest.raises(ValueError, match="reserved for a structural column"):
+            load_config(_write_config(tmp_path, text))
+
+    def test_case_colliding_arm_labels_rejected(self, tmp_path: Path) -> None:
+        text = _config_text(arms='[arms]\nlabels = ["control", "Treatment", "treatment"]\n')
+        with pytest.raises(ValueError, match="unique ignoring case"):
+            load_config(_write_config(tmp_path, text))
+
+    def test_string_primary_rejected(self, tmp_path: Path) -> None:
+        text = _config_text(
+            metrics=(
+                '[[metrics]]\nname = "a"\nkind = "binary"\nprimary = true\n'
+                '[[metrics]]\nname = "b"\nkind = "binary"\nprimary = "false"\n'
+            )
+        )
+        with pytest.raises(ValueError, match="must be a boolean"):
+            load_config(_write_config(tmp_path, text))
+
+    def test_blank_user_ids_do_not_deduplicate_each_other(self, tmp_path: Path) -> None:
+        cfg = load_config(_write_config(tmp_path, _config_text()))
+        data = tmp_path / "blank_ids.csv"
+        data.write_text(
+            "user_id,group,day,converted,spend\n"
+            ",control,0,1,5\n,control,0,0,0\n,treatment,1,1,7\n,treatment,1,0,0\n",
+            encoding="utf-8",
+        )
+        exp = load_user_rows(cfg, data)
+        assert exp.rows["arm"].size == 4
+        assert not any(e.rule == "duplicate_user_dropped" for e in exp.validation)
+
+    def test_nan_and_inf_metric_values_dropped(self, tmp_path: Path) -> None:
+        cfg = load_config(_write_config(tmp_path, _config_text()))
+        data = tmp_path / "nonfinite.csv"
+        data.write_text(
+            "user_id,group,day,converted,spend\n"
+            "u1,control,0,1,nan\nu2,control,0,0,inf\nu3,treatment,0,1,5\nu4,treatment,0,0,0\n"
+            "u5,control,1,0,0\nu6,treatment,1,1,2\n",
+            encoding="utf-8",
+        )
+        exp = load_user_rows(cfg, data)
+        assert sum(e.count for e in exp.validation if e.rule == "uncoercible_dropped") == 2
+        assert np.all(np.isfinite(exp.rows["spend"]))
+
+    def test_nonbinary_value_in_binary_metric_dropped(self, tmp_path: Path) -> None:
+        cfg = load_config(_write_config(tmp_path, _config_text()))
+        data = tmp_path / "nonbinary.csv"
+        data.write_text(
+            "user_id,group,day,converted,spend\n"
+            "u1,control,0,3.7,0\nu2,control,0,0,0\nu3,treatment,0,1,5\nu4,treatment,1,0,0\n",
+            encoding="utf-8",
+        )
+        exp = load_user_rows(cfg, data)
+        assert sum(e.count for e in exp.validation if e.rule == "nonbinary_dropped") == 1
+
+    def test_garbage_day_dropped_not_crashed(self, tmp_path: Path) -> None:
+        cfg = load_config(_write_config(tmp_path, _config_text()))
+        data = tmp_path / "bad_day.csv"
+        data.write_text(
+            "user_id,group,day,converted,spend\n"
+            "u1,control,N/A,1,0\nu2,control,0,0,0\nu3,treatment,,1,5\nu4,treatment,1,0,0\n",
+            encoding="utf-8",
+        )
+        exp = load_user_rows(cfg, data)
+        assert exp.rows["arm"].size == 2
+        assert sum(e.count for e in exp.validation if e.rule == "uncoercible_dropped") == 2
+
+    def test_bom_header_accepted(self, tmp_path: Path) -> None:
+        cfg = load_config(_write_config(tmp_path, _config_text()))
+        data = tmp_path / "bom.csv"
+        data.write_bytes(
+            b"\xef\xbb\xbfuser_id,group,day,converted,spend\nu1,control,0,1,0\nu2,treatment,0,0,0\n"
+        )
+        exp = load_user_rows(cfg, data)
+        assert exp.rows["arm"].size == 2
+
+    def test_aggregates_missing_declared_metric_rejected(self, tmp_path: Path) -> None:
+        cfg = load_config(FIXTURES / "aggregates_config.toml")
+        cfg["metrics"].append(
+            {
+                "name": "metric_9",
+                "column": "9",
+                "kind": "binary",
+                "primary": False,
+                "nonnegative": False,
+            }
+        )
+        with pytest.raises(ValueError, match="has no data for arm"):
+            load_aggregates(cfg, FIXTURES / "aggregates_ok.csv")
+
+    def test_aggregates_misaligned_checkpoints_rejected(self, tmp_path: Path) -> None:
+        source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
+        # second variant for expA whose metric-1 grid misses checkpoint 1.0
+        extra = (
+            "expA,3,1,2.0,220,0.11,0.0983,110,0.14,0.1204\n"
+            "expA,3,1,3.0,360,0.105,0.0942,180,0.13,0.1131\n"
+            "expA,3,4,1.0,100,5.2,3.1,50,5.4,3.3\n"
+            "expA,3,4,2.0,220,5.3,3.2,110,5.5,3.4\n"
+            "expA,3,4,3.0,360,5.25,3.15,180,5.6,3.5\n"
+        )
+        bad = tmp_path / "misaligned.csv"
+        bad.write_text(source + extra, encoding="utf-8")
+        cfg = load_config(FIXTURES / "aggregates_config.toml")
+        with pytest.raises(ValueError, match="checkpoint grids differ across arms"):
+            load_aggregates(cfg, bad)
+
+    def test_aggregates_nan_statistic_rejected(self, tmp_path: Path) -> None:
+        source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
+        bad = tmp_path / "nanstat.csv"
+        bad.write_text(source + "expA,2,1,4.0,400,NaN,0.09,400,0.12,0.11\n", encoding="utf-8")
+        cfg = load_config(FIXTURES / "aggregates_config.toml")
+        with pytest.raises(ValueError, match="non-finite statistics at data row"):
+            load_aggregates(cfg, bad)
+
+    def test_aggregates_noninteger_count_rejected(self, tmp_path: Path) -> None:
+        source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
+        bad = tmp_path / "fraccount.csv"
+        bad.write_text(source + "expA,2,1,4.0,400.9,0.1,0.09,400,0.12,0.11\n", encoding="utf-8")
+        cfg = load_config(FIXTURES / "aggregates_config.toml")
+        with pytest.raises(ValueError, match="non-integer count"):
+            load_aggregates(cfg, bad)
+
+    def test_aggregates_filter_keys_must_pair(self, tmp_path: Path) -> None:
+        text = (FIXTURES / "aggregates_config.toml").read_text(encoding="utf-8")
+        text = text.replace('experiment_id = "expA"\n', "")
+        with pytest.raises(ValueError, match="must be set together"):
+            load_config(_write_config(tmp_path, text))
+
+    def test_aggregates_intended_split_validated(self, tmp_path: Path) -> None:
+        text = (FIXTURES / "aggregates_config.toml").read_text(encoding="utf-8")
+        text += "\n[arms]\nintended_split = [3, 7]\n"
+        with pytest.raises(ValueError, match="positive shares summing to 1"):
+            load_config(_write_config(tmp_path, text))
