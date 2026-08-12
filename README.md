@@ -23,6 +23,19 @@ the right move is to say so rather than pick one. Because the data are
 synthetic, the report closes by putting its headline conclusions next to the
 effects the generator actually planted.
 
+The same engine also runs on real data, and on yours. Two real-data reports
+are committed: [analysis/asos/report.md](analysis/asos/report.md) reads a
+real ASOS.com experiment (aggregate statistics with a time axis, so it
+carries the sequential replay and a 78-experiment archive sweep, and its
+final checkpoint turned out to be internally inconsistent, which the report
+excludes and says so), and
+[analysis/hillstrom/report.md](analysis/hillstrom/report.md) reads the
+classic 2008 retail e-mail experiment (user-level with a heavy-tailed spend
+metric and a genuinely misspelled category the validator normalizes on the
+record). Sections render exactly where the data can support them; the two
+opposite shapes are the demonstration that this is a mechanism, not a
+special case.
+
 ## What is here
 
 - `src/abkit/generators.py` - synthetic experiment data with the failure
@@ -48,6 +61,13 @@ effects the generator actually planted.
 - `src/abkit/power.py` - analytic power, sample size, and minimum detectable
   effect (MDE), plus a simulated-power routine that the tests use to keep the
   formulas honest.
+- `src/abkit/io.py` - the intake: a TOML experiment description, loaders for
+  user-level rows and for per-arm cumulative aggregates, and a validator
+  whose every cleaning action lands in the report rather than happening
+  silently.
+- `src/abkit/report.py` and `src/abkit/report_sections.py` - the report
+  engine (numbering and cross-references resolved at render time, build
+  fails on an uncited figure) and the presence-gated sections it renders.
 
 ## How it is tested
 
@@ -78,8 +98,27 @@ rather than manufacture a significant result.
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt  # .venv/bin/python on Unix
 .venv/Scripts/python -m pytest
-.venv/Scripts/python scripts/run_build_checkout_report.py # regenerates the report and figures
+.venv/Scripts/python scripts/run_build_checkout_report.py # regenerates the flagship report
+.venv/Scripts/python scripts/run_analyze_experiment.py --config analysis/asos/config.toml --sweep
+.venv/Scripts/python scripts/run_fetch_hillstrom.py       # fetches the 2008 dataset (not redistributed)
+.venv/Scripts/python scripts/run_analyze_experiment.py --config analysis/hillstrom/config.toml
 ```
+
+To analyze your own experiment, write a config describing it and point the
+door at your file:
+
+```bash
+.venv/Scripts/python scripts/run_analyze_experiment.py --config my_experiment.toml --data my_data.csv
+```
+
+The config declares the arm column and labels, the metrics and which one is
+primary, the intended split if you know it, and optional value aliases; the
+two committed demo configs (`analysis/asos/config.toml` for aggregate data,
+`analysis/hillstrom/config.toml` for user-level rows) are complete working
+examples of both input shapes. Validation is never silent: every row the
+intake drops or normalizes is counted in the report, an unrecognized arm
+label stops the run, and a config may pin its data file's md5 so an analysis
+cannot quietly run against the wrong file.
 
 Python 3.11+. No install step: the entry scripts and `tests/conftest.py` put
 `src/` on the import path themselves, so a fresh clone runs as-is once the

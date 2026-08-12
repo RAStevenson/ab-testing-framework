@@ -35,5 +35,9 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install -e ".[dev]"
       - run: python scripts/run_build_checkout_report.py
-      - name: Fail if the committed report is stale
-        run: git diff --exit-code -- analysis/checkout/report.md
+      - run: python scripts/run_analyze_experiment.py --config analysis/asos/config.toml --sweep
+      # hillstrom is excluded here on purpose: its data is fetched, never
+      # committed, and CI must not depend on a 2008 URL staying up. Its
+      # logic is covered by the fixture-driven suite above.
+      - name: Fail if a committed report is stale
+        run: git diff --exit-code -- analysis/checkout/report.md analysis/asos/report.md
