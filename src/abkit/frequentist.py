@@ -141,6 +141,66 @@ def welch_ttest(
     )
 
 
+def welch_ttest_from_stats(
+    n_control: int,
+    mean_control: float,
+    var_control: float,
+    n_treatment: int,
+    mean_treatment: float,
+    var_treatment: float,
+    *,
+    confidence: float = 0.95,
+) -> MeanComparison:
+    """Welch t-test from per-arm summary statistics instead of raw arrays.
+
+    Exists for aggregate-only data (the ASOS shape), where counts, means
+    and ddof=1 sample variances are all that was published. Given the
+    statistics of the same arrays, this returns exactly what
+    ``welch_ttest`` returns; the property tests pin that agreement.
+    """
+    for name, n in (("n_control", n_control), ("n_treatment", n_treatment)):
+        if n < 2:
+            raise ValueError(f"need at least 2 observations per arm, got {name}={n}")
+    for name, value in (
+        ("mean_control", mean_control),
+        ("var_control", var_control),
+        ("mean_treatment", mean_treatment),
+        ("var_treatment", var_treatment),
+    ):
+        if not np.isfinite(value):
+            raise ValueError(f"{name} must be finite, got {value}")
+    if var_control < 0.0 or var_treatment < 0.0:
+        raise ValueError(f"variances must be non-negative, got {var_control}, {var_treatment}")
+    if not 0.0 < confidence < 1.0:
+        raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+
+    se_sq = var_control / n_control + var_treatment / n_treatment
+    if se_sq == 0.0:
+        raise ValueError("both arms are constant; t-test is undefined")
+    df = se_sq**2 / (
+        (var_control / n_control) ** 2 / (n_control - 1)
+        + (var_treatment / n_treatment) ** 2 / (n_treatment - 1)
+    )
+    diff = mean_treatment - mean_control
+    t = diff / np.sqrt(se_sq)
+    p_value = 2.0 * stats.t.sf(abs(t), df)
+    t_crit = stats.t.ppf(0.5 + confidence / 2.0, df)
+    half_width = t_crit * np.sqrt(se_sq)
+    return MeanComparison(
+        n_control=int(n_control),
+        n_treatment=int(n_treatment),
+        mean_control=float(mean_control),
+        mean_treatment=float(mean_treatment),
+        difference=float(diff),
+        statistic=float(t),
+        df=float(df),
+        p_value=float(p_value),
+        ci_low=float(diff - half_width),
+        ci_high=float(diff + half_width),
+        confidence=confidence,
+    )
+
+
 def srm_check(
     n_control: int,
     n_treatment: int,

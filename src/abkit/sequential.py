@@ -239,3 +239,50 @@ def z_from_cumulative_counts(
     if not np.all(np.isfinite(se)) or np.any(se == 0.0):
         raise ValueError("a look has all-identical outcomes; z is undefined there")
     return np.asarray((xt / nt - xc / nc) / se)
+
+
+def z_from_cumulative_stats(
+    n_control: ArrayLike,
+    mean_control: ArrayLike,
+    var_control: ArrayLike,
+    n_treatment: ArrayLike,
+    mean_treatment: ArrayLike,
+    var_treatment: ArrayLike,
+) -> NDArray[np.float64]:
+    """Two-sample z-statistic at each look from cumulative summary stats.
+
+    The continuous-metric analogue of ``z_from_cumulative_counts`` for
+    aggregate-only monitoring data (the ASOS shape): per-look cumulative
+    count, mean and ddof=1 variance for each arm. The standard error is
+    the UNPOOLED two-sample form. On binary data it therefore differs
+    from the pooled statistic ``z_from_cumulative_counts`` computes: the
+    gap grows with the observed rate difference and shrinks with n, and
+    on simulated 6%-rate monitoring data it measures up to ~8% at early
+    few-hundred-user looks, tightening to ~1% by the final look (the
+    test pins both bounds). The two are interchangeable only where the
+    test says they are; for a from-the-start monitoring design on counts,
+    prefer ``z_from_cumulative_counts``.
+    """
+    nc = np.asarray(n_control, dtype=np.float64)
+    mc = np.asarray(mean_control, dtype=np.float64)
+    vc = np.asarray(var_control, dtype=np.float64)
+    nt = np.asarray(n_treatment, dtype=np.float64)
+    mt = np.asarray(mean_treatment, dtype=np.float64)
+    vt = np.asarray(var_treatment, dtype=np.float64)
+    shapes = {arr.shape for arr in (nc, mc, vc, nt, mt, vt)}
+    if len(shapes) != 1 or nc.ndim != 1:
+        raise ValueError("all six inputs must be 1-d arrays of the same length")
+    if np.any(nc < 2.0) or np.any(nt < 2.0):
+        raise ValueError("arm sizes must be at least 2 at every look")
+    if np.any(np.diff(nc) < 0.0) or np.any(np.diff(nt) < 0.0):
+        raise ValueError("counts must be cumulative (non-decreasing)")
+    for name, arr in (("means", np.concatenate([mc, mt])), ("variances", np.concatenate([vc, vt]))):
+        if not np.all(np.isfinite(arr)):
+            raise ValueError(f"{name} must all be finite")
+    if np.any(vc < 0.0) or np.any(vt < 0.0):
+        raise ValueError("variances must be non-negative")
+
+    se = np.sqrt(vc / nc + vt / nt)
+    if np.any(se == 0.0):
+        raise ValueError("a look has zero variance in both arms; z is undefined there")
+    return np.asarray((mt - mc) / se)

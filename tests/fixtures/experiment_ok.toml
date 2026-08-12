@@ -1,0 +1,31 @@
+# Fixture experiment description for the intake tests. The data file it
+# names is fabricated; nothing here comes from a real experiment.
+
+[experiment]
+name = "fixture-experiment"
+alpha = 0.05
+
+[input]
+shape = "user_rows"
+path = "user_rows_ok.csv"
+
+[columns]
+arm = "group"
+day = "day"
+user_id = "user_id"
+
+[arms]
+labels = ["control", "treatment"]
+intended_split = [0.5, 0.5]
+
+[[metrics]]
+name = "converted"
+column = "converted"
+kind = "binary"
+primary = true
+
+[[metrics]]
+name = "spend"
+column = "spend"
+kind = "continuous"
+nonnegative = true

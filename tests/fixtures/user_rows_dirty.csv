@@ -1,0 +1,14 @@
+user_id,group,day,converted,spend
+u01,control,0,1,10
+u02,control,0,0,0
+u03,treatmnet,0,1,15
+u04,,1,0,0
+u05,control,1,1,20
+u05,control,1,1,20
+u06,treatment,2,0,-5
+u07,treatment,2,1,N/A
+u08,treatment,3,1,25
+u09,control,3,0,0
+u10,treatment,4,0,0
+u11,control,4,1,30
+u12,treatment,4,1,40
