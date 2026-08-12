@@ -13,8 +13,9 @@ scripts/run_fetch_hillstrom.py (SHA-256 pinned there) rather than
 redistributed in this repository. The data carries no per-day fields,
 so the time-based sections do not appear below; that omission is the
 report adapting to the data. It does carry a genuine data wart, the
-misspelled category value the validation section records normalizing,
-which is the kind of cleaning a real intake has to own out loud.
+misspelled category value the validation section records normalizing (a
+covariate column the analyses do not consume), which is the kind of
+cleaning a real intake has to own out loud.
 
 ## 1. Data validation
 

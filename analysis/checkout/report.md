@@ -7,7 +7,9 @@ correct the secondary metric screen, and work one genuinely ambiguous metric
 to a recommendation.
 
 Because the data are synthetic, the true effects are known, and that is the
-point. At the end I compare what the analysis concluded against what the
+point. The seeds are fixed, and they were chosen so that each failure mode
+this report exists to demonstrate actually shows up in this one run; the
+multiple-comparisons section says so out loud for its own starkest case. At the end I compare what the analysis concluded against what the
 generator actually did. Everything here is produced by `scripts/run_build_checkout_report.py`
 with fixed seeds; the library functions it calls live in `src/abkit/`, and the
 document is rendered by the same engine that renders reports on a user's own
@@ -24,7 +26,7 @@ split, giving roughly 60,000 per arm - some margin over the minimum.
 
 ## 2. Assignment validation, and the run we threw away
 
-The first launch of this experiment had a client bug. The treatment redirect
+In this scenario, the first launch of the experiment had a client bug. The treatment redirect
 dropped the tracking beacon for a slice of users who bounced without
 converting. Nothing about the metric looks wrong on the surface - the
 treatment "won" with an observed lift of 0.75 pp - but
