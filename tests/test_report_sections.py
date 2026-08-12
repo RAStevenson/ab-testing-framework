@@ -176,3 +176,59 @@ class TestCommittedAsosReport:
         text = self.REPORT.read_text(encoding="utf-8")
         assert "EXCLUDED" in text
         assert "internally inconsistent" in text
+
+
+class TestHillstromShapedFixture:
+    """The Hillstrom demo's logic, exercised entirely on a FABRICATED
+    30-row fixture with the real file's header, so no test ever touches
+    the network or the gitignored cache."""
+
+    def _experiment(self, tmp_path: Path):
+        text = (
+            '[experiment]\nname = "hillstrom-fixture"\nalpha = 0.05\n\n'
+            '[input]\nshape = "user_rows"\n\n'
+            '[columns]\narm = "segment"\n\n'
+            '[columns.aliases.zip_code]\n"Surburban" = "Suburban"\n\n'
+            '[arms]\nlabels = ["No E-Mail", "Mens E-Mail", "Womens E-Mail"]\n'
+            "intended_split = [0.3334, 0.3333, 0.3333]\n\n"
+            '[[metrics]]\nname = "visit"\nkind = "binary"\nprimary = true\n\n'
+            '[[metrics]]\nname = "conversion"\nkind = "binary"\n\n'
+            '[[metrics]]\nname = "spend"\nkind = "continuous"\nnonnegative = true\n'
+        )
+        p = tmp_path / "config.toml"
+        p.write_text(text, encoding="utf-8")
+        cfg = load_config(p)
+        return load_user_rows(cfg, FIXTURES / "hillstrom_shaped.csv")
+
+    def test_three_arms_and_no_time_axis(self, tmp_path: Path) -> None:
+        exp = self._experiment(tmp_path)
+        assert exp.arms == ("No E-Mail", "Mens E-Mail", "Womens E-Mail")
+        assert capabilities(exp) == frozenset(
+            {"user_rows", "multi_metric", "continuous_metric", "intended_split"}
+        )
+
+    def test_alias_normalization_fires_on_the_misspelling(self, tmp_path: Path) -> None:
+        exp = self._experiment(tmp_path)
+        by_rule = {e.rule: e.count for e in exp.validation}
+        assert by_rule["alias_normalized"] == 7
+        assert np.sum(exp.rows["zip_code"] == "Surburban") == 0
+        assert np.sum(exp.rows["zip_code"] == "Suburban") == 7
+
+    def test_sections_render_without_time_axis(self, tmp_path: Path) -> None:
+        exp = self._experiment(tmp_path)
+        sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
+        keys = [s.key for s in sections]
+        assert "sequential" not in keys
+        assert "novelty" not in keys
+        assert "corrections" in keys  # 2 non-primary metrics x 2 contrasts
+        assert "heavy_tail" in keys
+
+
+class TestCommittedHillstromReport:
+    REPORT = Path(__file__).parents[1] / "analysis" / "hillstrom" / "report.md"
+
+    def test_time_sections_absent_and_tail_present(self) -> None:
+        text = self.REPORT.read_text(encoding="utf-8")
+        assert "sequential monitoring" not in text.lower()
+        assert "Heavy-tailed metric: spend" in text
+        assert "alias_normalized" in text
