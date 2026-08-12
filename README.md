@@ -10,12 +10,12 @@ Fourteen daily peeks at a fixed |z| > 1.96 turn a nominal 5% false-positive
 rate into 21.9%. An O'Brien-Fleming spending design, built on the same
 fourteen looks at the sample sizes they actually reached, holds it at 4.9%.
 Both figures come from
-100,000 simulated null runs at a fixed seed, and `python scripts/run_build_report.py`
+100,000 simulated null runs at a fixed seed, and `python scripts/run_build_checkout_report.py`
 reproduces them.
 
-![Daily monitoring against spending boundaries](analysis/figures/sequential.png)
+![Daily monitoring against spending boundaries](analysis/checkout/figures/sequential.png)
 
-If you only read one thing, read [analysis/report.md](analysis/report.md).
+If you only read one thing, read [analysis/checkout/report.md](analysis/checkout/report.md).
 It walks a synthetic checkout-redesign experiment from power analysis to a
 ship recommendation, including a revenue metric where Welch, the bootstrap,
 and a permutation test return three different verdicts on the same data and
@@ -78,7 +78,7 @@ rather than manufacture a significant result.
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt  # .venv/bin/python on Unix
 .venv/Scripts/python -m pytest
-.venv/Scripts/python scripts/run_build_report.py         # regenerates the report and figures
+.venv/Scripts/python scripts/run_build_checkout_report.py # regenerates the report and figures
 ```
 
 Python 3.11+. No install step: the entry scripts and `tests/conftest.py` put

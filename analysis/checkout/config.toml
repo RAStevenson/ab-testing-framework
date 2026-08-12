@@ -1,0 +1,42 @@
+# Generation recipe for the checkout-redesign flagship analysis. This is
+# not an intake config (there is no input file); it is the [truth] the
+# synthetic experiment is built from, which is exactly what the report's
+# final section scores the analysis against. Values here are the
+# constants the builder interpolates into the report, so changing one
+# changes the committed report and the drift gate will say so.
+
+[experiment]
+name = "checkout-redesign"
+alpha = 0.05
+
+[truth]
+n_users = 120000
+n_days = 14
+base_rate = 0.06
+true_lift = 0.004
+novelty_boost = 0.008
+novelty_half_life_days = 3.0
+spend_rate = 0.06
+spend_rate_lift = 0.004
+log_mean = 3.4
+log_sigma = 1.3
+whale_rate = 0.008
+whale_shape = 1.5
+whale_scale = 400.0
+secondary_metrics = [
+    "Add-to-wishlist rate",
+    "Search usage",
+    "Account creation",
+    "Support contact rate",
+    "Coupon usage",
+    "Newsletter signup",
+]
+
+[truth.seeds]
+aborted_run = 55
+primary = 38
+secondary_base = 124000
+revenue = 221
+bootstrap = 1
+permutation = 2
+null_sim = 97

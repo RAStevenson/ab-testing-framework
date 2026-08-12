@@ -8,8 +8,9 @@ to a recommendation.
 
 Because the data are synthetic, the true effects are known, and that is the
 point. At the end I compare what the analysis concluded against what the
-generator actually did. Everything here is produced by `scripts/run_build_report.py`
-with fixed seeds; the library functions it calls live in `src/abkit/`.
+generator actually did. Everything here is produced by `scripts/run_build_checkout_report.py`
+with fixed seeds; the library functions it calls live in `src/abkit/`, and the
+document is rendered by the same engine that analyzes a user's own data.
 
 ## 1. Design and power
 
@@ -58,9 +59,10 @@ forecast on, for the reason in the next section.
 
 The daily lift drifts downward over the experiment, which is the classic
 signature of a novelty effect. Existing users react to the change itself, and
-that reaction fades.
+that reaction fades. Figure 1 shows the daily rates and the
+daily lift against the effect that generated it.
 
-![Daily conversion rates and daily lift](figures/daily_rates.png)
+![Figure 1: Daily conversion rates and daily lift](figures/daily_rates.png)
 
 Splitting the window confirms it:
 
@@ -97,9 +99,10 @@ approach is for, and it does not cost anything here. The look *schedule* was
 fixed in advance at one look per day, and the realized fractions differ from
 an even 14-way split by at most 0.0015. What would void the
 guarantee is choosing the looks after seeing the data, which is a different
-thing entirely.
+thing entirely. Figure 2 shows both rules against the observed
+z path.
 
-![Sequential monitoring](figures/sequential.png)
+![Figure 2: Sequential monitoring](figures/sequential.png)
 
 The naive rule would have stopped at **look 1**, when the novelty
 effect was near its peak, locking in a cumulative lift of
@@ -147,8 +150,10 @@ Across fresh draws only about 23% of runs produce exactly one nominally
 significant metric, and most produce none. That is a deliberate choice to show
 the machinery working, not a typical draw, and it seemed worth saying out loud
 in a document whose whole argument is about not reading luck as signal.
+Figure 3 shows the adjustment pulling the flagged metric
+back across the line.
 
-![Secondary metric p-values](figures/secondary_pvalues.png)
+![Figure 3: Secondary metric p-values](figures/secondary_pvalues.png)
 
 ## 7. Revenue per user: the ambiguous one
 
@@ -157,9 +162,10 @@ one this experiment cannot answer cleanly. The distribution is zero-inflated
 (94% of users spend nothing) with a Pareto tail. The generator
 gives roughly 1 in 125 spenders a "whale" draw whose distribution has
 infinite variance. This is not an exotic choice; real revenue data looks like
-this.
+this. Figure 4 shows the distributions and the interval
+disagreement.
 
-![Revenue distributions and interval comparison](figures/revenue.png)
+![Figure 4: Revenue distributions and interval comparison](figures/revenue.png)
 
 | Method | Estimate | Interval / p |
 |---|---|---|

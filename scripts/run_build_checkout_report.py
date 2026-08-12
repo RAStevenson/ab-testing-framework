@@ -1,10 +1,20 @@
-"""Regenerate analysis/report.md and analysis/figures/ from scratch.
+"""Regenerate analysis/checkout/report.md and its figures from scratch.
 
-Fully deterministic: every random draw flows from the fixed seeds below,
-so re-running the script reproduces the committed report byte for byte
-(figures may differ across matplotlib versions).
+Fully deterministic: every random draw flows from the fixed seeds in
+analysis/checkout/config.toml, so re-running the script reproduces the
+committed report byte for byte (figures may differ across matplotlib
+versions). The narrative prose lives here; the numbers it interpolates
+are computed in this run; the document is rendered by the same engine
+(``abkit.report``) that ``run_analyze_experiment.py`` uses, so section
+and figure numbering, cross-references, and the figure-citation rule are
+enforced identically for the flagship and for a user's own data.
 
-Run with: python scripts/run_build_report.py (from the repo root)
+The checkout story is a COMPOSITE: the aborted run, the primary
+experiment, the six secondary metrics, and the revenue experiment are
+each generated independently, which is why this builder drives the
+generators directly rather than the file intake.
+
+Run with: python scripts/run_build_checkout_report.py (from the repo root)
 """
 
 from __future__ import annotations
@@ -13,6 +23,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+import tomllib
 
 import matplotlib
 
@@ -26,61 +38,54 @@ from scipy import stats
 from abkit.frequentist import benjamini_hochberg, holm, srm_check, two_proportion_ztest, welch_ttest
 from abkit.generators import ExperimentData, generate_binary, generate_continuous
 from abkit.power import power_two_means, sample_size_two_proportions
+from abkit.report import FigureSpec, SectionSpec, render_report
+from abkit.report_sections import (
+    COLOR_CONTROL,
+    COLOR_INK,
+    COLOR_REFERENCE,
+    COLOR_TREATMENT,
+    fmt_p,
+    pct,
+    pp,
+)
 from abkit.resampling import bootstrap_mean_diff, permutation_test_mean_diff, trimmed_mean_diff
 from abkit.results import BootstrapResult, MeanComparison, RateComparison
 from abkit.sequential import design, monitor, z_from_cumulative_counts
 
-ANALYSIS = Path(__file__).resolve().parents[1] / "analysis"
+ANALYSIS = Path(__file__).resolve().parents[1] / "analysis" / "checkout"
 FIGURES = ANALYSIS / "figures"
 
 # experiment configuration (the "truth" the analysis tries to recover)
-N_USERS = 120_000
-N_DAYS = 14
-BASE_RATE = 0.06
-TRUE_LIFT = 0.004
-NOVELTY_BOOST = 0.008
-NOVELTY_HALF_LIFE = 3.0
+# lives in config.toml next to the committed report; the report's final
+# section scores the analysis against exactly these values
+with open(ANALYSIS / "config.toml", "rb") as _fh:
+    _CFG = tomllib.load(_fh)
+_TRUTH = _CFG["truth"]
 
-SPEND_RATE = 0.06
-SPEND_RATE_LIFT = 0.004
-LOG_MEAN = 3.4
-LOG_SIGMA = 1.3
-WHALE_RATE = 0.008
-WHALE_SHAPE = 1.5
-WHALE_SCALE = 400.0
+N_USERS = int(_TRUTH["n_users"])
+N_DAYS = int(_TRUTH["n_days"])
+BASE_RATE = float(_TRUTH["base_rate"])
+TRUE_LIFT = float(_TRUTH["true_lift"])
+NOVELTY_BOOST = float(_TRUTH["novelty_boost"])
+NOVELTY_HALF_LIFE = float(_TRUTH["novelty_half_life_days"])
 
-SEED_ABORTED_RUN = 55
-SEED_PRIMARY = 38
-SEED_SECONDARY_BASE = 124_000
-SEED_REVENUE = 221
-SEED_BOOTSTRAP = 1
-SEED_PERMUTATION = 2
-SEED_NULL_SIM = 97
+SPEND_RATE = float(_TRUTH["spend_rate"])
+SPEND_RATE_LIFT = float(_TRUTH["spend_rate_lift"])
+LOG_MEAN = float(_TRUTH["log_mean"])
+LOG_SIGMA = float(_TRUTH["log_sigma"])
+WHALE_RATE = float(_TRUTH["whale_rate"])
+WHALE_SHAPE = float(_TRUTH["whale_shape"])
+WHALE_SCALE = float(_TRUTH["whale_scale"])
 
-SECONDARY_METRICS = [
-    "Add-to-wishlist rate",
-    "Search usage",
-    "Account creation",
-    "Support contact rate",
-    "Coupon usage",
-    "Newsletter signup",
-]
+SEED_ABORTED_RUN = int(_TRUTH["seeds"]["aborted_run"])
+SEED_PRIMARY = int(_TRUTH["seeds"]["primary"])
+SEED_SECONDARY_BASE = int(_TRUTH["seeds"]["secondary_base"])
+SEED_REVENUE = int(_TRUTH["seeds"]["revenue"])
+SEED_BOOTSTRAP = int(_TRUTH["seeds"]["bootstrap"])
+SEED_PERMUTATION = int(_TRUTH["seeds"]["permutation"])
+SEED_NULL_SIM = int(_TRUTH["seeds"]["null_sim"])
 
-# blue/red rather than the matplotlib default green/orange pair, which is the
-# hardest combination for red-green colour blindness to separate
-COLOR_CONTROL = "#4269d0"
-COLOR_TREATMENT = "#d4615c"
-COLOR_REFERENCE = "#8a8f98"
-COLOR_INK = "#31343a"
-
-
-def pct(x: float, digits: int = 2) -> str:
-    return f"{100 * x:.{digits}f}%"
-
-
-def pp(x: float, digits: int = 2) -> str:
-    return f"{100 * x:.{digits}f} pp"
-
+SECONDARY_METRICS = list(_TRUTH["secondary_metrics"])
 
 _SMALL_NUMBERS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
 
@@ -88,12 +93,6 @@ _SMALL_NUMBERS = ["zero", "one", "two", "three", "four", "five", "six", "seven",
 def spell(n: int) -> str:
     """Small counts spelled out, so interpolated prose still reads as prose."""
     return _SMALL_NUMBERS[n] if n < len(_SMALL_NUMBERS) else f"{n:,}"
-
-
-def fmt_p(p: float) -> str:
-    if p < 1e-4:
-        return f"{p:.1e}"
-    return f"{p:.4f}" if p < 0.001 else f"{p:.3f}"
 
 
 def style_axis(ax: Axes, *, grid_axis: str = "y") -> None:
@@ -323,12 +322,10 @@ def fig_revenue(
 
 
 def main() -> None:
-    FIGURES.mkdir(exist_ok=True)
-    md: list[str] = []
+    FIGURES.mkdir(parents=True, exist_ok=True)
+    sections: list[SectionSpec] = []
 
-    # ------------------------------------------------------------- design
-    n_required = sample_size_two_proportions(BASE_RATE, BASE_RATE + TRUE_LIFT)
-    md.append(f"""# Checkout redesign: end-to-end experiment analysis
+    header = """# Checkout redesign: end-to-end experiment analysis
 
 This report walks a synthetic checkout-redesign experiment through the same
 pipeline I would use on real data: power the design, validate the assignment,
@@ -338,18 +335,24 @@ to a recommendation.
 
 Because the data are synthetic, the true effects are known, and that is the
 point. At the end I compare what the analysis concluded against what the
-generator actually did. Everything here is produced by `scripts/run_build_report.py`
-with fixed seeds; the library functions it calls live in `src/abkit/`.
+generator actually did. Everything here is produced by `scripts/run_build_checkout_report.py`
+with fixed seeds; the library functions it calls live in `src/abkit/`, and the
+document is rendered by the same engine that analyzes a user's own data."""
 
-## 1. Design and power
-
-The primary metric is checkout conversion, baseline {pct(BASE_RATE, 1)}. The
+    # ------------------------------------------------------------- design
+    n_required = sample_size_two_proportions(BASE_RATE, BASE_RATE + TRUE_LIFT)
+    sections.append(
+        SectionSpec(
+            key="design_power",
+            title="Design and power",
+            body=f"""The primary metric is checkout conversion, baseline {pct(BASE_RATE, 1)}. The
 smallest effect worth shipping was set at +{pp(TRUE_LIFT, 1)} absolute. For a
 two-sided test at alpha 0.05 and 80% power, that needs
 **{n_required:,} users per arm** (`sample_size_two_proportions`), so the
 experiment was sized at {N_USERS:,} users over {N_DAYS} days with a 50/50
-split, giving roughly {N_USERS // 2:,} per arm - some margin over the minimum.
-""")
+split, giving roughly {N_USERS // 2:,} per arm - some margin over the minimum.""",
+        )
+    )
 
     # ------------------------------------------- aborted first run: SRM
     rng_bad = np.random.default_rng(SEED_ABORTED_RUN)
@@ -376,9 +379,11 @@ split, giving roughly {N_USERS // 2:,} per arm - some margin over the minimum.
     )
     clean_srm = srm_check(data.n_control, data.n_treatment)
 
-    md.append(f"""## 2. Assignment validation, and the run we threw away
-
-The first launch of this experiment had a client bug. The treatment redirect
+    sections.append(
+        SectionSpec(
+            key="srm",
+            title="Assignment validation, and the run we threw away",
+            body=f"""The first launch of this experiment had a client bug. The treatment redirect
 dropped the tracking beacon for a slice of users who bounced without
 converting. Nothing about the metric looks wrong on the surface - the
 treatment "won" with an observed lift of {pp(bad_result.absolute_lift)} - but
@@ -394,14 +399,17 @@ treatment share at this sample size by chance. Because the missing users were
 disproportionately non-converters, the observed treatment rate was biased
 upward, and no amount of downstream statistics repairs that. The first run's
 data were discarded, the bug was fixed, and everything below analyzes the
-rerun, which passes the check.
-""")
+rerun, which passes the check.""",
+        )
+    )
 
     # ------------------------------------------------------ primary metric
     primary = rate_test(data)
-    md.append(f"""## 3. Primary metric
-
-| | Control | Treatment |
+    sections.append(
+        SectionSpec(
+            key="primary",
+            title="Primary metric",
+            body=f"""| | Control | Treatment |
 |---|---|---|
 | Users | {primary.n_control:,} | {primary.n_treatment:,} |
 | Conversions | {primary.conversions_control:,} | {primary.conversions_treatment:,} |
@@ -411,8 +419,9 @@ Absolute lift {pp(primary.absolute_lift)} (95% CI {pp(primary.ci_low)} to
 {pp(primary.ci_high)}), relative lift {pct(primary.relative_lift, 1)},
 z = {primary.statistic:.2f}, p = {fmt_p(primary.p_value)}. The headline result
 is comfortably significant. But the headline is not the number I would ship a
-forecast on, for the reason in the next section.
-""")
+forecast on, for the reason in the next section.""",
+        )
+    )
 
     # ------------------------------------------------------- novelty check
     early = data.subset(data.day < 3)
@@ -426,13 +435,14 @@ forecast on, for the reason in the next section.
     decay_z = decay_diff / decay_se
     decay_p = float(2.0 * stats.norm.sf(abs(decay_z)))
     fig_daily_rates(data)
-    md.append(f"""## 4. Novelty check
-
-The daily lift drifts downward over the experiment, which is the classic
+    sections.append(
+        SectionSpec(
+            key="novelty",
+            title="Novelty check",
+            body=f"""The daily lift drifts downward over the experiment, which is the classic
 signature of a novelty effect. Existing users react to the change itself, and
-that reaction fades.
-
-![Daily conversion rates and daily lift](figures/daily_rates.png)
+that reaction fades. {{{{fig:daily_rates}}}} shows the daily rates and the
+daily lift against the effect that generated it.
 
 Splitting the window confirms it:
 
@@ -455,8 +465,16 @@ honest summary is that the treatment very likely helps, that the headline
 {pp(primary.absolute_lift)} overstates the long-run effect, and that the
 {N_DAYS}-day window cannot pin the persistent lift precisely. I would report
 the late-window interval, not the headline, and keep a small holdback running
-to measure the effect after habituation.
-""")
+to measure the effect after habituation.""",
+            figures=(
+                FigureSpec(
+                    "daily_rates",
+                    "daily_rates.png",
+                    "Daily conversion rates and daily lift",
+                ),
+            ),
+        )
+    )
 
     # -------------------------------------------------- sequential replay
     look_days = np.arange(N_DAYS)
@@ -478,8 +496,8 @@ to measure the effect after habituation.
     # assert would vanish under python -O, which is exactly when it matters.
     if naive_crossings.size == 0 or outcome.stopped_at_look is None:
         raise RuntimeError(
-            "sequential replay no longer matches the narrative in section 5: "
-            f"naive crossings={naive_crossings.tolist()}, "
+            "sequential replay no longer matches the narrative in the monitoring "
+            f"section: naive crossings={naive_crossings.tolist()}, "
             f"spending-design stop={outcome.stopped_at_look}"
         )
     first_naive = int(naive_crossings[0]) + 1
@@ -501,9 +519,11 @@ to measure the effect after habituation.
     )
     max_fraction_drift = float(np.max(np.abs(fractions - (look_days + 1) / N_DAYS)))
 
-    md.append(f"""## 5. What daily monitoring would have decided
-
-Everyone peeks. The question is whether the peeking is accounted for. I
+    sections.append(
+        SectionSpec(
+            key="sequential",
+            title="What daily monitoring would have decided",
+            body=f"""Everyone peeks. The question is whether the peeking is accounted for. I
 replayed the experiment as {N_DAYS} daily looks two ways: a naive rule that
 calls the result at the first |z| > 1.96, and an O'Brien-Fleming alpha-spending
 design built on the realized information fractions (`abkit.sequential`).
@@ -513,9 +533,8 @@ approach is for, and it does not cost anything here. The look *schedule* was
 fixed in advance at one look per day, and the realized fractions differ from
 an even {N_DAYS}-way split by at most {max_fraction_drift:.4f}. What would void the
 guarantee is choosing the looks after seeing the data, which is a different
-thing entirely.
-
-![Sequential monitoring](figures/sequential.png)
+thing entirely. {{{{fig:sequential}}}} shows both rules against the observed
+z path.
 
 The naive rule would have stopped at **look {first_naive}**, when the novelty
 effect was near its peak, locking in a cumulative lift of
@@ -531,8 +550,10 @@ nominal 5%; the spending design holds {pct(spent_alpha, 1)}.
 
 Early stopping is a tool for catching regressions quickly, not for shipping
 winners early. Even the correctly-stopped estimate is biased upward by the
-novelty effect at that point in the run.
-""")
+novelty effect at that point in the run.""",
+            figures=(FigureSpec("sequential", "sequential.png", "Sequential monitoring"),),
+        )
+    )
 
     # ----------------------------------------- secondary metrics screen
     naive_ps = []
@@ -559,9 +580,11 @@ novelty effect at that point in the run.
         f"| {fmt_p(bh_ps[i])} |"
         for i, name in enumerate(SECONDARY_METRICS)
     )
-    md.append(f"""## 6. Secondary metrics and multiple comparisons
-
-{spell(len(SECONDARY_METRICS)).capitalize()} secondary metrics were tracked. None of them was actually moved by
+    sections.append(
+        SectionSpec(
+            key="corrections",
+            title="Secondary metrics and multiple comparisons",
+            body=f"""{spell(len(SECONDARY_METRICS)).capitalize()} secondary metrics were tracked. None of them was actually moved by
 the treatment (the generator applied zero lift to all {spell(len(SECONDARY_METRICS))}), which makes
 this a live-fire test of the correction machinery.
 
@@ -584,9 +607,15 @@ Across fresh draws only about {exactly_one:.0%} of runs produce exactly one nomi
 significant metric, and most produce none. That is a deliberate choice to show
 the machinery working, not a typical draw, and it seemed worth saying out loud
 in a document whose whole argument is about not reading luck as signal.
-
-![Secondary metric p-values](figures/secondary_pvalues.png)
-""")
+{{{{fig:secondary_pvalues}}}} shows the adjustment pulling the flagged metric
+back across the line.""",
+            figures=(
+                FigureSpec(
+                    "secondary_pvalues", "secondary_pvalues.png", "Secondary metric p-values"
+                ),
+            ),
+        )
+    )
 
     # ------------------------------------------------ revenue: ambiguous
     rng_rev = np.random.default_rng(SEED_REVENUE)
@@ -632,16 +661,17 @@ in a document whose whole argument is about not reading luck as signal.
     )
     fig_revenue(revenue, welch, boot, trimmed)
 
-    md.append(f"""## 7. Revenue per user: the ambiguous one
-
-Revenue per user is the metric leadership actually asks about, and it is the
+    sections.append(
+        SectionSpec(
+            key="revenue",
+            title="Revenue per user: the ambiguous one",
+            body=f"""Revenue per user is the metric leadership actually asks about, and it is the
 one this experiment cannot answer cleanly. The distribution is zero-inflated
 ({pct(zero_share, 0)} of users spend nothing) with a Pareto tail. The generator
 gives roughly 1 in {1 / WHALE_RATE:.0f} spenders a "whale" draw whose distribution has
 infinite variance. This is not an exotic choice; real revenue data looks like
-this.
-
-![Revenue distributions and interval comparison](figures/revenue.png)
+this. {{{{fig:revenue}}}} shows the distributions and the interval
+disagreement.
 
 | Method | Estimate | Interval / p |
 |---|---|---|
@@ -695,16 +725,24 @@ sized for it.
 
 What I would not do is run all four and report the one that crossed 0.05. They
 were all planned; the disagreement itself is the finding, and it says
-"underpowered for this metric," not "significant if you pick the right test."
-""")
+"underpowered for this metric," not "significant if you pick the right test." """,
+            figures=(
+                FigureSpec(
+                    "revenue", "revenue.png", "Revenue distributions and interval comparison"
+                ),
+            ),
+        )
+    )
 
     # ------------------------------------------------------- ground truth
-    md.append(f"""## 8. What the generator actually did
-
-| Quantity | Truth | Headline estimate | Best estimate |
+    sections.append(
+        SectionSpec(
+            key="truth",
+            title="What the generator actually did",
+            body=f"""| Quantity | Truth | Headline estimate | Best estimate |
 |---|---|---|---|
 | Persistent conversion lift | {pp(TRUE_LIFT, 1)} | {pp(primary.absolute_lift)} | {pp(late_r.absolute_lift)} (days 10-13, CI {pp(late_r.ci_low)} to {pp(late_r.ci_high)}) |
-| Day-0 novelty boost | {pp(NOVELTY_BOOST, 1)} | not separately reported | decay visible in the daily-lift panel in section 4 |
+| Day-0 novelty boost | {pp(NOVELTY_BOOST, 1)} | not separately reported | decay visible in the daily-lift panel in section {{{{sec:novelty}}}} |
 | Secondary metric lifts | 0 on all six | one naive false positive | none significant after Holm |
 | Revenue per user diff | {true_rev_diff:+.2f} | {welch.difference:+.2f} | interval spanning zero; underpowered |
 
@@ -721,10 +759,12 @@ report says so rather than manufacturing certainty.
 Ship the redesign on the strength of the conversion result, quote the
 late-window interval rather than the headline, keep a 5% holdback for four
 more weeks to measure the post-novelty effect, and define a capped revenue
-metric before the follow-up starts.
-""")
+metric before the follow-up starts.""",
+        )
+    )
 
-    (ANALYSIS / "report.md").write_text("\n".join(md), encoding="utf-8")
+    doc = render_report(header, sections, frozenset(), "figures")
+    (ANALYSIS / "report.md").write_text(doc, encoding="utf-8", newline="\n")
     print(f"wrote {ANALYSIS / 'report.md'} and {len(list(FIGURES.glob('*.png')))} figures")
 
 
