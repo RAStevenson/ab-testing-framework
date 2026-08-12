@@ -118,3 +118,61 @@ class TestAggregatesReport:
         sections, _ = sections_and_exp
         seq = next(s for s in sections if s.key == "sequential")
         assert "variant_2 vs control" in seq.body
+
+
+class TestConsistentPrefix:
+    def test_clean_series_keeps_everything(self) -> None:
+        from abkit.report_sections import _consistent_prefix
+
+        rng = np.random.default_rng(3)
+        observations = rng.lognormal(1.0, 0.6, size=300)
+        splits = [100, 200, 300]
+        n = np.array([float(k) for k in splits])
+        mean = np.array([observations[:k].mean() for k in splits])
+        var = np.array([observations[:k].var(ddof=1) for k in splits])
+        assert _consistent_prefix(n, mean, var) == 3
+
+    def test_corrupt_final_checkpoint_is_cut(self) -> None:
+        # final checkpoint's mean drops while n barely grows, the settled-
+        # recompute shape found in the real ASOS archive: the implied
+        # increment variance goes hugely negative and the prefix stops
+        from abkit.report_sections import _consistent_prefix
+
+        n = np.array([1000.0, 2000.0, 2010.0])
+        mean = np.array([0.10, 0.11, 0.05])
+        var = mean * (1 - mean) * n / (n - 1)
+        assert _consistent_prefix(n, mean, var) == 2
+
+
+class TestArchiveSweep:
+    def test_sweep_counts_and_accounting_on_fixture(self) -> None:
+        from abkit.report_sections import sweep_aggregate_archive
+
+        cfg = load_config(FIXTURES / "aggregates_config.toml")
+        section = sweep_aggregate_archive(cfg, FIXTURES / "aggregates_ok.csv")
+        # fixture holds expA (3 checkpoints, testable) and expB (1
+        # checkpoint, must be counted as untestable, never hidden)
+        assert "(2 total)" in section.body
+        assert "1 experiments were testable; 1 had too few" in section.body
+        assert "flagged at the conventional p < 1e-3 alarm: none" in section.body
+
+
+class TestCommittedAsosReport:
+    """Pins on the committed real-data demo: the presence-keying and the
+    stated exclusion must hold in the artifact a reader actually sees."""
+
+    REPORT = Path(__file__).parents[1] / "analysis" / "asos" / "report.md"
+
+    def test_no_user_level_sections_render(self) -> None:
+        text = self.REPORT.read_text(encoding="utf-8")
+        assert "Heavy-tailed" not in text
+        assert "What the generator actually did" not in text
+
+    def test_srm_takes_ratio_stability_form(self) -> None:
+        text = self.REPORT.read_text(encoding="utf-8")
+        assert "RATIO STABILITY" in text
+
+    def test_inconsistent_final_checkpoint_is_stated_not_silent(self) -> None:
+        text = self.REPORT.read_text(encoding="utf-8")
+        assert "EXCLUDED" in text
+        assert "internally inconsistent" in text

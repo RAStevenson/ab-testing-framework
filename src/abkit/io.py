@@ -128,10 +128,14 @@ def load_config(path: Path) -> dict:
     alpha = exp.setdefault("alpha", 0.05)
     if not isinstance(alpha, float) or not 0.0 < alpha < 1.0:
         raise ValueError(f"experiment.alpha must be a float in (0, 1), got {alpha!r}")
+    if "preamble" in exp and not isinstance(exp["preamble"], str):
+        raise ValueError("experiment.preamble must be a string when present")
 
     inp = cfg.get("input")
     if not isinstance(inp, dict) or inp.get("shape") not in _INPUT_SHAPES:
         raise ValueError(f"config needs [input] with shape in {_INPUT_SHAPES}")
+    if "md5" in inp and not (isinstance(inp["md5"], str) and len(inp["md5"]) == 32):
+        raise ValueError("input.md5 must be a 32-character hex digest when present")
 
     arms = cfg.get("arms")
     if inp["shape"] == "user_rows":

@@ -18,8 +18,12 @@ dist/
 .claude/
 CLAUDE.md
 
-# data artifacts and models — analysis/figures/ is committed on purpose
-data/
+# data artifacts and models — analysis figures are committed on purpose.
+# data/asos/ is the one committed dataset: CC BY 4.0 with its own license
+# notice, small, and pinned by md5 in analysis/asos/config.toml. Fetched
+# datasets without a redistribution license (hillstrom) stay ignored.
+data/*
+!data/asos/
 *.parquet
 *.pkl
 *.pt

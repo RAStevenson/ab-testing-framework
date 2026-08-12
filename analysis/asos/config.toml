@@ -1,0 +1,63 @@
+# The ASOS real-data demo: a deep dive on one experiment from the ASOS
+# Digital Experiments Dataset, plus (via --sweep) a whole-archive
+# summary. Reproduce with:
+#   python scripts/run_analyze_experiment.py --config analysis/asos/config.toml --sweep
+
+[experiment]
+name = "ASOS experiment 54a85a"
+alpha = 0.05
+preamble = """
+The data is the ASOS Digital Experiments Dataset: real online controlled
+experiments from ASOS.com, published as daily or twice-daily CUMULATIVE
+summary statistics per arm with no user-level rows (Liu, Cardoso,
+Couturier, McCoy, NeurIPS 2021, DOI 10.17605/OSF.IO/64JSB, CC BY 4.0;
+provenance and integrity notes in data/asos/LICENSE-DATA.md). Metrics
+are anonymized by the publisher; metric 1 is binary and metrics 2 to 4
+are right-skewed continuous quantities, so those are the only honest
+names available. The deep dive reads experiment 54a85a, chosen by a rule
+fixed before any results were seen: the one experiment the dataset's own
+datasheet flags for a possible primacy effect, provided its variances
+are complete at every checkpoint, with the complete-variance experiment
+having the most checkpoints as the fallback. 54a85a met the condition.
+Because no user-level rows exist, the resampling analyses do not appear
+below; that omission is the report adapting to the data rather than an
+oversight."""
+
+[input]
+shape = "aggregates"
+path = "../../data/asos/asos_digital_experiments_dataset.csv"
+md5 = "acdb1bebeede91cad1545f52d9a8a246"
+
+[aggregates]
+experiment_id_column = "experiment_id"
+experiment_id = "54a85a"
+variant = "variant_id"
+metric = "metric_id"
+checkpoint = "time_since_start"
+count_control = "count_c"
+mean_control = "mean_c"
+variance_control = "variance_c"
+count_treatment = "count_t"
+mean_treatment = "mean_t"
+variance_treatment = "variance_t"
+
+[[metrics]]
+name = "metric_1"
+column = "1"
+kind = "binary"
+primary = true
+
+[[metrics]]
+name = "metric_2"
+column = "2"
+kind = "continuous"
+
+[[metrics]]
+name = "metric_3"
+column = "3"
+kind = "continuous"
+
+[[metrics]]
+name = "metric_4"
+column = "4"
+kind = "continuous"

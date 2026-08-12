@@ -32,7 +32,14 @@ from abkit.frequentist import (
     welch_ttest,
     welch_ttest_from_stats,
 )
-from abkit.io import ArmAggregate, Experiment, MetricSpec, capabilities, interval_from_cumulative
+from abkit.io import (
+    ArmAggregate,
+    Experiment,
+    MetricSpec,
+    _metric_specs,
+    capabilities,
+    interval_from_cumulative,
+)
 from abkit.power import mde_two_proportions
 from abkit.report import FigureSpec, SectionSpec
 from abkit.resampling import bootstrap_mean_diff, permutation_test_mean_diff, trimmed_mean_diff
@@ -138,6 +145,54 @@ def _window(
 
 def _successes(agg: ArmAggregate) -> int:
     return int(round(agg.mean * agg.n))
+
+
+def _ratio_stability(nc: NDArray, nt: NDArray) -> tuple[float, int, float, int]:
+    """Chi-square homogeneity of the per-interval assignment split.
+
+    Takes the two arms' CUMULATIVE count series and tests whether the
+    share of new users landing in each arm is constant across intervals,
+    which is the strongest sample-ratio check available when the
+    intended split is not on record. Returns (statistic, df, p,
+    n_intervals); p is NaN when fewer than two usable intervals exist.
+    """
+    ic = np.diff(np.asarray(nc, dtype=np.float64), prepend=0.0)
+    it = np.diff(np.asarray(nt, dtype=np.float64), prepend=0.0)
+    keep = (ic > 0) | (it > 0)
+    ic, it = ic[keep], it[keep]
+    share = it.sum() / (ic.sum() + it.sum())
+    expected_t = (ic + it) * share
+    expected_c = (ic + it) * (1.0 - share)
+    statistic = float(
+        np.sum((it - expected_t) ** 2 / expected_t + (ic - expected_c) ** 2 / expected_c)
+    )
+    df = int(ic.size - 1)
+    p = float(stats.chi2.sf(statistic, df=df)) if df > 0 else float("nan")
+    return statistic, df, p, int(ic.size)
+
+
+def _consistent_prefix(n: NDArray, mean: NDArray, variance: NDArray) -> int:
+    """Number of leading checkpoints whose cumulative statistics are
+    internally consistent.
+
+    For any real accumulation of observations, the variance recovered for
+    the increment between consecutive checkpoints (via the sum-of-squares
+    identity) is non-negative. A materially negative recovery means the
+    triplet (count, mean, variance) at some checkpoint is not describing
+    a superset of the previous checkpoint's sample - a settled recompute,
+    a correction, or a join error. Real archives contain such
+    checkpoints; sections trim to this prefix and say so in prose.
+    """
+    sums = n * mean
+    squares = (n - 1.0) * variance + n * mean**2
+    int_n = np.diff(n, prepend=0.0)
+    int_s = np.diff(sums, prepend=0.0)
+    int_q = np.diff(squares, prepend=0.0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        int_mean = int_s / int_n
+        int_var = (int_q - int_n * int_mean**2) / (int_n - 1.0)
+    bad = np.nonzero(np.isfinite(int_var) & (int_var < -1e-6 * np.maximum(variance, 1.0)))[0]
+    return int(bad[0]) if bad.size else int(n.size)
 
 
 def _cell_test(
@@ -258,21 +313,10 @@ def sec_srm(exp: Experiment) -> SectionSpec:
         for control_arm, treatment_arm in _contrasts(exp):
             nc = _series(exp, control_arm, metric.name)[0]
             nt = _series(exp, treatment_arm, metric.name)[0]
-            ic = np.diff(nc, prepend=0.0)
-            it = np.diff(nt, prepend=0.0)
-            keep = (ic > 0) | (it > 0)
-            ic, it = ic[keep], it[keep]
-            share = it.sum() / (ic.sum() + it.sum())
-            expected_t = (ic + it) * share
-            expected_c = (ic + it) * (1.0 - share)
-            statistic = float(
-                np.sum((it - expected_t) ** 2 / expected_t + (ic - expected_c) ** 2 / expected_c)
-            )
-            df = int(ic.size - 1)
-            p = float(stats.chi2.sf(statistic, df=df)) if df > 0 else float("nan")
+            statistic, df, p, n_intervals = _ratio_stability(nc, nt)
             worst_p = min(worst_p, p)
             lines.append(
-                f"| {_contrast_label(exp, treatment_arm)} | {ic.size} | {statistic:.2f} "
+                f"| {_contrast_label(exp, treatment_arm)} | {n_intervals} | {statistic:.2f} "
                 f"| {df} | {fmt_p(p)} |"
             )
         verdict = (
@@ -334,13 +378,28 @@ def sec_primary(exp: Experiment) -> SectionSpec:
 def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
     """Early-versus-late effect comparison over the time axis."""
     metric = _primary(exp)
-    k = len(exp.checkpoints)
-    w = max(1, k // 3)
     control_arm = exp.arms[0]
     try:
         series_c = _series(exp, control_arm, metric.name)
+        all_series = [series_c] + [_series(exp, arm, metric.name) for _, arm in _contrasts(exp)]
     except ValueError:
         return None
+    k_full = len(exp.checkpoints)
+    k = min(_consistent_prefix(*ser) for ser in all_series)
+    if k < 3:
+        return None
+    trim_note = (
+        ""
+        if k == k_full
+        else f"\n\nThe final {k_full - k} checkpoint(s) are EXCLUDED from this "
+        "section. The variance implied for the increment between the last two "
+        "checkpoints is negative, which no real accumulation of observations "
+        "can produce, so the final published statistics do not describe a "
+        "superset of the previous checkpoint (a settled recompute or late "
+        "correction is the usual cause). The exclusion is stated here rather "
+        "than applied silently."
+    )
+    w = max(1, k // 3)
 
     lines = ["| Contrast | Early effect | Late effect | Decay z | p |", "|---|---|---|---|---|"]
     for _, treatment_arm in _contrasts(exp):
@@ -367,7 +426,7 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
             f"| {decay_z:.2f} | {fmt_p(decay_p)} |"
         )
 
-    _fig_novelty(exp, metric, figdir)
+    _fig_novelty(exp, metric, figdir, k)
     body = (
         "A treatment effect that fades within the run is the signature of a "
         "novelty effect, where users react to the change itself and the "
@@ -378,7 +437,7 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "series by differencing; {{fig:novelty}} shows the per-interval means.\n\n"
         + "\n".join(lines)
         + "\n\nA significant decay means the end-of-run headline overstates the "
-        "persistent effect, and the late window is the honest number to quote."
+        "persistent effect, and the late window is the honest number to quote." + trim_note
     )
     return SectionSpec(
         key="novelty",
@@ -389,7 +448,7 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
     )
 
 
-def _fig_novelty(exp: Experiment, metric: MetricSpec, figdir: Path) -> None:
+def _fig_novelty(exp: Experiment, metric: MetricSpec, figdir: Path, k_use: int) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -398,8 +457,9 @@ def _fig_novelty(exp: Experiment, metric: MetricSpec, figdir: Path) -> None:
     fig, ax = plt.subplots(figsize=(8, 4.2))
     for i, arm in enumerate(exp.arms):
         n, mean, var = _series(exp, arm, metric.name)
+        n, mean, var = n[:k_use], mean[:k_use], var[:k_use]
         int_n, int_mean, _ = interval_from_cumulative(n, mean, var)
-        checkpoints = np.asarray(exp.checkpoints, dtype=np.float64)
+        checkpoints = np.asarray(exp.checkpoints[:k_use], dtype=np.float64)
         ax.plot(
             checkpoints,
             int_mean,
@@ -431,6 +491,19 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
         nt, mean_t, var_t = _series(exp, treatment_arm, metric.name)
     except ValueError:
         return None
+    k_full = int(nc.size)
+    k_use = min(_consistent_prefix(nc, mean_c, var_c), _consistent_prefix(nt, mean_t, var_t))
+    if k_use < 3:
+        return None
+    nc, mean_c, var_c = nc[:k_use], mean_c[:k_use], var_c[:k_use]
+    nt, mean_t, var_t = nt[:k_use], mean_t[:k_use], var_t[:k_use]
+    trim_note = (
+        ""
+        if k_use == k_full
+        else f"\n\nAs in the effect-stability analysis, the final {k_full - k_use} "
+        "checkpoint(s) are excluded because their cumulative statistics are "
+        f"internally inconsistent; the replay covers the {k_use} consistent looks."
+    )
     total = nc + nt
     if total[-1] <= 0 or np.any(np.diff(total) <= 0):
         return None
@@ -486,7 +559,7 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
         + naive_sentence
         + "\n\nEven a correctly-stopped estimate is biased away from zero at the "
         "stopping look; monitoring is a tool for catching regressions early, "
-        "not for shipping winners early."
+        "not for shipping winners early." + trim_note
     )
     return SectionSpec(
         key="sequential",
@@ -783,3 +856,143 @@ def default_sections(exp: Experiment, rng: np.random.Generator, figdir: Path) ->
         sec_truth(exp) if "truth" in caps else None,
     ]
     return [s for s in candidates if s is not None]
+
+
+def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
+    """One section summarizing an ENTIRE aggregate archive, every
+    experiment, alongside the deep dive the rest of the report gives one.
+
+    Two questions per experiment: is the assignment ratio stable across
+    checkpoints (the no-declared-split SRM form, via _ratio_stability on
+    the primary metric's counts), and does anything survive a Holm
+    correction across the experiment's full end-of-run comparison family.
+    Anything the sweep cannot analyze is counted and said out loud,
+    because a silently truncated sweep reads as full coverage.
+    """
+    import csv
+
+    agg = config["aggregates"]
+    metrics = _metric_specs(config)
+    metric_by_column = {m.column: m for m in metrics}
+    primary_col = next(m.column for m in metrics if m.primary)
+    alpha = config["experiment"]["alpha"]
+
+    experiments: dict[str, list[dict]] = {}
+    with open(data_path, newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            experiments.setdefault(
+                row[agg.get("experiment_id_column", "experiment_id")], []
+            ).append(row)
+
+    unstable: list[str] = []
+    stability_skipped = 0
+    naive_any = holm_any = 0
+    cells_skipped = 0
+    analyzed = 0
+    for exp_id, rows in sorted(experiments.items()):
+        # cumulative primary-metric counts per variant, checkpoint-ordered
+        variants = sorted({r[agg["variant"]] for r in rows})
+        worst_p = float("nan")
+        for variant in variants:
+            series = sorted(
+                (
+                    r
+                    for r in rows
+                    if r[agg["variant"]] == variant and r[agg["metric"]] == primary_col
+                ),
+                key=lambda r: float(r[agg["checkpoint"]]),
+            )
+            if len(series) < 2:
+                continue
+            nc = np.array([float(r[agg["count_control"]]) for r in series])
+            nt = np.array([float(r[agg["count_treatment"]]) for r in series])
+            if np.any(np.diff(nc) < 0) or np.any(np.diff(nt) < 0):
+                continue
+            _, df, p, _ = _ratio_stability(nc, nt)
+            if df > 0 and (np.isnan(worst_p) or p < worst_p):
+                worst_p = p
+        if np.isnan(worst_p):
+            stability_skipped += 1
+        else:
+            analyzed += 1
+            if worst_p < 1e-3:
+                unstable.append(exp_id)
+
+        # end-of-run multiplicity across the full (metric, variant) family
+        p_values: list[float] = []
+        for variant in variants:
+            for metric_col, metric in metric_by_column.items():
+                series = sorted(
+                    (
+                        r
+                        for r in rows
+                        if r[agg["variant"]] == variant and r[agg["metric"]] == metric_col
+                    ),
+                    key=lambda r: float(r[agg["checkpoint"]]),
+                )
+                if not series:
+                    cells_skipped += 1
+                    continue
+                last = series[-1]
+                try:
+                    n_c = int(float(last[agg["count_control"]]))
+                    n_t = int(float(last[agg["count_treatment"]]))
+                    mean_c = float(last[agg["mean_control"]])
+                    mean_t = float(last[agg["mean_treatment"]])
+                    var_c = float(last[agg["variance_control"]])
+                    var_t = float(last[agg["variance_treatment"]])
+                except ValueError:
+                    cells_skipped += 1
+                    continue
+                if n_c < 2 or n_t < 2 or not np.isfinite(var_c) or not np.isfinite(var_t):
+                    cells_skipped += 1
+                    continue
+                if metric.kind == "binary":
+                    result = two_proportion_ztest(
+                        int(round(mean_c * n_c)), n_c, int(round(mean_t * n_t)), n_t
+                    )
+                    p_values.append(result.p_value)
+                else:
+                    if var_c / n_c + var_t / n_t == 0.0:
+                        cells_skipped += 1
+                        continue
+                    p_values.append(
+                        welch_ttest_from_stats(n_c, mean_c, var_c, n_t, mean_t, var_t).p_value
+                    )
+        if p_values:
+            naive_any += int(any(p < alpha for p in p_values))
+            holm_any += int(any(float(h) < alpha for h in holm(np.array(p_values))))
+
+    unstable_list = ", ".join(unstable) if unstable else "none"
+    body = (
+        f"The deep dive above reads one experiment closely; this section asks "
+        f"two mechanical questions of every experiment in the archive "
+        f"({len(experiments)} total). First, assignment stability: with no "
+        "intended splits on record, the checkable property is that each "
+        "experiment's arm ratio holds constant across its checkpoints "
+        "(primary-metric denominators, worst contrast per experiment). "
+        f"{analyzed} experiments were testable; {stability_skipped} had too "
+        "few usable checkpoints to test and are counted rather than hidden. "
+        f"Experiments flagged at the conventional p < 1e-3 alarm: "
+        f"{unstable_list}.\n\n"
+        f"Second, multiplicity at scale: each experiment's full end-of-run "
+        "comparison family (every metric on every variant) was tested "
+        f"unadjusted and after a per-experiment Holm correction. "
+        f"{naive_any} of {len(experiments)} experiments show at least one "
+        f"nominally significant comparison before correction; {holm_any} "
+        "still do after it. The gap between those two counts is the multiple-"
+        "comparisons trap measured on real experiments rather than argued "
+        "from theory."
+        + (
+            f" ({cells_skipped} comparison cells were skipped for missing or "
+            "degenerate statistics, matching the dataset's documented missing "
+            "variances.)"
+            if cells_skipped
+            else ""
+        )
+    )
+    return SectionSpec(
+        key="archive_sweep",
+        title="The archive at large: stability and multiplicity",
+        body=body,
+    )
