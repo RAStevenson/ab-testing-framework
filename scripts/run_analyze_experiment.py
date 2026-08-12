@@ -87,7 +87,7 @@ def main() -> int:
 
         caps = capabilities(exp)
         print(f"experiment: {exp.name}")
-        print(f"arms: {', '.join(exp.arms)}")
+        print(f"arms: control = {exp.arms[0]}; treatment = {', '.join(exp.arms[1:])}")
         print(f"capabilities: {', '.join(sorted(caps)) or 'none'}")
         if exp.validation:
             for event in exp.validation:

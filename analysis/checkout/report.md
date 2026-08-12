@@ -93,7 +93,8 @@ to measure the effect after habituation.
 Everyone peeks. The question is whether the peeking is accounted for. I
 replayed the experiment as 14 daily looks two ways: a naive rule that
 calls the result at the first |z| > 1.96, and an O'Brien-Fleming alpha-spending
-design built on the realized information fractions (`abkit.sequential`).
+design built on the realized information fractions, each look's share of
+the final sample (`abkit.sequential`).
 
 Using realized rather than planned fractions is what the spending-function
 approach is for, and it does not cost anything here. The look *schedule* was
@@ -110,11 +111,11 @@ effect was near its peak, locking in a cumulative lift of
 1.36 pp - about 3.4x the persistent effect.
 The spending design first crosses at **look 4**,
 spending almost no alpha in the noisy early days. In fact it spends so little
-that the first look has no finite boundary at all: the alpha allocated there
-falls below the library's 1e-10 floor, where the boundary would exceed 6.4
-sigma and the look is treated as unspendable, so no realistic day-1
-z-statistic can stop the experiment, and the boundary line in the figure
-starts at look 2.
+that the first look has no finite boundary at all. The alpha allocated
+there sits below the library's 1e-10 spending floor, so the look is treated
+as unspendable and no realistic day-1 z-statistic can stop the experiment,
+which is why the boundary line in the figure starts at look
+2.
 Under a true null on this exact look schedule, simulation (100,000 runs)
 puts the naive rule's false-positive rate at 21.9% against the
 nominal 5%; the spending design holds 4.9%.
@@ -177,7 +178,10 @@ disagreement.
 | Permutation test | +1.23 per user | p = 0.029 |
 | Trimmed mean diff (1%) | +0.29 per user | different estimand, see below |
 
-The first three estimate the same quantity and disagree about it. The Welch
+The first three estimate the same quantity and disagree about it (with a
+caveat on the bootstrap's standing: its coverage evidence in this repo is
+finite-variance only, and under an infinite-variance tail the percentile
+interval for a mean is itself unstable, which is part of the point). The Welch
 test says not significant (p = 0.104); the permutation test says
 significant (p = 0.029); the bootstrap interval
 (+0.14 to +2.97) excludes zero, but its lower bound is a whisker

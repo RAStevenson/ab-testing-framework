@@ -401,3 +401,15 @@ class TestBatteryRegressions:
         text += "\n[arms]\nintended_split = [3, 7]\n"
         with pytest.raises(ValueError, match="positive shares summing to 1"):
             load_config(_write_config(tmp_path, text))
+
+    def test_arm_case_normalization_is_counted(self, tmp_path: Path) -> None:
+        cfg = load_config(_write_config(tmp_path, _config_text()))
+        data = tmp_path / "cased.csv"
+        data.write_text(
+            "user_id,group,day,converted,spend\n"
+            "u1,Control,0,1,0\nu2, treatment,0,0,0\nu3,control,1,0,0\nu4,treatment,1,1,5\n",
+            encoding="utf-8",
+        )
+        exp = load_user_rows(cfg, data)
+        assert sum(e.count for e in exp.validation if e.rule == "arm_label_normalized") == 2
+        assert exp.rows["arm"].size == 4

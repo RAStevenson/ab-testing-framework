@@ -61,11 +61,11 @@ A treatment effect that fades within the run is the signature of a novelty effec
 | variant_1 vs control | +0.09 pp | +0.08 pp | 0.09 | 0.924 |
 | variant_2 vs control | -0.17 pp | +0.23 pp | -3.70 | 0.0002 |
 
-A significant z means the early and late windows genuinely differ, so the end-of-run number blends two regimes. A positive z is an effect that faded (novelty); a negative z is an effect that grew over the run (the primacy pattern); either way the late window is the honest number to quote.
+A significant z means the early and late windows genuinely differ, so the end-of-run cumulative number blends two regimes and can sit far from the late-window effect that best describes where the experiment ended up. The z is early minus late: positive means the effect moved down over the run, negative means it moved up, and whether that is novelty fading, a harm emerging, or a primacy pattern depends on the effect signs in the table. Either way the late window is the honest number to quote.
 
 One assumption to hold onto for aggregate archives: differencing cumulative statistics treats each increment as new users only. An archive that recomputes its metrics over all enrolled users at each checkpoint blurs the increments, and this test is approximate there.
 
-The final checkpoint is EXCLUDED from this section. The variance implied for the first excluded increment is negative, which no real accumulation of observations can produce, so the statistics published there do not describe a superset of the previous checkpoint (a settled recompute or late correction is the usual cause). The exclusion is stated here rather than applied silently.
+The final checkpoint is EXCLUDED from this section. Each increment's variance can be recovered from consecutive cumulative counts, means, and variances; for the first excluded increment that recovery is negative, which no real accumulation of observations can produce, so the statistics published there do not describe a superset of the previous checkpoint (a settled recompute or late correction is the usual cause). The exclusion is stated here rather than applied silently.
 
 ## 6. What sequential monitoring would have decided
 

@@ -49,7 +49,7 @@ from abkit.report_sections import (
     pp,
 )
 from abkit.resampling import bootstrap_mean_diff, permutation_test_mean_diff, trimmed_mean_diff
-from abkit.results import BootstrapResult, MeanComparison, RateComparison
+from abkit.results import BootstrapResult, MeanComparison, PermutationResult, RateComparison
 from abkit.sequential import design, monitor, z_from_cumulative_counts
 
 ANALYSIS = Path(__file__).resolve().parents[1] / "analysis" / "checkout"
@@ -275,6 +275,7 @@ def fig_revenue(
     data: ExperimentData,
     welch: MeanComparison,
     boot: BootstrapResult,
+    perm: PermutationResult,
     trimmed: float,
 ) -> None:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.2))
@@ -320,6 +321,15 @@ def fig_revenue(
     ax2.plot(trimmed, len(intervals), "D", color=COLOR_TREATMENT, markersize=7)
     labels = [label for label, *_ in intervals] + ["Trimmed diff (1%)\ndifferent estimand"]
     ax2.set_yticks(np.arange(len(labels)), labels)
+    # the permutation verdict has no interval to draw, but it is half the
+    # disagreement this panel exists to show, so it appears as text
+    ax2.annotate(
+        f"permutation test: p = {perm.p_value:.3f}",
+        xy=(0.02, 0.04),
+        xycoords="axes fraction",
+        fontsize=9,
+        color=COLOR_INK,
+    )
     ax2.set_xlabel("Revenue per user difference (treatment - control)")
     ax2.set_title(
         "Same data, two verdicts at the 0.05 line", loc="left", color=COLOR_INK, fontsize=10
@@ -507,6 +517,10 @@ to measure the effect after habituation.""",
     xt = np.array(
         [np.sum(data.outcome[(data.assignment == 1) & (data.day <= d)]) for d in look_days]
     )
+    # count-share information fractions: exactly right when the arm ratio
+    # is constant across looks, which section 2's SRM check validates for
+    # this 50/50 design (the library's aggregate path uses the harmonic
+    # form because archives arrive with no such guarantee)
     fractions = (nc + nt) / (nc[-1] + nt[-1])
     z_path = z_from_cumulative_counts(xc, nc, xt, nt)
     seq = design(fractions.tolist(), alpha=ALPHA, spending="obrien-fleming")
@@ -552,7 +566,8 @@ to measure the effect after habituation.""",
             body=f"""Everyone peeks. The question is whether the peeking is accounted for. I
 replayed the experiment as {N_DAYS} daily looks two ways: a naive rule that
 calls the result at the first |z| > {Z_NAIVE:.2f}, and an O'Brien-Fleming alpha-spending
-design built on the realized information fractions (`abkit.sequential`).
+design built on the realized information fractions, each look's share of
+the final sample (`abkit.sequential`).
 
 Using realized rather than planned fractions is what the spending-function
 approach is for, and it does not cost anything here. The look *schedule* was
@@ -567,11 +582,11 @@ effect was near its peak, locking in a cumulative lift of
 {pp(naive_lift)} - about {naive_lift / TRUE_LIFT:.1f}x the persistent effect.
 The spending design first crosses at **look {outcome.stopped_at_look}**,
 spending almost no alpha in the noisy early days. In fact it spends so little
-that {unspendable_phrase} no finite boundary at all: the alpha allocated there
-falls below the library's 1e-10 floor, where the boundary would exceed 6.4
-sigma and the look is treated as unspendable, so no realistic day-1
-z-statistic can stop the experiment, and the boundary line in the figure
-starts at look {n_unspendable + 1}.
+that {unspendable_phrase} no finite boundary at all. The alpha allocated
+there sits below the library's 1e-10 spending floor, so the look is treated
+as unspendable and no realistic day-1 z-statistic can stop the experiment,
+which is why the boundary line in the figure starts at look
+{n_unspendable + 1}.
 Under a true null on this exact look schedule, simulation ({n_sims:,} runs)
 puts the naive rule's false-positive rate at {pct(naive_alpha, 1)} against the
 nominal {pct(ALPHA, 0)}; the spending design holds {pct(spent_alpha, 1)}.
@@ -701,7 +716,7 @@ back across the line.""",
     apparent_power = power_two_means(
         true_rev_diff, float(sample_sd), min(welch.n_control, welch.n_treatment)
     )
-    fig_revenue(revenue, welch, boot, trimmed)
+    fig_revenue(revenue, welch, boot, perm, trimmed)
 
     sections.append(
         SectionSpec(
@@ -722,7 +737,10 @@ disagreement.
 | Permutation test | {perm.observed:+.2f} per user | p = {fmt_p(perm.p_value)} |
 | Trimmed mean diff (1%) | {trimmed:+.2f} per user | different estimand, see below |
 
-The first three estimate the same quantity and disagree about it. The Welch
+The first three estimate the same quantity and disagree about it (with a
+caveat on the bootstrap's standing: its coverage evidence in this repo is
+finite-variance only, and under an infinite-variance tail the percentile
+interval for a mean is itself unstable, which is part of the point). The Welch
 test says not significant (p = {fmt_p(welch.p_value)}); the permutation test says
 significant (p = {fmt_p(perm.p_value)}); the bootstrap interval
 ({boot.ci_low:+.2f} to {boot.ci_high:+.2f}) excludes zero, but its lower bound is a whisker

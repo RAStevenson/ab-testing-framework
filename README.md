@@ -7,7 +7,8 @@ tails so heavy that the normal approximation behind the usual tests (the
 central limit theorem) breaks down at realistic sample sizes.
 
 Fourteen daily peeks at a fixed |z| > 1.96 turn a nominal 5% false-positive
-rate into 21.9%. An O'Brien-Fleming spending design, built on the same
+rate into 21.9%. An O'Brien-Fleming spending design (a preset rule that
+spreads the 5% false-positive budget across the looks), built on the same
 fourteen looks at the sample sizes they actually reached, holds it at 4.9%.
 Both figures come from
 100,000 simulated null runs at a fixed seed, and `python scripts/run_build_checkout_report.py`
@@ -116,7 +117,17 @@ The config declares the arm column and labels, the metrics and which one is
 primary, the intended split if you know it, and optional value aliases; the
 two committed demo configs (`analysis/asos/config.toml` for aggregate data,
 `analysis/hillstrom/config.toml` for user-level rows) are complete working
-examples of both input shapes. Validation is never silent. Every row the
+examples of both input shapes. Four conventions matter when writing yours.
+The FIRST label in `arms.labels` is the control; ordering them the other
+way would flip the sign of every effect. A `[columns] day = "..."` entry
+(numeric time since the experiment started, such as a day number) is what
+unlocks the time-based sections, including the sequential replay, for your
+own data. The multiple-comparisons section renders when the family beyond
+the primary result has at least two members; when it does not render, any
+non-primary p-value you see elsewhere in the report is unadjusted. Columns
+your config does not name are ignored entirely, and a row that fails any
+validation rule is dropped whole, counted, and reported, never partially
+kept. Validation is never silent. Every row the
 intake drops or normalizes is counted in the report, an unrecognized arm
 label stops the run, and a config may pin its data file's md5 checksum so
 an analysis cannot quietly run against the wrong file.

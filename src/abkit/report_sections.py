@@ -420,8 +420,10 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
             if k_full - k == 1
             else f"The final {k_full - k} checkpoints are EXCLUDED from this section"
         )
-        + ". The variance implied for the first excluded increment is "
-        "negative, which no real accumulation of observations can produce, "
+        + ". Each increment's variance can be recovered from consecutive "
+        "cumulative counts, means, and variances; for the first excluded "
+        "increment that recovery is negative, which no real accumulation of "
+        "observations can produce, "
         "so the statistics published there do not describe a superset of "
         "the previous checkpoint (a settled recompute or late correction "
         "is the usual cause). The exclusion is stated here rather than "
@@ -466,10 +468,13 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "series by differencing; {{fig:novelty}} shows the per-interval means.\n\n"
         + "\n".join(lines)
         + "\n\nA significant z means the early and late windows genuinely "
-        "differ, so the end-of-run number blends two regimes. A positive z is "
-        "an effect that faded (novelty); a negative z is an effect that grew "
-        "over the run (the primacy pattern); either way the late window is "
-        "the honest number to quote."
+        "differ, so the end-of-run cumulative number blends two regimes and "
+        "can sit far from the late-window effect that best describes where "
+        "the experiment ended up. The z is early minus late: positive means "
+        "the effect moved down over the run, negative means it moved up, and "
+        "whether that is novelty fading, a harm emerging, or a primacy "
+        "pattern depends on the effect signs in the table. Either way the "
+        "late window is the honest number to quote."
         + (
             ""
             if exp.rows is not None

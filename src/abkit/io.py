@@ -373,6 +373,11 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
             event("null_row_dropped", index)
             continue
         arm = label_by_fold.get(arm_aliased.casefold())
+        # whitespace or case differences are normalization too, and the
+        # README promises none of it happens silently; alias rows are
+        # already counted under their own rule
+        if arm is not None and (row[arm_col] or "") != arm and arm_aliased == arm_raw:
+            event("arm_label_normalized", index)
         if arm is None:
             raise ValueError(
                 f"unmapped_arm_error: arm value {arm_raw!r} at data row {index} matches no "
