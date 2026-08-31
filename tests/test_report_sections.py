@@ -153,7 +153,7 @@ class TestArchiveSweep:
         # fixture holds expA (3 checkpoints, testable) and expB (1
         # checkpoint, must be counted as untestable, never hidden)
         assert "(2 total)" in section.body
-        assert "1 experiments were testable; 1 could not be tested" in section.body
+        assert "1 experiments were testable. 1 could not be tested" in section.body
         assert "flagged at the conventional p < 1e-3 alarm: none" in section.body
 
 

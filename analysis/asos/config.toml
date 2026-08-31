@@ -14,14 +14,15 @@ Couturier, McCoy, NeurIPS 2021, DOI 10.17605/OSF.IO/64JSB, CC BY 4.0).
 Provenance and integrity notes are in data/asos/LICENSE-DATA.md. Metrics
 are anonymized by the publisher. Metric 1 is binary, and the datasheet
 describes metrics 2 to 4 as right-skewed continuous quantities, so
-numbered names are the only honest ones available. The single-experiment analysis below reads experiment
-54a85a, chosen by a rule that does not look at results. The rule takes
-the one experiment the dataset's own datasheet flags for a possible
-primacy effect, provided its variances are complete at every checkpoint,
-with the complete-variance experiment having the most checkpoints as the
-fallback. 54a85a met the condition.
+numbered names are the only honest ones available. The single-experiment
+analysis below reads experiment 54a85a, chosen by a rule that does not
+look at this pipeline's results. The datasheet flags one experiment for a
+possible primacy effect. The rule takes that experiment if its variances
+are complete at every checkpoint, and otherwise falls back to the
+complete-variance experiment with the most checkpoints. 54a85a met both
+conditions.
 Because no user-level rows exist, the resampling analyses do not appear
-below; that omission is the report adapting to the data rather than an
+below. That omission is the report adapting to the data rather than an
 oversight."""
 
 [input]

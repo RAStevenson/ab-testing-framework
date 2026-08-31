@@ -9,23 +9,24 @@ Couturier, McCoy, NeurIPS 2021, DOI 10.17605/OSF.IO/64JSB, CC BY 4.0).
 Provenance and integrity notes are in data/asos/LICENSE-DATA.md. Metrics
 are anonymized by the publisher. Metric 1 is binary, and the datasheet
 describes metrics 2 to 4 as right-skewed continuous quantities, so
-numbered names are the only honest ones available. The single-experiment analysis below reads experiment
-54a85a, chosen by a rule that does not look at results. The rule takes
-the one experiment the dataset's own datasheet flags for a possible
-primacy effect, provided its variances are complete at every checkpoint,
-with the complete-variance experiment having the most checkpoints as the
-fallback. 54a85a met the condition.
+numbered names are the only honest ones available. The single-experiment
+analysis below reads experiment 54a85a, chosen by a rule that does not
+look at this pipeline's results. The datasheet flags one experiment for a
+possible primacy effect. The rule takes that experiment if its variances
+are complete at every checkpoint, and otherwise falls back to the
+complete-variance experiment with the most checkpoints. 54a85a met both
+conditions.
 Because no user-level rows exist, the resampling analyses do not appear
-below; that omission is the report adapting to the data rather than an
+below. That omission is the report adapting to the data rather than an
 oversight.
 
 ## 1. Data validation
 
-Arm sizes: control 3,320,536, variant_0 102,316, variant_1 3,316,730, variant_2 3,320,435 (denominators are the primary metric's). The intake altered nothing and dropped nothing; the data passed every validation rule as delivered.
+Arm sizes: control 3,320,536, variant_0 102,316, variant_1 3,316,730, variant_2 3,320,435 (denominators are the primary metric's). The intake altered nothing and dropped nothing. The data passed every validation rule as delivered.
 
 ## 2. Sensitivity at this sample size
 
-At the realized sample size (102,316 in the smaller arm of the first contrast) and the control rate of 25.1%, the smallest absolute lift this experiment could detect with 80% power at alpha 0.05 is 0.54 pp (the minimum detectable effect, or MDE). Effects smaller than that could be real and still produce an unremarkable p-value here; that is a property of the sample size, not evidence of absence.
+At the realized sample size (102,316 in the smaller arm of the first contrast) and the control rate of 25.1%, the smallest absolute lift this experiment could detect with 80% power at alpha 0.05 is 0.54 pp (the minimum detectable effect, or MDE). Effects smaller than that could be real and still produce an unremarkable p-value here. That is a property of the sample size, not evidence of absence.
 
 ## 3. Assignment validation
 
@@ -41,7 +42,7 @@ The arm ratio is stable across checkpoints in every contrast (alarm threshold p 
 
 ## 4. Primary metric
 
-The primary metric is **metric_1** (binary). Each treatment arm is compared against control; the test is a pooled two-proportion z-test for binary metrics and a Welch t-test for continuous ones.
+The primary metric is **metric_1** (binary). Each treatment arm is compared against control. The test is a pooled two-proportion z-test for binary metrics and a Welch t-test for continuous ones.
 
 | Contrast | Effect | 95% CI | p |
 |---|---|---|---|
@@ -51,7 +52,7 @@ The primary metric is **metric_1** (binary). Each treatment arm is compared agai
 
 ## 5. Effect stability over time
 
-A treatment effect that fades within the run is the signature of a novelty effect, where users react to the change itself and the reaction decays. The comparison below tests the first 31 checkpoints against the last 31 directly, because two separately-significant windows are not by themselves evidence that the windows differ. Interval values are recovered from the cumulative series by differencing; Figure 1 shows the per-interval means.
+A treatment effect that fades within the run is the signature of a novelty effect, where users react to the change itself and the reaction decays. The comparison below tests the first 31 checkpoints against the last 31 directly, because two separately-significant windows are not by themselves evidence that the windows differ. Interval values are recovered from the cumulative series by differencing. Figure 1 shows the per-interval means.
 
 ![Figure 1: Per-interval metric_1 by arm](figures/novelty.png)
 
@@ -61,25 +62,25 @@ A treatment effect that fades within the run is the signature of a novelty effec
 | variant_1 vs control | +0.09 pp | +0.08 pp | 0.09 | 0.924 |
 | variant_2 vs control | -0.17 pp | +0.23 pp | -3.70 | 0.0002 |
 
-A significant z means the early and late windows genuinely differ, so the end-of-run cumulative number blends two regimes and can sit far from the late-window effect that best describes where the experiment ended up. The z is early minus late. A positive z means the effect moved down over the run, and a negative z means it moved up. Whether that is novelty fading, a harm emerging, or a primacy pattern depends on the effect signs in the table. Either way the late window is the honest number to quote.
+A significant z is evidence that the early and late windows differ, so the end-of-run cumulative number blends two regimes and can sit far from the late-window effect that best describes where the experiment ended up. The z is early minus late. A positive z means the effect moved down over the run, and a negative z means it moved up. Whether that is novelty fading, a harm emerging, or a primacy pattern depends on the effect signs in the table. Either way the late window is the honest number to quote.
 
 One assumption matters for aggregate archives. Differencing cumulative statistics treats each increment as new users only. An archive that recomputes its metrics over all enrolled users at each checkpoint blurs the increments, and this test is approximate there.
 
-The final checkpoint is EXCLUDED from this section. Each increment's variance can be recovered from consecutive cumulative counts, means, and variances. For the first excluded increment that recovery is negative, which no real accumulation of observations can produce. The statistics published there therefore do not describe a superset of the previous checkpoint; a settled recompute or late correction is the usual cause. The exclusion is stated here rather than applied silently.
+The final checkpoint is EXCLUDED from this section. Each increment's variance can be recovered from consecutive cumulative counts, means, and variances. For the first excluded increment that recovery is negative, which no real accumulation of observations can produce. The statistics published there therefore do not describe a superset of the previous checkpoint's sample. A settled recompute or late correction is the usual cause. The exclusion is stated here rather than applied silently.
 
 ## 6. What sequential monitoring would have decided
 
-Anyone watching a dashboard peeks. Checking the result at every checkpoint against a fixed |z| > 1.96 threshold (the naive rule) inflates the false-positive rate well beyond the nominal alpha, because every look is another chance to be fooled. An alpha-spending design prices the peeking by allocating the total alpha across the realized look schedule and computing a boundary for each look (O'Brien-Fleming spending, stingy early and generous late). Figure 2 shows the observed |z| path against both rules for the first contrast (variant_0 vs control), which is the comparison a monitoring design would have guarded.
+Anyone watching a dashboard peeks. Checking the result at every checkpoint against a fixed |z| > 1.96 threshold (the naive rule) inflates the false-positive rate well beyond the nominal alpha, because every look is another chance to be fooled. An alpha-spending design prices the peeking by allocating the total alpha across the realized look schedule and computing a boundary for each look (O'Brien-Fleming spending, stingy early and generous late). Figure 2 shows the observed |z| path against both rules for the first contrast (variant_0 vs control). A monitoring design guards one pre-declared comparison, and this replay takes the first.
 
 ![Figure 2: Observed |z| against spending boundaries and the naive threshold](figures/sequential.png)
 
-The spending design never crosses in 95 looks, so under monitoring priced for peeking this run does not support stopping early in either direction. The naive rule never fires either; the two agree on this run.
+The spending design never crosses in 95 looks, so under monitoring priced for peeking this run does not support stopping early in either direction. The naive rule never fires either. The two agree on this run.
 
-Even a correctly-stopped estimate is biased away from zero at the stopping look; monitoring is a tool for catching regressions early, not for shipping winners early.
+Even a correctly-stopped estimate is biased away from zero at the stopping look. Monitoring is a tool for catching regressions early, not for shipping winners early.
 
 One numerical caveat applies at this look count. The boundaries come from a recursive numerical integration whose grid convergence is pinned by test on a 14-look schedule, so treat the 95-look boundary values as approximate.
 
-As in the effect-stability analysis, the final checkpoint is excluded because the cumulative statistics there are internally inconsistent; the replay covers the 95 consistent looks.
+As in the effect-stability analysis, the final checkpoint is excluded because the cumulative statistics there are internally inconsistent. The replay covers the 95 consistent looks.
 
 ## 7. Multiple comparisons
 
@@ -97,12 +98,12 @@ This experiment carries 9 comparisons beyond the primary metric. Testing each at
 | metric_4 | variant_1 vs control | +0.065 | 0.497 | 1.000 | 0.745 |
 | metric_4 | variant_2 vs control | -0.110 | 0.251 | 1.000 | 0.451 |
 
-Unadjusted, 1 comparison clears alpha; after Holm, 0 survive. Figure 3 shows each comparison's p-value before and after adjustment.
+Unadjusted, 1 comparison clears alpha. After Holm, 0 survive. Figure 3 shows each comparison's p-value before and after adjustment.
 
 ![Figure 3: Unadjusted versus Holm-adjusted p-values](figures/corrections.png)
 
 ## 8. The archive at large: stability and multiplicity
 
-The sections above read one experiment closely; this one asks two mechanical questions of every experiment in the archive (78 total). The first question is assignment stability. With no intended splits on record, the checkable property is that each experiment's arm ratio holds constant across its checkpoints (primary-metric denominators, worst contrast per experiment). 76 experiments were testable; 2 could not be tested (too few usable checkpoints or a degenerate split) and are counted rather than hidden. Experiments flagged at the conventional p < 1e-3 alarm: 6f8a33, 81761c, a4386f.
+The sections above read one experiment closely. This one asks two mechanical questions of every experiment in the archive (78 total). The first question is assignment stability. With no intended splits on record, the checkable property is that each experiment's arm ratio holds constant across its checkpoints (primary-metric denominators, worst contrast per experiment). 76 experiments were testable. 2 could not be tested (too few usable checkpoints or a degenerate split) and are counted rather than hidden. Experiments flagged at the conventional p < 1e-3 alarm: 6f8a33, 81761c, a4386f.
 
-The second question is multiplicity at scale. Each experiment's full end-of-run comparison family (every metric on every variant) was tested unadjusted and after a per-experiment Holm correction. 41 of 78 experiments show at least one nominally significant comparison before correction; 29 still do after it. The gap between those two counts is the multiple-comparisons trap measured on real experiments rather than argued from theory. (15 comparison cells were skipped because their published statistics were missing or unusable; the skips are counted here rather than hidden.)
+The second question is multiplicity at scale. Each experiment's full end-of-run comparison family (every metric on every variant) was tested unadjusted and after a per-experiment Holm correction. 41 of 78 experiments show at least one nominally significant comparison before correction. 29 still do after it. The gap between those two counts is the multiple-comparisons trap measured on real experiments rather than argued from theory. (15 comparison cells were skipped because their published statistics were missing or unusable. The skips are counted here.)

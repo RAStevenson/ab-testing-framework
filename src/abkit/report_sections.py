@@ -249,7 +249,7 @@ def sec_validation(exp: Experiment) -> SectionSpec:
     else:
         body = (
             f"Arm sizes: {sizes} (denominators are the primary metric's). "
-            "The intake altered nothing and dropped nothing; the data passed "
+            "The intake altered nothing and dropped nothing. The data passed "
             "every validation rule as delivered."
         )
     return SectionSpec(key="validation", title="Data validation", body=body)
@@ -272,7 +272,7 @@ def sec_design_power(exp: Experiment) -> SectionSpec | None:
         f"smallest absolute lift this experiment could detect with 80% power at "
         f"alpha {exp.alpha} is {pp(mde, 2)} (the minimum detectable effect, or "
         "MDE). Effects smaller than that could be real and still produce an "
-        "unremarkable p-value here; that is a property of the sample size, not "
+        "unremarkable p-value here. That is a property of the sample size, not "
         "evidence of absence."
     )
     return SectionSpec(key="design_power", title="Sensitivity at this sample size", body=body)
@@ -392,7 +392,7 @@ def sec_primary(exp: Experiment) -> SectionSpec:
         )
     body = (
         f"The primary metric is **{metric.name}** ({metric.kind}). Each treatment "
-        "arm is compared against control; the test is a pooled two-proportion "
+        "arm is compared against control. The test is a pooled two-proportion "
         "z-test for binary metrics and a Welch t-test for continuous ones.\n\n" + "\n".join(lines)
     )
     return SectionSpec(key="primary", title="Primary metric", body=body)
@@ -425,9 +425,9 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "increment that recovery is negative, which no real accumulation of "
         "observations can produce. "
         "The statistics published there therefore do not describe a superset "
-        "of the previous checkpoint; a settled recompute or late correction "
-        "is the usual cause. The exclusion is stated here rather than "
-        "applied silently."
+        "of the previous checkpoint's sample. A settled recompute or late "
+        "correction is the usual cause. The exclusion is stated here rather "
+        "than applied silently."
     )
     w = max(1, k // 3)
 
@@ -465,9 +465,9 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         + f" against the last {w} directly, because two "
         "separately-significant windows are not by themselves evidence that the "
         "windows differ. Interval values are recovered from the cumulative "
-        "series by differencing; {{fig:novelty}} shows the per-interval means.\n\n"
+        "series by differencing. {{fig:novelty}} shows the per-interval means.\n\n"
         + "\n".join(lines)
-        + "\n\nA significant z means the early and late windows genuinely "
+        + "\n\nA significant z is evidence that the early and late windows "
         "differ, so the end-of-run cumulative number blends two regimes and "
         "can sit far from the late-window effect that best describes where "
         "the experiment ended up. The z is early minus late. A positive z "
@@ -560,7 +560,7 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
             else f"the final {k_full - k_use} checkpoints are excluded"
         )
         + " because the cumulative statistics there are internally "
-        f"inconsistent; the replay covers the {k_use} consistent looks."
+        f"inconsistent. The replay covers the {k_use} consistent looks."
     )
     # statistical information for a two-sample z is the inverse summed
     # variance scale 1/(1/nc + 1/nt), which equals a share of the total
@@ -612,7 +612,7 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
             else "."
         )
     else:
-        naive_sentence = "The naive rule never fires either; the two agree on this run."
+        naive_sentence = "The naive rule never fires either. The two agree on this run."
 
     body = (
         "Anyone watching a dashboard peeks. Checking the result at every "
@@ -623,13 +623,14 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "realized look schedule and computing a boundary for each look "
         "(O'Brien-Fleming spending, stingy early and generous late). "
         "{{fig:sequential}} shows the observed |z| path against both rules "
-        f"for the first contrast ({_contrast_label(exp, treatment_arm)}), which "
-        "is the comparison a monitoring design would have guarded.\n\n"
+        f"for the first contrast ({_contrast_label(exp, treatment_arm)}). A "
+        "monitoring design guards one pre-declared comparison, and this "
+        "replay takes the first.\n\n"
         + spend_sentence
         + " "
         + naive_sentence
         + "\n\nEven a correctly-stopped estimate is biased away from zero at the "
-        "stopping look; monitoring is a tool for catching regressions early, "
+        "stopping look. Monitoring is a tool for catching regressions early, "
         "not for shipping winners early."
         + (
             ""
@@ -752,7 +753,7 @@ def sec_corrections(exp: Experiment, figdir: Path) -> SectionSpec | None:
             f"\n\nUnadjusted, {n_naive} comparison"
             + ("" if n_naive == 1 else "s")
             + (" clears" if n_naive == 1 else " clear")
-            + f" alpha; after Holm, {n_holm}"
+            + f" alpha. After Holm, {n_holm}"
             + (" survives" if n_holm == 1 else " survive")
         )
         + ". {{fig:corrections}} shows each comparison's "
@@ -834,13 +835,21 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
     body = (
         f"**{metric.name}** is the kind of metric where a few extreme users can "
         "carry the average"
-        + (f" ({pct(zero_share, 0)} of users sit at zero here)" if zero_share > 0.5 else "")
-        + ". It gets four looks that stress the tail differently: a Welch "
-        "t-test (relies on the normal approximation of the mean), a percentile "
-        "bootstrap (resamples the observed tail), a permutation test (exact "
-        "under the null that the arms' distributions are identical), and a "
-        "trimmed-mean difference (a diagnostic for tail dependence, "
-        "deliberately a different estimand).\n\n"
+        + (
+            f" ({pct(zero_share, 0)} of users in the first contrast sit at zero)"
+            if zero_share > 0.5
+            else ""
+        )
+        + f". The first contrast ({_contrast_label(exp, treatment_arm)}) gets "
+        "four looks that stress the tail differently: a Welch t-test (relies "
+        "on the normal approximation of the mean), a percentile bootstrap "
+        "(resamples the observed tail), a permutation test (no normal "
+        "approximation, with a p-value computed from 10,000 random "
+        "relabelings under the null that the arms' distributions are "
+        "identical), and a trimmed-mean difference, a diagnostic for tail "
+        "dependence that deliberately estimates a different quantity (a "
+        "different estimand), so its number is not comparable to the other "
+        "three.\n\n"
         f"| Method | Estimate | Interval / p |\n|---|---|---|\n"
         f"| Welch t-test | {welch.difference:+.3f} | 95% CI {welch.ci_low:+.3f} "
         f"to {welch.ci_high:+.3f}, p = {fmt_p(welch.p_value)} |\n"
@@ -849,7 +858,7 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
         f"| Permutation test | {perm.observed:+.3f} | p = {fmt_p(perm.p_value)} |\n"
         f"| Trimmed mean diff (1%) | {trimmed:+.3f} | different estimand |\n\n"
         f"{{{{fig:heavy_tail}}}} shows the distributions and the interval "
-        f"comparison for the first contrast ({_contrast_label(exp, treatment_arm)}). " + agreement
+        "comparison. " + agreement
     )
     return SectionSpec(
         key="heavy_tail",
@@ -1069,13 +1078,13 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
 
     unstable_list = ", ".join(unstable) if unstable else "none"
     body = (
-        f"The sections above read one experiment closely; this one asks "
+        f"The sections above read one experiment closely. This one asks "
         f"two mechanical questions of every experiment in the archive "
         f"({len(experiments)} total). The first question is assignment "
         "stability. With no intended splits on record, the checkable "
         "property is that each experiment's arm ratio holds constant "
         "across its checkpoints (primary-metric denominators, worst "
-        f"contrast per experiment). {analyzed} experiments were testable; "
+        f"contrast per experiment). {analyzed} experiments were testable. "
         f"{stability_skipped} could not be tested (too few usable "
         "checkpoints or a degenerate split) and are counted rather than "
         f"hidden. Experiments flagged at the conventional p < 1e-3 alarm: "
@@ -1084,14 +1093,14 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
         "full end-of-run comparison family (every metric on every variant) "
         f"was tested unadjusted and after a per-experiment Holm correction. "
         f"{naive_any} of {len(experiments)} experiments show at least one "
-        f"nominally significant comparison before correction; {holm_any} "
+        f"nominally significant comparison before correction. {holm_any} "
         "still do after it. The gap between those two counts is the multiple-"
         "comparisons trap measured on real experiments rather than argued "
         "from theory."
         + (
             f" ({cells_skipped} comparison cells were skipped because their "
-            "published statistics were missing or unusable; the skips are "
-            "counted here rather than hidden.)"
+            "published statistics were missing or unusable. The skips are "
+            "counted here.)"
             if cells_skipped
             else ""
         )

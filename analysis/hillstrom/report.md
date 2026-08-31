@@ -11,11 +11,11 @@ widely used public benchmark for incremental-lift analysis. The publisher
 never stated a license, so the file is fetched from its original URL by
 scripts/run_fetch_hillstrom.py (SHA-256 pinned there) rather than
 redistributed in this repository. The data carries no per-day fields,
-so the time-based sections do not appear below; that omission is the
+so the time-based sections do not appear below. That omission is the
 report adapting to the data. It does carry a genuine data wart. One
 category value arrives misspelled, in a background column the analyses
 never use, and the validation section records normalizing it. That is
-the kind of cleaning a real intake has to own out loud.
+the kind of cleaning an intake has to report rather than do silently.
 
 ## 1. Data validation
 
@@ -27,7 +27,7 @@ Arm sizes after validation: No E-Mail 21,306, Mens E-Mail 21,307, Womens E-Mail 
 
 ## 2. Sensitivity at this sample size
 
-At the realized sample size (21,306 in the smaller arm of the first contrast) and the control rate of 10.6%, the smallest absolute lift this experiment could detect with 80% power at alpha 0.05 is 0.85 pp (the minimum detectable effect, or MDE). Effects smaller than that could be real and still produce an unremarkable p-value here; that is a property of the sample size, not evidence of absence.
+At the realized sample size (21,306 in the smaller arm of the first contrast) and the control rate of 10.6%, the smallest absolute lift this experiment could detect with 80% power at alpha 0.05 is 0.85 pp (the minimum detectable effect, or MDE). Effects smaller than that could be real and still produce an unremarkable p-value here. That is a property of the sample size, not evidence of absence.
 
 ## 3. Assignment validation
 
@@ -42,7 +42,7 @@ No contrast fails the check (conventional alarm threshold p < 1e-3), so the real
 
 ## 4. Primary metric
 
-The primary metric is **visit** (binary). Each treatment arm is compared against control; the test is a pooled two-proportion z-test for binary metrics and a Welch t-test for continuous ones.
+The primary metric is **visit** (binary). Each treatment arm is compared against control. The test is a pooled two-proportion z-test for binary metrics and a Welch t-test for continuous ones.
 
 | Contrast | Effect | 95% CI | p |
 |---|---|---|---|
@@ -60,13 +60,13 @@ This experiment carries 4 comparisons beyond the primary metric. Testing each at
 | spend | Mens E-Mail vs No E-Mail | +0.770 | 1.2e-07 | 3.5e-07 | 2.3e-07 |
 | spend | Womens E-Mail vs No E-Mail | +0.424 | 0.001 | 0.001 | 0.001 |
 
-Unadjusted, 4 comparisons clear alpha; after Holm, 4 survive. Figure 1 shows each comparison's p-value before and after adjustment.
+Unadjusted, 4 comparisons clear alpha. After Holm, 4 survive. Figure 1 shows each comparison's p-value before and after adjustment.
 
 ![Figure 1: Unadjusted versus Holm-adjusted p-values](figures/corrections.png)
 
 ## 6. Heavy-tailed metric: spend
 
-**spend** is the kind of metric where a few extreme users can carry the average (99% of users sit at zero here). It gets four looks that stress the tail differently: a Welch t-test (relies on the normal approximation of the mean), a percentile bootstrap (resamples the observed tail), a permutation test (exact under the null that the arms' distributions are identical), and a trimmed-mean difference (a diagnostic for tail dependence, deliberately a different estimand).
+**spend** is the kind of metric where a few extreme users can carry the average (99% of users in the first contrast sit at zero). The first contrast (Mens E-Mail vs No E-Mail) gets four looks that stress the tail differently: a Welch t-test (relies on the normal approximation of the mean), a percentile bootstrap (resamples the observed tail), a permutation test (no normal approximation, with a p-value computed from 10,000 random relabelings under the null that the arms' distributions are identical), and a trimmed-mean difference, a diagnostic for tail dependence that deliberately estimates a different quantity (a different estimand), so its number is not comparable to the other three.
 
 | Method | Estimate | Interval / p |
 |---|---|---|
@@ -75,6 +75,6 @@ Unadjusted, 4 comparisons clear alpha; after Holm, 4 survive. Figure 1 shows eac
 | Permutation test | +0.770 | p = 1.0e-04 |
 | Trimmed mean diff (1%) | +0.078 | different estimand |
 
-Figure 2 shows the distributions and the interval comparison for the first contrast (Mens E-Mail vs No E-Mail). The three same-estimand methods agree here, which is what a well-behaved tail looks like.
+Figure 2 shows the distributions and the interval comparison. The three same-estimand methods agree here, which is what a well-behaved tail looks like.
 
 ![Figure 2: Distribution and interval comparison](figures/heavy_tail.png)

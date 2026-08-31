@@ -17,11 +17,11 @@ widely used public benchmark for incremental-lift analysis. The publisher
 never stated a license, so the file is fetched from its original URL by
 scripts/run_fetch_hillstrom.py (SHA-256 pinned there) rather than
 redistributed in this repository. The data carries no per-day fields,
-so the time-based sections do not appear below; that omission is the
+so the time-based sections do not appear below. That omission is the
 report adapting to the data. It does carry a genuine data wart. One
 category value arrives misspelled, in a background column the analyses
 never use, and the validation section records normalizing it. That is
-the kind of cleaning a real intake has to own out loud."""
+the kind of cleaning an intake has to report rather than do silently."""
 
 [input]
 shape = "user_rows"

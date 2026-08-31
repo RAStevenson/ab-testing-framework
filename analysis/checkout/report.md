@@ -9,7 +9,8 @@ to a recommendation.
 Because the data are synthetic, the true effects are known, and that is the
 point. The seeds are fixed, and they were chosen so that each failure mode
 this report exists to demonstrate actually shows up in this one run. The
-multiple-comparisons section states that plainly for its own starkest case. At the end I compare what the analysis concluded against what the
+multiple-comparisons section states that plainly for its own starkest case.
+At the end I compare what the analysis concluded against what the
 generator actually did. Everything here is produced by `scripts/run_build_checkout_report.py`
 with fixed seeds. The library functions it calls live in `src/abkit/`, and the
 document is rendered by the same engine that renders reports on a user's own
@@ -183,12 +184,12 @@ disagreement.
 | Trimmed mean diff (1%) | +0.29 per user | different estimand, see below |
 
 The first three estimate the same quantity and disagree about it. One caveat
-on the bootstrap's standing before reading it as a tiebreaker. Its coverage
+applies before the bootstrap is used as a tiebreaker. Its coverage
 evidence in this repo is finite-variance only, and under an infinite-variance
 tail the percentile interval for a mean is itself unstable, which is part of
 the point. The Welch
-test says not significant (p = 0.104); the permutation test says
-significant (p = 0.029); the bootstrap interval
+test says not significant (p = 0.104). The permutation test says
+significant (p = 0.029). The bootstrap interval
 (+0.14 to +2.97) excludes zero, but its lower bound barely
 clears it.
 

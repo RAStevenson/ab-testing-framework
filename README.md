@@ -2,9 +2,10 @@
 
 I wrote this small A/B testing and experiment-analysis toolkit around the parts
 of experimentation that actually go wrong in practice: broken assignment,
-novelty effects, peeking, multiple comparisons, and revenue metrics with
-tails so heavy that the normal approximation behind the usual tests (the
-central limit theorem) breaks down at realistic sample sizes.
+novelty effects, peeking, multiple comparisons, and heavy-tailed revenue
+metrics. Revenue tails run heavy enough that the normal approximation behind
+the usual tests (the central limit theorem) breaks down at realistic sample
+sizes.
 
 Fourteen daily peeks at a fixed |z| > 1.96 turn a nominal 5% false-positive
 rate into 21.9%. An O'Brien-Fleming spending design (a preset rule that
@@ -18,9 +19,9 @@ reproduces them.
 
 If you only read one thing, read [analysis/checkout/report.md](analysis/checkout/report.md).
 It walks a synthetic checkout-redesign experiment from power analysis to a
-ship recommendation, including a revenue metric where Welch, the bootstrap,
-and a permutation test return three different verdicts on the same data and
-the right move is to say so rather than pick one. Because the data are
+ship recommendation. That includes a revenue metric where Welch, the
+bootstrap, and a permutation test return three different verdicts on the
+same data, and the right move is to say so rather than pick one. Because the data are
 synthetic, the report closes by putting its headline conclusions next to the
 effects the generator actually planted.
 
@@ -118,7 +119,7 @@ primary, the intended split if you know it, and optional value aliases. The
 two committed demo configs (`analysis/asos/config.toml` for aggregate data,
 `analysis/hillstrom/config.toml` for user-level rows) are complete working
 examples of both input shapes. Four conventions matter when writing yours.
-The FIRST label in `arms.labels` is the control; ordering them the other
+The FIRST label in `arms.labels` is the control. Ordering them the other
 way would flip the sign of every effect. A `[columns] day = "..."` entry
 (numeric time since the experiment started, such as a day number) is what
 turns on the time-based sections, including the sequential replay, for your
@@ -134,7 +135,7 @@ intake drops or normalizes is counted in the report, an unrecognized arm
 label stops the run, and a config may pin its data file's md5 checksum so
 an analysis cannot quietly run against the wrong file.
 
-Python 3.11+. There is no install step. The entry scripts and
+The library needs Python 3.11 or newer. There is no install step. The entry scripts and
 `tests/conftest.py` put `src/` on the import path themselves, so a fresh
 clone runs as-is once the dependencies are present. An editable install
 (`pip install -e '.[dev]'`) still works if you prefer one. The library
@@ -142,7 +143,8 @@ depends only on numpy and scipy. Matplotlib is a dev dependency, and every
 report script needs it to build a report with figures.
 Rerunning an analysis reproduces its `report.md` byte for byte, though
 figures can shift across matplotlib versions. CI regenerates the checkout
-and ASOS reports on every push and fails if a committed copy has drifted.
+and ASOS reports on every push to master and fails if a committed copy has
+drifted.
 The Hillstrom report sits outside that gate on purpose. Its data is
 fetched rather than committed, and CI should not depend on a 2008 URL
 staying up. There is no hidden global random-number state anywhere in
@@ -158,7 +160,7 @@ needs the generators to emit a pre-experiment covariate first. There are no
 futility boundaries, so the monitoring code can stop a clear winner early but
 not a hopeless run. There is no confidence interval for the effect after a
 sequential stop, which is why the report warns that the estimate at the
-stopping look is biased upward rather than correcting it. The bootstrap
+stopping look is biased away from zero rather than correcting it. The bootstrap
 handles mean differences only, so it can stay fully vectorized. Users are
 assigned independently of one another, so nothing here demonstrates variance
 estimation when the randomization unit differs from the analysis unit. The
