@@ -10,11 +10,11 @@ preamble = """
 The data is the ASOS Digital Experiments Dataset: real online controlled
 experiments from ASOS.com, published as daily or twice-daily CUMULATIVE
 summary statistics per arm with no user-level rows (Liu, Cardoso,
-Couturier, McCoy, NeurIPS 2021, DOI 10.17605/OSF.IO/64JSB, CC BY 4.0;
-provenance and integrity notes in data/asos/LICENSE-DATA.md). Metrics
-are anonymized by the publisher; metric 1 is binary and metrics 2 to 4
-are right-skewed continuous quantities, so those are the only honest
-names available. The single-experiment analysis below reads experiment
+Couturier, McCoy, NeurIPS 2021, DOI 10.17605/OSF.IO/64JSB, CC BY 4.0).
+Provenance and integrity notes are in data/asos/LICENSE-DATA.md. Metrics
+are anonymized by the publisher. Metric 1 is binary, and the datasheet
+describes metrics 2 to 4 as right-skewed continuous quantities, so
+numbered names are the only honest ones available. The single-experiment analysis below reads experiment
 54a85a, chosen by a rule that does not look at results. The rule takes
 the one experiment the dataset's own datasheet flags for a possible
 primacy effect, provided its variances are complete at every checkpoint,

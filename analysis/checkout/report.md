@@ -8,10 +8,10 @@ to a recommendation.
 
 Because the data are synthetic, the true effects are known, and that is the
 point. The seeds are fixed, and they were chosen so that each failure mode
-this report exists to demonstrate actually shows up in this one run; the
-multiple-comparisons section says so out loud for its own starkest case. At the end I compare what the analysis concluded against what the
+this report exists to demonstrate actually shows up in this one run. The
+multiple-comparisons section states that plainly for its own starkest case. At the end I compare what the analysis concluded against what the
 generator actually did. Everything here is produced by `scripts/run_build_checkout_report.py`
-with fixed seeds; the library functions it calls live in `src/abkit/`, and the
+with fixed seeds. The library functions it calls live in `src/abkit/`, and the
 document is rendered by the same engine that renders reports on a user's own
 data (`run_analyze_experiment.py`).
 
@@ -28,9 +28,9 @@ split, giving roughly 60,000 per arm - some margin over the minimum.
 
 In this scenario, the first launch of the experiment had a client bug. The treatment redirect
 dropped the tracking beacon for a slice of users who bounced without
-converting. Nothing about the metric looks wrong on the surface - the
-treatment "won" with an observed lift of 0.75 pp - but
-the sample-ratio check fails loudly:
+converting. Nothing about the metric looks wrong on the surface. The
+treatment "won" with an observed lift of 0.75 pp. But
+the sample-ratio mismatch (SRM) check fails loudly:
 
 | Run | Control n | Treatment n | SRM chi-square | SRM p-value |
 |---|---|---|---|---|
@@ -75,13 +75,13 @@ Splitting the window confirms it:
 | Days 10-13 | 0.23 pp | -0.28 pp to 0.75 pp | 0.371 |
 
 Comparing two confidence intervals by eye is not a test of the difference
-between them, so I tested the decay directly rather than eyeballing the table. The
+between them, so I tested the decay directly. The
 early-minus-late difference is 1.06 pp (SE 0.41 pp),
 z = 2.60, p = 0.009. The fade is real, not an artifact of
 reading two intervals side by side.
 
-The early window carries most of the headline effect. The late window - the
-best available proxy for the persistent effect - shows
+The early window carries most of the headline effect. The late window is the
+best available proxy for the persistent effect. It shows
 0.23 pp with a confidence interval wide enough to include
 both zero and the +0.4 pp the experiment was powered for. So the
 honest summary is that the treatment very likely helps, that the headline
@@ -115,7 +115,7 @@ The spending design first crosses at **look 4**,
 spending almost no alpha in the noisy early days. In fact it spends so little
 that the first look has no finite boundary at all. The alpha allocated
 there sits below the library's 1e-10 spending floor, so the look is treated
-as unspendable and no realistic day-1 z-statistic can stop the experiment,
+as unspendable and no day-1 z-statistic can stop the experiment,
 which is why the boundary line in the figure starts at look
 2.
 Under a true null on this exact look schedule, simulation (100,000 runs)
@@ -147,15 +147,17 @@ p = 0.031 - and note the direction. The observed lift is
 scan of the p-value column alone would suggest. That is the trap twice over.
 With six true nulls the chance of at least one unadjusted p below 0.05 is
 26%, so a flagged metric is the expected outcome rather than a
-discovery. Both the Holm adjustment (family-wise control, the right tool for a
-ship decision) and Benjamini-Hochberg (FDR control, the right tool for a
-screening pass) push every metric back above the line.
+discovery. Both corrections push every metric back above the line. Holm
+controls the family-wise error rate, the chance of even one false positive,
+which is the right standard for a ship decision. Benjamini-Hochberg controls
+the false discovery rate (FDR), the expected share of flagged metrics that
+are false, which is the right standard for a screening pass.
 
 The seed here was chosen to land on a run that exhibits the false positive.
 Under six independent true nulls only about 23% of runs would produce exactly
 one nominally significant metric, and most would produce none. That is a deliberate choice to show
-the machinery working, not a typical draw, and it seemed worth saying out loud
-in a document whose whole argument is about not reading luck as signal.
+the machinery working, not a typical draw, and a document whose whole
+argument is about not reading luck as signal should say so.
 Figure 3 shows the adjustment pulling the flagged metric
 back across the line.
 
@@ -180,14 +182,15 @@ disagreement.
 | Permutation test | +1.23 per user | p = 0.029 |
 | Trimmed mean diff (1%) | +0.29 per user | different estimand, see below |
 
-The first three estimate the same quantity and disagree about it (with a
-caveat on the bootstrap's standing: its coverage evidence in this repo is
-finite-variance only, and under an infinite-variance tail the percentile
-interval for a mean is itself unstable, which is part of the point). The Welch
+The first three estimate the same quantity and disagree about it. One caveat
+on the bootstrap's standing before reading it as a tiebreaker. Its coverage
+evidence in this repo is finite-variance only, and under an infinite-variance
+tail the percentile interval for a mean is itself unstable, which is part of
+the point. The Welch
 test says not significant (p = 0.104); the permutation test says
 significant (p = 0.029); the bootstrap interval
-(+0.14 to +2.97) excludes zero, but its lower bound is a whisker
-above it.
+(+0.14 to +2.97) excludes zero, but its lower bound barely
+clears it.
 
 The Welch/permutation split has a specific cause. The permutation test is
 exact under the sharp null that the two arms
@@ -199,13 +202,13 @@ two different questions, and only one of them is the one leadership asked.
 
 The trimmed difference is a diagnostic, not a fourth estimate of the same
 thing, and the table above would be misleading if it were read as one. With
-94% of users at zero, trimming 1% from each tail of each arm cuts
-601 zeros off the bottom and about 17% of the *spenders* off
+94% of users at zero, trimming 1% from each tail of each arm cuts, in
+the control arm alone, 601 zeros off the bottom and about 17% of the *spenders* off
 the top. It therefore targets a different population quantity. The control
 arm's own mean falls from 4.47 to 1.56 with no treatment
 effect involved at all. The useful signal is that +0.29 and
 +1.23 are far apart, which says the raw difference rests on the
-part of the distribution the trim removes - but any heavy right tail produces
+part of the distribution the trim removes. But any heavy right tail produces
 that gap, so it points at fragility rather than proving whales specifically.
 
 There is no analysis trick that resolves this, because the ambiguity is real.
@@ -227,7 +230,7 @@ cannot move (capped revenue or spender conversion), declared in advance and
 sized for it.
 
 What I would not do is run all four and report the one that crossed 0.05. They
-were all planned; the disagreement itself is the finding, and it says
+were all planned. The disagreement itself is the finding, and it says
 "underpowered for this metric," not "significant if you pick the right test."
 
 ## 8. What the generator actually did

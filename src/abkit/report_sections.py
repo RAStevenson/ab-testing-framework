@@ -309,7 +309,7 @@ def sec_srm(exp: Experiment) -> SectionSpec:
         )
         body = (
             "A sample-ratio mismatch check (SRM) asks whether the number of users "
-            "who actually landed in each arm matches the intended split; a failure "
+            "who actually landed in each arm matches the intended split. A failure "
             "means the assignment or logging lost users asymmetrically, which "
             "biases every metric in ways no downstream statistic can fix.\n\n"
             + "\n".join(lines)
@@ -421,12 +421,12 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
             else f"The final {k_full - k} checkpoints are EXCLUDED from this section"
         )
         + ". Each increment's variance can be recovered from consecutive "
-        "cumulative counts, means, and variances; for the first excluded "
+        "cumulative counts, means, and variances. For the first excluded "
         "increment that recovery is negative, which no real accumulation of "
-        "observations can produce, "
-        "so the statistics published there do not describe a superset of "
-        "the previous checkpoint (a settled recompute or late correction "
-        "is the usual cause). The exclusion is stated here rather than "
+        "observations can produce. "
+        "The statistics published there therefore do not describe a superset "
+        "of the previous checkpoint; a settled recompute or late correction "
+        "is the usual cause. The exclusion is stated here rather than "
         "applied silently."
     )
     w = max(1, k // 3)
@@ -470,16 +470,16 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         + "\n\nA significant z means the early and late windows genuinely "
         "differ, so the end-of-run cumulative number blends two regimes and "
         "can sit far from the late-window effect that best describes where "
-        "the experiment ended up. The z is early minus late: positive means "
-        "the effect moved down over the run, negative means it moved up, and "
-        "whether that is novelty fading, a harm emerging, or a primacy "
-        "pattern depends on the effect signs in the table. Either way the "
-        "late window is the honest number to quote."
+        "the experiment ended up. The z is early minus late. A positive z "
+        "means the effect moved down over the run, and a negative z means it "
+        "moved up. Whether that is novelty fading, a harm emerging, or a "
+        "primacy pattern depends on the effect signs in the table. Either way "
+        "the late window is the honest number to quote."
         + (
             ""
             if exp.rows is not None
-            else "\n\nOne assumption to hold onto for aggregate archives: "
-            "differencing cumulative statistics treats each increment as new "
+            else "\n\nOne assumption matters for aggregate archives. "
+            "Differencing cumulative statistics treats each increment as new "
             "users only. An archive that recomputes its metrics over all "
             "enrolled users at each checkpoint blurs the increments, and this "
             "test is approximate there."
@@ -634,9 +634,9 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
         + (
             ""
             if len(fractions) <= 48
-            else f"\n\nOne numerical caveat at this look count: the boundaries "
-            "come from a recursive numerical integration whose accuracy is "
-            "pinned by test up to a few dozen looks, so treat the "
+            else f"\n\nOne numerical caveat applies at this look count. The boundaries "
+            "come from a recursive numerical integration whose grid convergence "
+            "is pinned by test on a 14-look schedule, so treat the "
             f"{len(fractions)}-look boundary values as approximate."
         )
         + trim_note
@@ -734,7 +734,7 @@ def sec_corrections(exp: Experiment, figdir: Path) -> SectionSpec | None:
     family_error = 1.0 - (1.0 - exp.alpha) ** len(family)
     body = (
         (
-            f"This experiment carries {len(family)} comparisons beyond the primary result. "
+            f"This experiment carries {len(family)} comparisons beyond the primary metric. "
             if any(not m.primary for m, _ in family)
             else f"With one metric and several arms, the family is the primary "
             f"metric's {len(family)} contrasts. "
@@ -743,7 +743,7 @@ def sec_corrections(exp: Experiment, figdir: Path) -> SectionSpec | None:
         f"{exp.alpha} without adjustment gives roughly a "
         f"{family_error:.0%} chance of at least one false alarm even if nothing "
         "moved (treating the comparisons as independent, which shared arms "
-        "make approximate), so the family is adjusted two ways: Holm, which controls the "
+        "make approximate). The family is therefore adjusted two ways: Holm, which controls the "
         "chance of ANY false claim (the right standard for a ship decision), "
         "and Benjamini-Hochberg, which controls the false-discovery RATE (the "
         "right standard for a screen that feeds follow-ups).\n\n"
@@ -835,7 +835,7 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
         f"**{metric.name}** is the kind of metric where a few extreme users can "
         "carry the average"
         + (f" ({pct(zero_share, 0)} of users sit at zero here)" if zero_share > 0.5 else "")
-        + ", so it gets four looks that stress the tail differently: a Welch "
+        + ". It gets four looks that stress the tail differently: a Welch "
         "t-test (relies on the normal approximation of the mean), a percentile "
         "bootstrap (resamples the observed tail), a permutation test (exact "
         "under the null that the arms' distributions are identical), and a "

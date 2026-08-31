@@ -52,8 +52,7 @@ def bootstrap_mean_diff(
     Arms are resampled independently with replacement. The percentile
     interval is adequate here because the bootstrap distribution of a
     mean difference is close to symmetric at experiment-scale n; a BCa
-    interval would tighten small-sample skew cases and is on the TODO
-    list.
+    interval would tighten small-sample skew cases.
     """
     x, y = _two_samples(control, treatment)
     if n_resamples < 100:

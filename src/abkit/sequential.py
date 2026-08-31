@@ -13,10 +13,10 @@ spending function allows.
 
 Accuracy is limited by the integration grid, which converges as O(h^2).
 With the default ``grid_points`` the boundaries are stable to about 1e-4
-for schedules up to a few dozen looks; ``test_boundaries_converge_on_grid``
-pins that directly by refining the grid, and the two- and three-look
-designs are checked against exact multivariate-normal rectangle
-probabilities from scipy, which share no code with this recursion.
+on the 14-look schedule that ``test_boundaries_converge_on_grid`` pins
+by refining the grid, and the two- and three-look designs are checked
+against exact multivariate-normal rectangle probabilities from scipy,
+which share no code with this recursion.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 # abkit
 
-A small A/B testing and experiment-analysis toolkit I wrote around the parts
+I wrote this small A/B testing and experiment-analysis toolkit around the parts
 of experimentation that actually go wrong in practice: broken assignment,
 novelty effects, peeking, multiple comparisons, and revenue metrics with
 tails so heavy that the normal approximation behind the usual tests (the
@@ -81,10 +81,10 @@ it.
 
 The sequential boundaries get the most scrutiny, because they are the part I
 could most easily have got subtly wrong. They are checked against a published
-Lan-DeMets Pocock table for five equal looks, against exact bivariate and
-trivariate normal rectangle probabilities from scipy (which share no code with
-my recursion), against Monte Carlo crossing rates, and against a grid
-refinement that pins the accuracy the module docstring claims. One test exists
+Lan-DeMets Pocock table for five equal looks, and against exact bivariate and
+trivariate normal rectangle probabilities from scipy, which share no code with
+my recursion. They are also checked against Monte Carlo crossing rates and
+against a grid refinement that pins the accuracy the module docstring claims. One test exists
 purely to demonstrate the motivating failure and its fix. Fourteen naive daily
 peeks at z = 1.96 reject on 22% of null runs, while the spending boundaries on
 those same simulated paths hold 5%.
@@ -114,16 +114,18 @@ same entry script at your file:
 ```
 
 The config declares the arm column and labels, the metrics and which one is
-primary, the intended split if you know it, and optional value aliases; the
+primary, the intended split if you know it, and optional value aliases. The
 two committed demo configs (`analysis/asos/config.toml` for aggregate data,
 `analysis/hillstrom/config.toml` for user-level rows) are complete working
 examples of both input shapes. Four conventions matter when writing yours.
 The FIRST label in `arms.labels` is the control; ordering them the other
 way would flip the sign of every effect. A `[columns] day = "..."` entry
 (numeric time since the experiment started, such as a day number) is what
-unlocks the time-based sections, including the sequential replay, for your
-own data. The multiple-comparisons section renders when the family beyond
-the primary result has at least two members; when it does not render, any
+turns on the time-based sections, including the sequential replay, for your
+own data. The multiple-comparisons section renders when there are at least
+two comparisons to adjust. With extra metrics the family is every
+non-primary metric on every variant, and with a single metric and several
+arms it is the primary metric's contrasts. When it does not render, any
 non-primary p-value you see elsewhere in the report is unadjusted. Columns
 your config does not name are ignored entirely, and a row that fails any
 validation rule is dropped whole, counted, and reported, never partially
@@ -132,17 +134,17 @@ intake drops or normalizes is counted in the report, an unrecognized arm
 label stops the run, and a config may pin its data file's md5 checksum so
 an analysis cannot quietly run against the wrong file.
 
-Python 3.11+. There is no install step; the entry scripts and
+Python 3.11+. There is no install step. The entry scripts and
 `tests/conftest.py` put `src/` on the import path themselves, so a fresh
 clone runs as-is once the dependencies are present. An editable install
 (`pip install -e '.[dev]'`) still works if you prefer one. The library
-depends only on numpy and scipy; matplotlib is a dev dependency needed
-whenever a report with figures is built, by any of the report scripts.
+depends only on numpy and scipy. Matplotlib is a dev dependency, and every
+report script needs it to build a report with figures.
 Rerunning an analysis reproduces its `report.md` byte for byte, though
 figures can shift across matplotlib versions. CI regenerates the checkout
-and ASOS reports on every push and fails if a committed copy has drifted;
-the Hillstrom report sits outside that gate on purpose, because its data is
-fetched rather than committed and CI should not depend on a 2008 URL
+and ASOS reports on every push and fails if a committed copy has drifted.
+The Hillstrom report sits outside that gate on purpose. Its data is
+fetched rather than committed, and CI should not depend on a 2008 URL
 staying up. There is no hidden global random-number state anywhere in
 the library, because every function that draws randomness takes an explicit
 `numpy.random.Generator`.
@@ -175,10 +177,10 @@ permutations inside one vectorized call, and costs O(n) per permutation where
 `argsort` of the same keys would cost O(n log n). The script
 `scripts/run_bench_permutation.py` times both against a per-row Fisher-Yates
 shuffle at the report's scale of 10,000 permutations over 120,000 pooled
-users; on a 2026-08-07 run (Windows 11, 32-core AMD, numpy 2.4.6)
+users. On a 2026-08-07 run (Windows 11, 32-core AMD, numpy 2.4.6)
 argpartition measured 3.0x faster than `argsort` and 2.5x faster than the
-shuffle, which is also O(n) but has to materialize and permute the full
-block.
+shuffle. The shuffle is also O(n) but has to materialize and permute the
+full block.
 
 The bootstrap interval is percentile rather than BCa. Percentile undercovers
 slightly on skewed data; the coverage test measures 90-98% against a nominal
@@ -193,13 +195,13 @@ in a review than `result[3]`.
 The library holds itself to a few rules throughout. Every public function
 carries full type hints, with `numpy.typing.NDArray[np.float64]` for
 arrays, and returns a frozen dataclass rather than a tuple. Randomness
-always flows through an explicit `numpy.random.Generator` parameter; there
+always flows through an explicit `numpy.random.Generator` parameter. There
 is no module-level seeding and none of the legacy `np.random.*` API. There
-is no error swallowing. Inputs fail with an explicit `ValueError`, the
-intake's one coercion catch turns an unparseable value into a counted and
-reported row drop, and the report builders are the one documented place a
-failure may be caught, logged, and surfaced as an omitted section. Comments
-explain non-obvious decisions only.
+is no error swallowing. Inputs fail with an explicit `ValueError`. Two
+documented exceptions exist: the intake's coercion catches turn an
+unparseable value into a counted and reported row drop, and the report
+builders may catch a failure, log it, and surface it as an omitted
+section. Comments explain non-obvious decisions only.
 
 On the statistics side, tests are two-sided unless the function name says
 otherwise, p-value adjustment functions take and return arrays in the
