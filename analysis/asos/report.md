@@ -7,15 +7,16 @@ experiments from ASOS.com, published as daily or twice-daily CUMULATIVE
 summary statistics per arm with no user-level rows (Liu, Cardoso,
 Couturier, McCoy, NeurIPS 2021, DOI 10.17605/OSF.IO/64JSB, CC BY 4.0).
 Provenance and integrity notes are in data/asos/LICENSE-DATA.md. Metrics
-are anonymized by the publisher. Metric 1 is binary, and the datasheet
-describes metrics 2 to 4 as right-skewed continuous quantities, so
-numbered names are the only honest ones available. The single-experiment
-analysis below reads experiment 54a85a, chosen by a rule that does not
-look at this pipeline's results. The datasheet flags one experiment for a
-possible primacy effect. The rule takes that experiment if its variances
-are complete at every checkpoint, and otherwise falls back to the
-complete-variance experiment with the most checkpoints. 54a85a met both
-conditions.
+are anonymized by the publisher. Its documentation describes metric 1 as
+binary, metrics 2 and 3 as count-based, and metric 4 as non-negative
+real, with metrics 2 to 4 right-skewed, so numbered names are the only
+honest ones available. The single-experiment analysis below reads
+experiment 54a85a, chosen by a rule that does not look at this
+pipeline's results. The datasheet flags one experiment for a possible
+primacy effect (the passage is quoted in LICENSE-DATA.md). The rule
+takes that experiment if its variances are complete at every
+checkpoint, and otherwise falls back to the complete-variance
+experiment with the most checkpoints. 54a85a met both conditions.
 Because no user-level rows exist, the resampling analyses do not appear
 below. That omission is the report adapting to the data rather than an
 oversight.

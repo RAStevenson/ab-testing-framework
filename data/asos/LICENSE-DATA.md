@@ -24,3 +24,20 @@ for code.
   The dataset's maintainers state that minor corrections would be
   published in place under the same filename, so a future mismatch means
   a new upstream version should be reviewed, re-pinned, and re-analyzed.
+- **Metric descriptions:** the dataset's OSF wiki (the schema page at
+  https://osf.io/64jsb/wiki/home/, retrieved 2026-08-31) states that
+  metric 1 accepts binary responses, metrics 2 and 3 accept count-based
+  responses, metric 4 accepts non-negative real number responses, and
+  that "The responses for metrics 2, 3, and 4 demonstrate various
+  degrees of right skewness." The metrics are otherwise anonymized.
+- **Primacy flag behind the single-experiment selection:** the
+  datasheet ("Datasheet - ASOS Digital Experiments Dataset.pdf" on the
+  OSF record, retrieved 2026-08-31) lists possible data pitfalls and
+  states: "The treatment mean entries for Experiment '54a85a' are
+  increasing faster than the control mean entries of the same
+  experiment, indicating a possible primacy effect in play." It is the
+  only experiment the datasheet flags for a possible primacy effect
+  (its other example, 162a38, is flagged for possible telemetry loss).
+  The selection rule's second condition, variances present at every
+  checkpoint, was checked against the committed CSV on 2026-08-31:
+  all 1,152 rows for 54a85a carry both variance entries.
