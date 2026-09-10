@@ -20,8 +20,8 @@ reproduces them.
 If you only read one thing, read [analysis/checkout/report.md](analysis/checkout/report.md).
 It walks a synthetic checkout-redesign experiment from power analysis to a
 ship recommendation. That includes a revenue metric where Welch, the
-bootstrap, and a permutation test return three different verdicts on the
-same data, and the right move is to say so rather than pick one. Because the data are
+bootstrap, and a permutation test disagree on the same data, and the
+right move is to say so rather than pick one. Because the data are
 synthetic, the report closes by putting its headline conclusions next to the
 effects the generator actually planted.
 

@@ -27,7 +27,7 @@ Arm sizes: control 3,320,536, variant_0 102,316, variant_1 3,316,730, variant_2 
 
 ## 2. Sensitivity at this sample size
 
-At the realized sample size (102,316 in the smaller arm of the first contrast) and the control rate of 25.1%, the smallest absolute lift this experiment could detect with 80% power at alpha 0.05 is 0.54 pp (the minimum detectable effect, or MDE). Effects smaller than that could be real and still produce an unremarkable p-value here. That is a property of the sample size, not evidence of absence.
+At the realized sample size (102,316 in the smaller arm of the first contrast) and the control rate of 25.1%, the smallest absolute lift this experiment could detect with 80% power at alpha 0.05 is 0.54 percentage points (pp), the minimum detectable effect (MDE). Effects smaller than that could be real and still produce an unremarkable p-value here. That is a property of the sample size, not evidence of absence.
 
 ## 3. Assignment validation
 
@@ -43,7 +43,7 @@ The arm ratio is stable across checkpoints in every contrast (alarm threshold p 
 
 ## 4. Primary metric
 
-The primary metric is **metric_1** (binary). Each treatment arm is compared against control. The test is a pooled two-proportion z-test for binary metrics and a Welch t-test for continuous ones.
+The primary metric is **metric_1** (binary). Each treatment arm is compared against control. The test is a pooled two-proportion z-test for binary metrics and a Welch t-test for continuous ones. Read each row as an interval first. The 95% CI is the range of effects the data are consistent with, and p is how often an effect this size would appear if the arms were identical. A narrow interval clear of zero means the run measured the effect. A wide interval spanning zero means the run did not pin it down, which differs from showing no effect exists.
 
 | Contrast | Effect | 95% CI | p |
 |---|---|---|---|

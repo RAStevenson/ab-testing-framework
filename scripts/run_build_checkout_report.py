@@ -370,11 +370,11 @@ data (`run_analyze_experiment.py`)."""
             key="design_power",
             title="Design and power",
             body=f"""The primary metric is checkout conversion, baseline {pct(BASE_RATE, 1)}. The
-smallest effect worth shipping was set at +{pp(TRUE_LIFT, 1)} absolute. For a
+smallest effect worth shipping was set at +{100 * TRUE_LIFT:.1f} percentage points (pp) absolute. For a
 two-sided test at alpha {ALPHA} and 80% power, that needs
 **{n_required:,} users per arm** (`sample_size_two_proportions`), so the
 experiment was sized at {N_USERS:,} users over {N_DAYS} days with a 50/50
-split, giving roughly {N_USERS // 2:,} per arm - some margin over the minimum.""",
+split, giving roughly {N_USERS // 2:,} per arm, which leaves some margin over the minimum.""",
         )
     )
 
@@ -488,8 +488,8 @@ Splitting the window confirms it:
 Comparing two confidence intervals by eye is not a test of the difference
 between them, so I tested the decay directly. The
 early-minus-late difference is {pp(decay_diff)} (SE {pp(decay_se)}),
-z = {decay_z:.2f}, p = {fmt_p(decay_p)}. The fade is real, not an artifact of
-reading two intervals side by side.
+z = {decay_z:.2f}, p = {fmt_p(decay_p)}. The fade is real. Reading two intervals
+side by side did not create it.
 
 The early window carries most of the headline effect. The late window is the
 best available proxy for the persistent effect. It shows
@@ -582,7 +582,7 @@ z path.
 
 The naive rule would have stopped at **look {first_naive}**, when the novelty
 effect was near its peak, locking in a cumulative lift of
-{pp(naive_lift)} - about {naive_lift / TRUE_LIFT:.1f}x the persistent effect.
+{pp(naive_lift)}, about {naive_lift / TRUE_LIFT:.1f}x the persistent effect.
 The spending design first crosses at **look {outcome.stopped_at_look}**,
 spending almost no alpha in the noisy early days. In fact it spends so little
 that {unspendable_phrase} no finite boundary at all. The alpha allocated
@@ -646,7 +646,7 @@ this a live-fire test of the correction machinery.
 {rows}
 
 Read naively, **{SECONDARY_METRICS[flagged]}** clears the line at
-p = {fmt_p(naive_arr[flagged])} - and note the direction. The observed lift is
+p = {fmt_p(naive_arr[flagged])}. Note the direction. The observed lift is
 {pp(lifts[flagged])}, so the naive reading is a {flagged_verdict}, not the win a
 scan of the p-value column alone would suggest. That is the trap twice over.
 With {spell(len(SECONDARY_METRICS))} true nulls the chance of at least one unadjusted p below 0.05 is
@@ -659,9 +659,9 @@ are false, which is the right standard for a screening pass.
 
 The seed here was chosen to land on a run that exhibits the false positive.
 Under {spell(len(SECONDARY_METRICS))} independent true nulls only about {exactly_one:.0%} of runs would produce exactly
-one nominally significant metric, and most would produce none. That is a deliberate choice to show
-the machinery working, not a typical draw, and a document whose whole
-argument is about not reading luck as signal should say so.
+one nominally significant metric, and most would produce none. The run was picked deliberately to show
+the machinery working, and a report about not reading luck as signal should
+say so rather than present the draw as typical.
 {{{{fig:secondary_pvalues}}}} shows the adjustment pulling the flagged metric
 back across the line.""",
             figures=(
@@ -731,8 +731,8 @@ back across the line.""",
 one this experiment cannot answer cleanly. The distribution is zero-inflated
 ({pct(zero_share, 0)} of users spend nothing) with a Pareto tail. The generator
 gives roughly 1 in {1 / WHALE_RATE:.0f} spenders a "whale" draw whose distribution has
-infinite variance. This is not an exotic choice; real revenue data looks like
-this. {{{{fig:revenue}}}} shows the distributions and the interval
+infinite variance. The generator was built this way on purpose, so the
+analysis has to face the heavy tail a revenue metric carries. {{{{fig:revenue}}}} shows the distributions and the interval
 disagreement.
 
 | Method | Estimate | Interval / p |
@@ -753,9 +753,9 @@ significant (p = {fmt_p(perm.p_value)}). The bootstrap interval
 clears it.
 
 The Welch/permutation split has a specific cause. The permutation test is
-exact under the sharp null that the two arms
+exact in principle under the sharp null that the two arms
 have *identical distributions*, and the treatment here does change the
-distribution - it raises the probability of spending at all. So the permutation
+distribution, because it raises the probability of spending at all. So the permutation
 test can correctly reject while the *mean* difference, which is what Welch is
 estimating, stays badly determined by a few large draws. The two tests ask
 two different questions, and only one of them is the one leadership asked.
@@ -816,7 +816,7 @@ The pipeline got the qualitative story right everywhere. It caught the broken
 first run, flagged the novelty inflation instead of shipping the headline
 number, and refused the spurious secondary win. On the underpowered revenue
 metric, it declined to quote an impact number at all. The place it cannot
-help is where the data simply do not contain the answer - the persistent
+help is where the data simply do not contain the answer. The persistent
 lift and the revenue effect both need more time or a better metric, and the
 report says so rather than manufacturing certainty.
 

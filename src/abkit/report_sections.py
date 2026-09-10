@@ -270,8 +270,9 @@ def sec_design_power(exp: Experiment) -> SectionSpec | None:
         f"At the realized sample size ({n_per_arm:,} in the smaller arm of the "
         f"first contrast) and the control rate of {pct(control.mean, 1)}, the "
         f"smallest absolute lift this experiment could detect with 80% power at "
-        f"alpha {exp.alpha} is {pp(mde, 2)} (the minimum detectable effect, or "
-        "MDE). Effects smaller than that could be real and still produce an "
+        f"alpha {exp.alpha} is {100 * mde:.2f} percentage points (pp), the minimum "
+        "detectable effect (MDE). Effects smaller than that could be real and still "
+        "produce an "
         "unremarkable p-value here. That is a property of the sample size, not "
         "evidence of absence."
     )
@@ -393,7 +394,12 @@ def sec_primary(exp: Experiment) -> SectionSpec:
     body = (
         f"The primary metric is **{metric.name}** ({metric.kind}). Each treatment "
         "arm is compared against control. The test is a pooled two-proportion "
-        "z-test for binary metrics and a Welch t-test for continuous ones.\n\n" + "\n".join(lines)
+        "z-test for binary metrics and a Welch t-test for continuous ones. Read "
+        "each row as an interval first. The 95% CI is the range of effects the "
+        "data are consistent with, and p is how often an effect this size would "
+        "appear if the arms were identical. A narrow interval clear of zero means "
+        "the run measured the effect. A wide interval spanning zero means the run "
+        "did not pin it down, which differs from showing no effect exists.\n\n" + "\n".join(lines)
     )
     return SectionSpec(key="primary", title="Primary metric", body=body)
 
@@ -840,8 +846,8 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
             if zero_share > 0.5
             else ""
         )
-        + f". The first contrast ({_contrast_label(exp, treatment_arm)}) gets "
-        "four looks that stress the tail differently: a Welch t-test (relies "
+        + f". The first contrast ({_contrast_label(exp, treatment_arm)}) is "
+        "analyzed four ways, each stressing the tail differently: a Welch t-test (relies "
         "on the normal approximation of the mean), a percentile bootstrap "
         "(resamples the observed tail), a permutation test (no normal "
         "approximation, with a p-value computed from 10,000 random "

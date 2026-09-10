@@ -27,7 +27,7 @@ Arm sizes after validation: No E-Mail 21,306, Mens E-Mail 21,307, Womens E-Mail 
 
 ## 2. Sensitivity at this sample size
 
-At the realized sample size (21,306 in the smaller arm of the first contrast) and the control rate of 10.6%, the smallest absolute lift this experiment could detect with 80% power at alpha 0.05 is 0.85 pp (the minimum detectable effect, or MDE). Effects smaller than that could be real and still produce an unremarkable p-value here. That is a property of the sample size, not evidence of absence.
+At the realized sample size (21,306 in the smaller arm of the first contrast) and the control rate of 10.6%, the smallest absolute lift this experiment could detect with 80% power at alpha 0.05 is 0.85 percentage points (pp), the minimum detectable effect (MDE). Effects smaller than that could be real and still produce an unremarkable p-value here. That is a property of the sample size, not evidence of absence.
 
 ## 3. Assignment validation
 
@@ -42,7 +42,7 @@ No contrast fails the check (conventional alarm threshold p < 1e-3), so the real
 
 ## 4. Primary metric
 
-The primary metric is **visit** (binary). Each treatment arm is compared against control. The test is a pooled two-proportion z-test for binary metrics and a Welch t-test for continuous ones.
+The primary metric is **visit** (binary). Each treatment arm is compared against control. The test is a pooled two-proportion z-test for binary metrics and a Welch t-test for continuous ones. Read each row as an interval first. The 95% CI is the range of effects the data are consistent with, and p is how often an effect this size would appear if the arms were identical. A narrow interval clear of zero means the run measured the effect. A wide interval spanning zero means the run did not pin it down, which differs from showing no effect exists.
 
 | Contrast | Effect | 95% CI | p |
 |---|---|---|---|
@@ -66,7 +66,7 @@ Unadjusted, 4 comparisons clear alpha. After Holm, 4 survive. Figure 1 shows eac
 
 ## 6. Heavy-tailed metric: spend
 
-**spend** is the kind of metric where a few extreme users can carry the average (99% of users in the first contrast sit at zero). The first contrast (Mens E-Mail vs No E-Mail) gets four looks that stress the tail differently: a Welch t-test (relies on the normal approximation of the mean), a percentile bootstrap (resamples the observed tail), a permutation test (no normal approximation, with a p-value computed from 10,000 random relabelings under the null that the arms' distributions are identical), and a trimmed-mean difference, a diagnostic for tail dependence that deliberately estimates a different quantity (a different estimand), so its number is not comparable to the other three.
+**spend** is the kind of metric where a few extreme users can carry the average (99% of users in the first contrast sit at zero). The first contrast (Mens E-Mail vs No E-Mail) is analyzed four ways, each stressing the tail differently: a Welch t-test (relies on the normal approximation of the mean), a percentile bootstrap (resamples the observed tail), a permutation test (no normal approximation, with a p-value computed from 10,000 random relabelings under the null that the arms' distributions are identical), and a trimmed-mean difference, a diagnostic for tail dependence that deliberately estimates a different quantity (a different estimand), so its number is not comparable to the other three.
 
 | Method | Estimate | Interval / p |
 |---|---|---|
