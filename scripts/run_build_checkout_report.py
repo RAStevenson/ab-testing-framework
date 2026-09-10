@@ -595,7 +595,8 @@ puts the naive rule's false-positive rate at {pct(naive_alpha, 1)} against the
 nominal {pct(ALPHA, 0)}; the spending design holds {pct(spent_alpha, 1)}.
 
 Early stopping is a tool for catching regressions quickly, not for shipping
-winners early. Even the correctly stopped estimate is biased upward by the
+winners early. Even the correctly stopped estimate is biased away from zero
+by the stopping rule itself, and here it is also biased upward by the
 novelty effect at that point in the run.""",
             figures=(FigureSpec("sequential", "sequential.png", "Sequential monitoring"),),
         )

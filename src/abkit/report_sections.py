@@ -1011,10 +1011,15 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
     naive_any = holm_any = 0
     cells_skipped = 0
     analyzed = 0
+    skip_decreasing = "a cumulative count decreases between checkpoints"
+    skip_few = "fewer than two usable checkpoints exist"
+    skip_degenerate = "the split is degenerate"
+    skip_reasons = {skip_decreasing: 0, skip_few: 0, skip_degenerate: 0}
     for exp_id, rows in sorted(experiments.items()):
         # cumulative primary-metric counts per variant, checkpoint-ordered
         variants = sorted({r[agg["variant"]] for r in rows})
         worst_p = float("nan")
+        reasons_hit: set[str] = set()
         for variant in variants:
             series = sorted(
                 (
@@ -1025,16 +1030,23 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
                 key=lambda r: float(r[agg["checkpoint"]]),
             )
             if len(series) < 2:
+                reasons_hit.add(skip_few)
                 continue
             nc = np.array([float(r[agg["count_control"]]) for r in series])
             nt = np.array([float(r[agg["count_treatment"]]) for r in series])
             if np.any(np.diff(nc) < 0) or np.any(np.diff(nt) < 0):
+                reasons_hit.add(skip_decreasing)
                 continue
             _, df, p, _ = _ratio_stability(nc, nt)
-            if df > 0 and (np.isnan(worst_p) or p < worst_p):
+            if df == 0 or np.isnan(p):
+                reasons_hit.add(skip_degenerate)
+                continue
+            if np.isnan(worst_p) or p < worst_p:
                 worst_p = p
         if np.isnan(worst_p):
             stability_skipped += 1
+            for reason in reasons_hit:
+                skip_reasons[reason] += 1
         else:
             analyzed += 1
             if worst_p < 1e-3:
@@ -1096,6 +1108,19 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
             holm_any += int(any(float(h) < alpha for h in holm(np.array(p_values))))
 
     unstable_list = ", ".join(unstable) if unstable else "none"
+    # the skip sentence names only the causes that applied in this archive
+    cause_parts = [f"{n} because {cause}" for cause, n in skip_reasons.items() if n]
+    if len(cause_parts) == 1:
+        causes = "because " + next(c for c, n in skip_reasons.items() if n)
+    elif len(cause_parts) == 2:
+        causes = " and ".join(cause_parts)
+    else:
+        causes = ", ".join(cause_parts[:-1]) + ", and " + cause_parts[-1]
+    skipped_sentence = (
+        f"{stability_skipped} could not be tested ({causes}) and are counted rather than hidden. "
+        if stability_skipped
+        else ""
+    )
     body = (
         f"The sections above read one experiment closely. This one asks "
         f"two mechanical questions of every experiment in the archive "
@@ -1104,10 +1129,8 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
         "property is that each experiment's arm ratio holds constant "
         "across its checkpoints (primary-metric denominators, worst "
         f"contrast per experiment). {analyzed} experiments were testable. "
-        f"{stability_skipped} could not be tested (a cumulative count that "
-        "decreases between checkpoints, too few usable checkpoints, or a "
-        "degenerate split) and are counted rather than "
-        f"hidden. Experiments flagged at the conventional p < 1e-3 alarm: "
+        + skipped_sentence
+        + "Experiments flagged at the conventional p < 1e-3 alarm: "
         f"{unstable_list}.\n\n"
         f"The second question is multiplicity at scale. Each experiment's "
         "full end-of-run comparison family (every metric on every variant) "

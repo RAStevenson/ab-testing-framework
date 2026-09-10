@@ -204,8 +204,7 @@ is no module-level seeding and none of the legacy `np.random.*` API. There
 is no error swallowing. Inputs fail with an explicit `ValueError`. Two
 documented exceptions exist: the intake's coercion catches turn an
 unparseable value into a counted and reported row drop, and the report
-builders may catch a failure, log it, and surface it as an omitted
-section. Comments explain non-obvious decisions only.
+builders may catch a failure and surface it as an omitted section. Comments explain non-obvious decisions only.
 
 On the statistics side, tests are two-sided unless the function name says
 otherwise, p-value adjustment functions take and return arrays in the

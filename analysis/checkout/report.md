@@ -124,7 +124,8 @@ puts the naive rule's false-positive rate at 21.9% against the
 nominal 5%; the spending design holds 4.9%.
 
 Early stopping is a tool for catching regressions quickly, not for shipping
-winners early. Even the correctly stopped estimate is biased upward by the
+winners early. Even the correctly stopped estimate is biased away from zero
+by the stopping rule itself, and here it is also biased upward by the
 novelty effect at that point in the run.
 
 ## 6. Secondary metrics and multiple comparisons
