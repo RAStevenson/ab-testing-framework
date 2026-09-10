@@ -370,7 +370,7 @@ def sec_srm(exp: Experiment) -> SectionSpec:
             f"Observed arm sizes: {sizes}. The intended allocation is not on "
             "record and the data has no time axis, so neither a direct "
             "sample-ratio mismatch test nor a ratio-stability test is possible. "
-            "The sizes are reported for the reader's own judgement, and that "
+            "The sizes are reported for the reader's own judgment, and that "
             "absence of a check is itself worth knowing."
         )
     return SectionSpec(key="srm", title="Assignment validation", body=body)
@@ -396,7 +396,7 @@ def sec_primary(exp: Experiment) -> SectionSpec:
         "arm is compared against control. The test is a pooled two-proportion "
         "z-test for binary metrics and a Welch t-test for continuous ones. Read "
         "each row as an interval first. The 95% CI is the range of effects the "
-        "data are consistent with, and p is how often an effect this size would "
+        "data is consistent with, and p is how often an effect at least this large would "
         "appear if the arms were identical. A narrow interval clear of zero means "
         "the run measured the effect. A wide interval spanning zero means the run "
         "did not pin it down, which differs from showing no effect exists.\n\n" + "\n".join(lines)
@@ -431,9 +431,9 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "increment that recovery is negative, which no real accumulation of "
         "observations can produce. "
         "The statistics published there therefore do not describe a superset "
-        "of the previous checkpoint's sample. A settled recompute or late "
-        "correction is the usual cause. The exclusion is stated here rather "
-        "than applied silently."
+        "of the previous checkpoint's sample. A recompute after late-arriving "
+        "data or a correction published in place would produce this. The "
+        "exclusion is stated here rather than applied silently."
     )
     w = max(1, k // 3)
 
@@ -741,7 +741,7 @@ def sec_corrections(exp: Experiment, figdir: Path) -> SectionSpec | None:
     family_error = 1.0 - (1.0 - exp.alpha) ** len(family)
     body = (
         (
-            f"This experiment carries {len(family)} comparisons beyond the primary metric. "
+            f"This experiment has {len(family)} comparisons beyond the primary metric. "
             if any(not m.primary for m, _ in family)
             else f"With one metric and several arms, the family is the primary "
             f"metric's {len(family)} contrasts. "
@@ -826,6 +826,11 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
     perm = permutation_test_mean_diff(x, y, rng=rng, n_permutations=10_000)
     trimmed = trimmed_mean_diff(x, y, trim=0.01)
     zero_share = float(np.mean(np.concatenate([x, y]) == 0.0))
+    # a 1% trim on a mostly-zero metric removes the nonzero values themselves,
+    # so the trimmed row stops being a tail check; say so when it happens
+    trim_degenerate = 2 * int(0.01 * x.size) >= int((x > 0).sum()) or 2 * int(0.01 * y.size) >= int(
+        (y > 0).sum()
+    )
 
     _fig_heavy_tail(x, y, welch, boot, trimmed, metric.name, figdir)
     boot_excludes_zero = (boot.ci_low > 0.0) == (boot.ci_high > 0.0)
@@ -838,9 +843,17 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
         "finding. It says the estimate rests on the tail, and the honest move "
         "is to report it rather than quote whichever method crossed the line."
     )
+    trim_note = (
+        f" The trimmed row is not a tail check on this data. With {pct(zero_share, 0)} "
+        "of users at zero, cutting 1% from each end of each arm removes most or all "
+        "of the users with a nonzero value along with the extreme ones, so the "
+        "trimmed difference sits near zero whatever the true effect."
+        if trim_degenerate
+        else ""
+    )
     body = (
         f"**{metric.name}** is the kind of metric where a few extreme users can "
-        "carry the average"
+        "dominate the average"
         + (
             f" ({pct(zero_share, 0)} of users in the first contrast sit at zero)"
             if zero_share > 0.5
@@ -864,7 +877,7 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
         f"| Permutation test | {perm.observed:+.3f} | p = {fmt_p(perm.p_value)} |\n"
         f"| Trimmed mean diff (1%) | {trimmed:+.3f} | different estimand |\n\n"
         f"{{{{fig:heavy_tail}}}} shows the distributions and the interval "
-        "comparison. " + agreement
+        "comparison. " + agreement + trim_note
     )
     return SectionSpec(
         key="heavy_tail",
@@ -1091,8 +1104,9 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
         "property is that each experiment's arm ratio holds constant "
         "across its checkpoints (primary-metric denominators, worst "
         f"contrast per experiment). {analyzed} experiments were testable. "
-        f"{stability_skipped} could not be tested (too few usable "
-        "checkpoints or a degenerate split) and are counted rather than "
+        f"{stability_skipped} could not be tested (a cumulative count that "
+        "decreases between checkpoints, too few usable checkpoints, or a "
+        "degenerate split) and are counted rather than "
         f"hidden. Experiments flagged at the conventional p < 1e-3 alarm: "
         f"{unstable_list}.\n\n"
         f"The second question is multiplicity at scale. Each experiment's "

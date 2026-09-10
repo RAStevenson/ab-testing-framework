@@ -7,12 +7,12 @@
 name = "ASOS experiment 54a85a"
 alpha = 0.05
 preamble = """
-The data is the ASOS Digital Experiments Dataset: real online controlled
+The data is the ASOS Digital Experiments Dataset, real online controlled
 experiments from ASOS.com, published as daily or twice-daily CUMULATIVE
 summary statistics per arm with no user-level rows (Liu, Cardoso,
 Couturier, McCoy, NeurIPS 2021, DOI 10.17605/OSF.IO/64JSB, CC BY 4.0).
 Provenance and integrity notes are in data/asos/LICENSE-DATA.md. Metrics
-are anonymized by the publisher. Its documentation describes metric 1 as
+are anonymized by the publisher. The dataset's OSF wiki describes metric 1 as
 binary, metrics 2 and 3 as count-based, and metric 4 as non-negative
 real, with metrics 2 to 4 right-skewed, so numbered names are the only
 honest ones available. The single-experiment analysis below reads

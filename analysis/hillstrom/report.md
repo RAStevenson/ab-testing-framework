@@ -42,7 +42,7 @@ No contrast fails the check (conventional alarm threshold p < 1e-3), so the real
 
 ## 4. Primary metric
 
-The primary metric is **visit** (binary). Each treatment arm is compared against control. The test is a pooled two-proportion z-test for binary metrics and a Welch t-test for continuous ones. Read each row as an interval first. The 95% CI is the range of effects the data are consistent with, and p is how often an effect this size would appear if the arms were identical. A narrow interval clear of zero means the run measured the effect. A wide interval spanning zero means the run did not pin it down, which differs from showing no effect exists.
+The primary metric is **visit** (binary). Each treatment arm is compared against control. The test is a pooled two-proportion z-test for binary metrics and a Welch t-test for continuous ones. Read each row as an interval first. The 95% CI is the range of effects the data is consistent with, and p is how often an effect at least this large would appear if the arms were identical. A narrow interval clear of zero means the run measured the effect. A wide interval spanning zero means the run did not pin it down, which differs from showing no effect exists.
 
 | Contrast | Effect | 95% CI | p |
 |---|---|---|---|
@@ -51,7 +51,7 @@ The primary metric is **visit** (binary). Each treatment arm is compared against
 
 ## 5. Multiple comparisons
 
-This experiment carries 4 comparisons beyond the primary metric. Testing each at alpha 0.05 without adjustment gives roughly a 19% chance of at least one false alarm even if nothing moved (treating the comparisons as independent, which shared arms make approximate). The family is therefore adjusted two ways: Holm, which controls the chance of ANY false claim (the right standard for a ship decision), and Benjamini-Hochberg, which controls the false-discovery RATE (the right standard for a screen that feeds follow-ups).
+This experiment has 4 comparisons beyond the primary metric. Testing each at alpha 0.05 without adjustment gives roughly a 19% chance of at least one false alarm even if nothing moved (treating the comparisons as independent, which shared arms make approximate). The family is therefore adjusted two ways: Holm, which controls the chance of ANY false claim (the right standard for a ship decision), and Benjamini-Hochberg, which controls the false-discovery RATE (the right standard for a screen that feeds follow-ups).
 
 | Metric | Contrast | Effect | Unadjusted p | Holm p | BH q |
 |---|---|---|---|---|---|
@@ -66,7 +66,7 @@ Unadjusted, 4 comparisons clear alpha. After Holm, 4 survive. Figure 1 shows eac
 
 ## 6. Heavy-tailed metric: spend
 
-**spend** is the kind of metric where a few extreme users can carry the average (99% of users in the first contrast sit at zero). The first contrast (Mens E-Mail vs No E-Mail) is analyzed four ways, each stressing the tail differently: a Welch t-test (relies on the normal approximation of the mean), a percentile bootstrap (resamples the observed tail), a permutation test (no normal approximation, with a p-value computed from 10,000 random relabelings under the null that the arms' distributions are identical), and a trimmed-mean difference, a diagnostic for tail dependence that deliberately estimates a different quantity (a different estimand), so its number is not comparable to the other three.
+**spend** is the kind of metric where a few extreme users can dominate the average (99% of users in the first contrast sit at zero). The first contrast (Mens E-Mail vs No E-Mail) is analyzed four ways, each stressing the tail differently: a Welch t-test (relies on the normal approximation of the mean), a percentile bootstrap (resamples the observed tail), a permutation test (no normal approximation, with a p-value computed from 10,000 random relabelings under the null that the arms' distributions are identical), and a trimmed-mean difference, a diagnostic for tail dependence that deliberately estimates a different quantity (a different estimand), so its number is not comparable to the other three.
 
 | Method | Estimate | Interval / p |
 |---|---|---|
@@ -75,6 +75,6 @@ Unadjusted, 4 comparisons clear alpha. After Holm, 4 survive. Figure 1 shows eac
 | Permutation test | +0.770 | p = 1.0e-04 |
 | Trimmed mean diff (1%) | +0.078 | different estimand |
 
-Figure 2 shows the distributions and the interval comparison. The three same-estimand methods agree here, which is what a well-behaved tail looks like.
+Figure 2 shows the distributions and the interval comparison. The three same-estimand methods agree here, which is what a well-behaved tail looks like. The trimmed row is not a tail check on this data. With 99% of users at zero, cutting 1% from each end of each arm removes most or all of the users with a nonzero value along with the extreme ones, so the trimmed difference sits near zero whatever the true effect.
 
 ![Figure 2: Distribution and interval comparison](figures/heavy_tail.png)

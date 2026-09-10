@@ -32,7 +32,7 @@ def two_proportion_ztest(
     arms sit at 0% or 100%, and undercovers near those boundaries; the
     adjustment costs nothing at experiment sample sizes.
 
-    Because of that adjustment the interval is centred on the adjusted
+    Because of that adjustment the interval is centered on the adjusted
     difference rather than exactly on ``absolute_lift``, which is reported
     unadjusted. ``relative_lift`` is NaN when the control rate is zero.
     """
@@ -63,7 +63,7 @@ def two_proportion_ztest(
     # when both arms sit exactly on 0 or 1, reporting a point as a 95%
     # interval; Agresti-Caffo stays sensible there and has better coverage at
     # rates near the boundary generally. The two are indistinguishable at
-    # experiment sample sizes. The interval is therefore centred on the
+    # experiment sample sizes. The interval is therefore centered on the
     # adjusted difference, not on ``absolute_lift``, which stays unadjusted
     # because that is the estimate worth reporting.
     ac_n_c = n_control + 2.0

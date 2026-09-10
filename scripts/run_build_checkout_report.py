@@ -491,7 +491,7 @@ early-minus-late difference is {pp(decay_diff)} (SE {pp(decay_se)}),
 z = {decay_z:.2f}, p = {fmt_p(decay_p)}. The fade is real. Reading two intervals
 side by side did not create it.
 
-The early window carries most of the headline effect. The late window is the
+The early window accounts for most of the headline effect. The late window is the
 best available proxy for the persistent effect. It shows
 {pp(late_r.absolute_lift)} with a confidence interval wide enough to include
 both zero and the +{pp(TRUE_LIFT, 1)} the experiment was powered for. So the
@@ -582,7 +582,7 @@ z path.
 
 The naive rule would have stopped at **look {first_naive}**, when the novelty
 effect was near its peak, locking in a cumulative lift of
-{pp(naive_lift)}, about {naive_lift / TRUE_LIFT:.1f}x the persistent effect.
+{pp(naive_lift)}, about {naive_lift / TRUE_LIFT:.1f}x the true persistent effect.
 The spending design first crosses at **look {outcome.stopped_at_look}**,
 spending almost no alpha in the noisy early days. In fact it spends so little
 that {unspendable_phrase} no finite boundary at all. The alpha allocated
@@ -595,7 +595,7 @@ puts the naive rule's false-positive rate at {pct(naive_alpha, 1)} against the
 nominal {pct(ALPHA, 0)}; the spending design holds {pct(spent_alpha, 1)}.
 
 Early stopping is a tool for catching regressions quickly, not for shipping
-winners early. Even the correctly-stopped estimate is biased upward by the
+winners early. Even the correctly stopped estimate is biased upward by the
 novelty effect at that point in the run.""",
             figures=(FigureSpec("sequential", "sequential.png", "Sequential monitoring"),),
         )
@@ -650,7 +650,7 @@ p = {fmt_p(naive_arr[flagged])}. Note the direction. The observed lift is
 {pp(lifts[flagged])}, so the naive reading is a {flagged_verdict}, not the win a
 scan of the p-value column alone would suggest. That is the trap twice over.
 With {spell(len(SECONDARY_METRICS))} true nulls the chance of at least one unadjusted p below 0.05 is
-{family_error:.0%}, so a flagged metric is the expected outcome rather than a
+{family_error:.0%}, so one flagged metric is unremarkable rather than a
 discovery. Both corrections push every metric back above the line. Holm
 controls the family-wise error rate, the chance of even one false positive,
 which is the right standard for a ship decision. Benjamini-Hochberg controls
@@ -774,15 +774,15 @@ that gap, so it points at fragility rather than proving whales specifically.
 There is no analysis trick that resolves this, because the ambiguity is real.
 The true effect the generator planted is {true_rev_diff:+.2f} per user, and
 with this tail the experiment only had roughly
-{pct(apparent_power, 0)} power to detect it (using the realized sample
+{pct(apparent_power, 0)} power to detect it. That figure uses the realized sample
 standard deviation of {sample_sd:.0f}, itself an unstable estimate under an
-infinite-variance tail). The generator draws whale amounts from the same distribution in both
+infinite-variance tail. The generator draws whale amounts from the same distribution in both
 arms, so which arm the largest whales landed in is sampling noise *by
 construction*. A method that reads that imbalance as effect is reading noise,
 and we know it is noise because we built the data.
 
 My read is that the revenue evidence is directionally positive and consistent
-with the conversion result, that the point estimate rests on draws carrying no
+with the conversion result, that the point estimate rests on draws that contain no
 signal, and that I would not quote a revenue impact number from this
 experiment. If a
 revenue claim matters, the follow-up should use a metric that a single whale
@@ -814,7 +814,7 @@ were all planned. The disagreement itself is the finding, and it says
 
 The pipeline got the qualitative story right everywhere. It caught the broken
 first run, flagged the novelty inflation instead of shipping the headline
-number, and refused the spurious secondary win. On the underpowered revenue
+number, and refused the spurious secondary result. On the underpowered revenue
 metric, it declined to quote an impact number at all. The place it cannot
 help is where the data simply do not contain the answer. The persistent
 lift and the revenue effect both need more time or a better metric, and the
@@ -823,7 +823,7 @@ report says so rather than manufacturing certainty.
 ### Recommendation
 
 Ship the redesign on the strength of the conversion result, quote the
-late-window interval rather than the headline, keep a 5% holdback for four
+late-window interval rather than the headline, keep a holdback running for four
 more weeks to measure the post-novelty effect, and define a capped revenue
 metric before the follow-up starts.""",
         )

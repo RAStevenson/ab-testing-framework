@@ -81,7 +81,7 @@ early-minus-late difference is 1.06 pp (SE 0.41 pp),
 z = 2.60, p = 0.009. The fade is real. Reading two intervals
 side by side did not create it.
 
-The early window carries most of the headline effect. The late window is the
+The early window accounts for most of the headline effect. The late window is the
 best available proxy for the persistent effect. It shows
 0.23 pp with a confidence interval wide enough to include
 both zero and the +0.4 pp the experiment was powered for. So the
@@ -111,7 +111,7 @@ z path.
 
 The naive rule would have stopped at **look 1**, when the novelty
 effect was near its peak, locking in a cumulative lift of
-1.36 pp, about 3.4x the persistent effect.
+1.36 pp, about 3.4x the true persistent effect.
 The spending design first crosses at **look 4**,
 spending almost no alpha in the noisy early days. In fact it spends so little
 that the first look has no finite boundary at all. The alpha allocated
@@ -124,7 +124,7 @@ puts the naive rule's false-positive rate at 21.9% against the
 nominal 5%; the spending design holds 4.9%.
 
 Early stopping is a tool for catching regressions quickly, not for shipping
-winners early. Even the correctly-stopped estimate is biased upward by the
+winners early. Even the correctly stopped estimate is biased upward by the
 novelty effect at that point in the run.
 
 ## 6. Secondary metrics and multiple comparisons
@@ -147,7 +147,7 @@ p = 0.031. Note the direction. The observed lift is
 -0.50 pp, so the naive reading is a regression, not the win a
 scan of the p-value column alone would suggest. That is the trap twice over.
 With six true nulls the chance of at least one unadjusted p below 0.05 is
-26%, so a flagged metric is the expected outcome rather than a
+26%, so one flagged metric is unremarkable rather than a
 discovery. Both corrections push every metric back above the line. Holm
 controls the family-wise error rate, the chance of even one false positive,
 which is the right standard for a ship decision. Benjamini-Hochberg controls
@@ -215,15 +215,15 @@ that gap, so it points at fragility rather than proving whales specifically.
 There is no analysis trick that resolves this, because the ambiguity is real.
 The true effect the generator planted is +0.32 per user, and
 with this tail the experiment only had roughly
-6% power to detect it (using the realized sample
+6% power to detect it. That figure uses the realized sample
 standard deviation of 130, itself an unstable estimate under an
-infinite-variance tail). The generator draws whale amounts from the same distribution in both
+infinite-variance tail. The generator draws whale amounts from the same distribution in both
 arms, so which arm the largest whales landed in is sampling noise *by
 construction*. A method that reads that imbalance as effect is reading noise,
 and we know it is noise because we built the data.
 
 My read is that the revenue evidence is directionally positive and consistent
-with the conversion result, that the point estimate rests on draws carrying no
+with the conversion result, that the point estimate rests on draws that contain no
 signal, and that I would not quote a revenue impact number from this
 experiment. If a
 revenue claim matters, the follow-up should use a metric that a single whale
@@ -245,7 +245,7 @@ were all planned. The disagreement itself is the finding, and it says
 
 The pipeline got the qualitative story right everywhere. It caught the broken
 first run, flagged the novelty inflation instead of shipping the headline
-number, and refused the spurious secondary win. On the underpowered revenue
+number, and refused the spurious secondary result. On the underpowered revenue
 metric, it declined to quote an impact number at all. The place it cannot
 help is where the data simply do not contain the answer. The persistent
 lift and the revenue effect both need more time or a better metric, and the
@@ -254,6 +254,6 @@ report says so rather than manufacturing certainty.
 ### Recommendation
 
 Ship the redesign on the strength of the conversion result, quote the
-late-window interval rather than the headline, keep a 5% holdback for four
+late-window interval rather than the headline, keep a holdback running for four
 more weeks to measure the post-novelty effect, and define a capped revenue
 metric before the follow-up starts.

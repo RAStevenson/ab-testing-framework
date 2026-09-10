@@ -3,7 +3,7 @@
 I wrote this small A/B testing and experiment-analysis toolkit around the parts
 of experimentation that actually go wrong in practice: broken assignment,
 novelty effects, peeking, multiple comparisons, and heavy-tailed revenue
-metrics. Revenue tails run heavy enough that the normal approximation behind
+metrics. Revenue tails are heavy enough that the normal approximation behind
 the usual tests (the central limit theorem) breaks down at realistic sample
 sizes.
 
@@ -81,7 +81,7 @@ a fixed seed, and I measure confidence interval coverage instead of assuming
 it.
 
 The sequential boundaries get the most scrutiny, because they are the part I
-could most easily have got subtly wrong. They are checked against a published
+could most easily have gotten subtly wrong. They are checked against a published
 Lan-DeMets Pocock table for five equal looks, and against exact bivariate and
 trivariate normal rectangle probabilities from scipy, which share no code with
 my recursion. They are also checked against Monte Carlo crossing rates and
@@ -141,10 +141,12 @@ clone runs as-is once the dependencies are present. An editable install
 (`pip install -e '.[dev]'`) still works if you prefer one. The library
 depends only on numpy and scipy. Matplotlib is a dev dependency, and every
 report script needs it to build a report with figures.
+
 Rerunning an analysis reproduces its `report.md` byte for byte, though
 figures can shift across matplotlib versions. CI regenerates the checkout
 and ASOS reports on every push to master and fails if a committed copy has
 drifted.
+
 The Hillstrom report sits outside that gate on purpose. Its data is
 fetched rather than committed, and CI should not depend on a 2008 URL
 staying up. There is no hidden global random-number state anywhere in
@@ -159,7 +161,7 @@ available for this kind of analysis and the first thing I would add, but it
 needs the generators to emit a pre-experiment covariate first. There are no
 futility boundaries, so the monitoring code can stop a clear winner early but
 not a hopeless run. There is no confidence interval for the effect after a
-sequential stop, which is why the report warns that the estimate at the
+sequential stop, which is why the sequential replay warns that the estimate at the
 stopping look is biased away from zero rather than correcting it. The bootstrap
 handles mean differences only, so it can stay fully vectorized. Users are
 assigned independently of one another, so nothing here demonstrates variance
