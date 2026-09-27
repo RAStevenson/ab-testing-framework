@@ -86,7 +86,7 @@ class TestZFromCumulativeStats:
         z_stats = z_from_cumulative_stats(nc, rate_c, var_c, nt, rate_t, var_t)
         z_counts = z_from_cumulative_counts(xc, nc, xt, nt)
         # same numerator, so z_stats / z_counts is exactly the SE ratio and
-        # a ratio bound is the honest comparison even where z is near zero
+        # a ratio bound is the fair comparison even where z is near zero
         ratio_dev = np.abs(z_stats / z_counts - 1.0)
         assert float(ratio_dev.max()) <= 0.10
         assert float(ratio_dev[-1]) <= 0.02

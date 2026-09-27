@@ -55,9 +55,9 @@ rerun, which passes the check.
 
 Absolute lift 0.67 pp (95% CI 0.39 pp to
 0.95 pp), relative lift 11.0%,
-z = 4.72, p = 2.3e-06. The headline result
-is comfortably significant. But the headline is not the number I would ship a
-forecast on, for the reason in the next section.
+z = 4.72, p = 2.3e-06. This is the full-run
+estimate, computed over all 14 days together. It is comfortably
+significant. But it is not the number I would ship a forecast on, for the reason in the next section.
 
 ## 4. Novelty check
 
@@ -81,14 +81,14 @@ early-minus-late difference is 1.06 pp (SE 0.41 pp),
 z = 2.60, p = 0.009. The fade is real. Reading two intervals
 side by side did not create it.
 
-The early window accounts for most of the headline effect. The late window is the
+The early days inflate the full-run estimate. The late window is the
 best available proxy for the persistent effect. It shows
 0.23 pp with a confidence interval wide enough to include
-both zero and the +0.4 pp the experiment was powered for. So the
-honest summary is that the treatment very likely helps, that the headline
+both zero and the +0.4 pp the experiment was powered for. So my
+summary is that the treatment very likely helps, that the full-run estimate of
 0.67 pp overstates the long-run effect, and that the
 14-day window cannot pin the persistent lift precisely. I would report
-the late-window interval, not the headline, and keep a small holdback running
+the late-window interval, not the full-run estimate, and keep a small holdback running
 to measure the effect after habituation.
 
 ## 5. What daily monitoring would have decided
@@ -123,8 +123,8 @@ Under a true null on this exact look schedule, simulation (100,000 runs)
 puts the naive rule's false-positive rate at 21.9% against the
 nominal 5%; the spending design holds 4.9%.
 
-Early stopping is a tool for catching regressions quickly, not for shipping
-winners early. Even the correctly stopped estimate is biased away from zero
+Early stopping is a tool for catching harmful changes quickly, not for
+launching apparent improvements early. Even the correctly stopped estimate is biased away from zero
 by the stopping rule itself, and here it is also biased upward by the
 novelty effect at that point in the run.
 
@@ -145,13 +145,13 @@ this a live-fire test of the correction machinery.
 
 Read naively, **Account creation** clears the line at
 p = 0.031. Note the direction. The observed lift is
--0.50 pp, so the naive reading is a regression, not the win a
+-0.50 pp, so the naive reading is a drop, not the improvement a
 scan of the p-value column alone would suggest. That is the trap twice over.
 With six true nulls the chance of at least one unadjusted p below 0.05 is
 26%, so one flagged metric is unremarkable rather than a
 discovery. Both corrections push every metric back above the line. Holm
 controls the family-wise error rate, the chance of even one false positive,
-which is the right standard for a ship decision. Benjamini-Hochberg controls
+which is the right standard for a ship decision. Benjamini-Hochberg (BH) controls
 the false discovery rate (FDR), the expected share of flagged metrics that
 are false, which is the right standard for a screening pass.
 
@@ -237,7 +237,7 @@ were all planned. The disagreement itself is the finding, and it says
 
 ## 8. What the generator actually did
 
-| Quantity | Truth | Headline estimate | Best estimate |
+| Quantity | Truth | Full-run estimate | Best estimate |
 |---|---|---|---|
 | Persistent conversion lift | 0.4 pp | 0.67 pp | 0.23 pp (days 10-13, CI -0.28 pp to 0.75 pp) |
 | Day-0 novelty boost | 0.8 pp | not separately reported | decay visible in the daily-lift panel in section 4 |
@@ -245,8 +245,8 @@ were all planned. The disagreement itself is the finding, and it says
 | Revenue per user diff | +0.32 | +1.23 | Welch interval spanning zero; underpowered |
 
 The pipeline got the qualitative story right everywhere. It caught the broken
-first run, flagged the novelty inflation instead of shipping the headline
-number, and refused the spurious secondary result. On the underpowered revenue
+first run, flagged the novelty inflation instead of shipping the full-run
+estimate, and refused the spurious secondary result. On the underpowered revenue
 metric, it declined to quote an impact number at all. The place it cannot
 help is where the data simply do not contain the answer. The persistent
 lift and the revenue effect both need more time or a better metric, and the
@@ -255,6 +255,6 @@ report says so rather than manufacturing certainty.
 ### Recommendation
 
 Ship the redesign on the strength of the conversion result, quote the
-late-window interval rather than the headline, keep a holdback running for four
+late-window interval rather than the full-run estimate, keep a holdback running for four
 more weeks to measure the post-novelty effect, and define a capped revenue
 metric before the follow-up starts.

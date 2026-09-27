@@ -3,11 +3,11 @@
 Fully deterministic: every random draw flows from the fixed seeds in
 analysis/checkout/config.toml, so re-running the script reproduces the
 committed report byte for byte (figures may differ across matplotlib
-versions). The narrative prose lives here; the numbers it interpolates
+versions). The report prose lives here; the numbers it interpolates
 are computed in this run; the document is rendered by the same engine
 (``abkit.report``) that ``run_analyze_experiment.py`` uses, so section
 and figure numbering, cross-references, and the figure-citation rule are
-enforced identically for the flagship and for a user's own data.
+enforced identically for the checkout report and for a user's own data.
 
 The checkout story is a COMPOSITE: the aborted run, the primary
 experiment, the six secondary metrics, and the revenue experiment are
@@ -321,7 +321,7 @@ def fig_revenue(
     ax2.plot(trimmed, len(intervals), "D", color=COLOR_TREATMENT, markersize=7)
     labels = [label for label, *_ in intervals] + ["Trimmed diff (1%)\ndifferent estimand"]
     ax2.set_yticks(np.arange(len(labels)), labels)
-    # the permutation verdict has no interval to draw, but it is half the
+    # the permutation result has no interval to draw, but it is half the
     # disagreement this panel exists to show, so it appears as text
     ax2.annotate(
         f"permutation test: p = {perm.p_value:.3f}",
@@ -332,7 +332,7 @@ def fig_revenue(
     )
     ax2.set_xlabel("Revenue per user difference (treatment - control)")
     ax2.set_title(
-        "Same data, two verdicts at the 0.05 line", loc="left", color=COLOR_INK, fontsize=10
+        "Same data, two conclusions at the 0.05 line", loc="left", color=COLOR_INK, fontsize=10
     )
     ax2.invert_yaxis()
     style_axis(ax2, grid_axis="x")
@@ -441,15 +441,15 @@ rerun, which passes the check.""",
 
 Absolute lift {pp(primary.absolute_lift)} (95% CI {pp(primary.ci_low)} to
 {pp(primary.ci_high)}), relative lift {pct(primary.relative_lift, 1)},
-z = {primary.statistic:.2f}, p = {fmt_p(primary.p_value)}. The headline result
-is comfortably significant. But the headline is not the number I would ship a
-forecast on, for the reason in the next section.""",
+z = {primary.statistic:.2f}, p = {fmt_p(primary.p_value)}. This is the full-run
+estimate, computed over all {N_DAYS} days together. It is comfortably
+significant. But it is not the number I would ship a forecast on, for the reason in the next section.""",
         )
     )
 
     if primary.p_value >= 1e-3:
         raise RuntimeError(
-            "the primary result is narrated as comfortably significant but "
+            "the section 3 prose calls the primary result comfortably significant but "
             f"p = {primary.p_value}; rewrite the section 3 prose"
         )
 
@@ -466,7 +466,7 @@ forecast on, for the reason in the next section.""",
     decay_p = float(2.0 * stats.norm.sf(abs(decay_z)))
     if decay_p >= 0.05:
         raise RuntimeError(
-            f"the novelty narrative asserts a real fade but decay p = {decay_p}; rewrite section 4"
+            f"the section 4 prose asserts a real novelty fade but decay p = {decay_p}; rewrite section 4"
         )
     fig_daily_rates(data)
     sections.append(
@@ -491,14 +491,14 @@ early-minus-late difference is {pp(decay_diff)} (SE {pp(decay_se)}),
 z = {decay_z:.2f}, p = {fmt_p(decay_p)}. The fade is real. Reading two intervals
 side by side did not create it.
 
-The early window accounts for most of the headline effect. The late window is the
+The early days inflate the full-run estimate. The late window is the
 best available proxy for the persistent effect. It shows
 {pp(late_r.absolute_lift)} with a confidence interval wide enough to include
-both zero and the +{pp(TRUE_LIFT, 1)} the experiment was powered for. So the
-honest summary is that the treatment very likely helps, that the headline
+both zero and the +{pp(TRUE_LIFT, 1)} the experiment was powered for. So my
+summary is that the treatment very likely helps, that the full-run estimate of
 {pp(primary.absolute_lift)} overstates the long-run effect, and that the
 {N_DAYS}-day window cannot pin the persistent lift precisely. I would report
-the late-window interval, not the headline, and keep a small holdback running
+the late-window interval, not the full-run estimate, and keep a small holdback running
 to measure the effect after habituation.""",
             figures=(
                 FigureSpec(
@@ -529,19 +529,19 @@ to measure the effect after habituation.""",
     seq = design(fractions.tolist(), alpha=ALPHA, spending="obrien-fleming")
     outcome = monitor(z_path.tolist(), seq)
     naive_crossings = np.nonzero(np.abs(z_path) >= Z_NAIVE)[0]
-    # the prose below narrates a specific replay; fail loudly if a code change
-    # alters the story instead of silently describing the wrong one. A bare
+    # the prose below describes one specific replay; fail loudly if a code change
+    # alters the replay instead of silently describing the wrong one. A bare
     # assert would vanish under python -O, which is exactly when it matters.
     if naive_crossings.size == 0 or outcome.stopped_at_look is None:
         raise RuntimeError(
-            "sequential replay no longer matches the narrative in the monitoring "
+            "sequential replay no longer matches the prose in the monitoring "
             f"section: naive crossings={naive_crossings.tolist()}, "
             f"spending-design stop={outcome.stopped_at_look}"
         )
     first_naive = int(naive_crossings[0]) + 1
     if first_naive >= outcome.stopped_at_look:
         raise RuntimeError(
-            "section 5 narrates the naive rule firing before the spending "
+            "section 5 describes the naive rule firing before the spending "
             f"design ({first_naive} vs {outcome.stopped_at_look}); rewrite it"
         )
     naive_lift = (
@@ -594,8 +594,8 @@ Under a true null on this exact look schedule, simulation ({n_sims:,} runs)
 puts the naive rule's false-positive rate at {pct(naive_alpha, 1)} against the
 nominal {pct(ALPHA, 0)}; the spending design holds {pct(spent_alpha, 1)}.
 
-Early stopping is a tool for catching regressions quickly, not for shipping
-winners early. Even the correctly stopped estimate is biased away from zero
+Early stopping is a tool for catching harmful changes quickly, not for
+launching apparent improvements early. Even the correctly stopped estimate is biased away from zero
 by the stopping rule itself, and here it is also biased upward by the
 novelty effect at that point in the run.""",
             figures=(FigureSpec("sequential", "sequential.png", "Sequential monitoring"),),
@@ -616,17 +616,17 @@ novelty effect at that point in the run.""",
     bh_ps = benjamini_hochberg(naive_arr)
     fig_secondary(naive_arr, holm_ps)
 
-    # the smallest p-value, whichever direction it points; calling it a "win"
-    # without checking the sign is how a regression gets shipped as a feature
+    # the smallest p-value, whichever direction it points; calling it an
+    # improvement without checking the sign is how a harmful change gets shipped
     flagged = int(np.argmin(naive_arr))
-    flagged_verdict = "win" if lifts[flagged] > 0 else "regression"
+    flagged_direction = "an improvement" if lifts[flagged] > 0 else "a drop"
     family_error = 1.0 - (1.0 - ALPHA) ** len(SECONDARY_METRICS)
     exactly_one = len(SECONDARY_METRICS) * ALPHA * (1.0 - ALPHA) ** (len(SECONDARY_METRICS) - 1)
     if int(np.sum(naive_arr < ALPHA)) != 1 or bool(np.any(holm_ps < ALPHA)):
-        # the prose AND fig_secondary's baked-in title both narrate exactly
+        # the prose AND fig_secondary's baked-in title both describe exactly
         # one naive false positive that the adjustment removes
         raise RuntimeError(
-            "section 6 and its figure narrate exactly one naive false positive "
+            "section 6 and its figure describe exactly one naive false positive "
             f"removed by Holm; naive={naive_arr.tolist()}, rewrite them"
         )
     rows = "\n".join(
@@ -648,13 +648,13 @@ this a live-fire test of the correction machinery.
 
 Read naively, **{SECONDARY_METRICS[flagged]}** clears the line at
 p = {fmt_p(naive_arr[flagged])}. Note the direction. The observed lift is
-{pp(lifts[flagged])}, so the naive reading is a {flagged_verdict}, not the win a
+{pp(lifts[flagged])}, so the naive reading is {flagged_direction}, not the improvement a
 scan of the p-value column alone would suggest. That is the trap twice over.
 With {spell(len(SECONDARY_METRICS))} true nulls the chance of at least one unadjusted p below 0.05 is
 {family_error:.0%}, so one flagged metric is unremarkable rather than a
 discovery. Both corrections push every metric back above the line. Holm
 controls the family-wise error rate, the chance of even one false positive,
-which is the right standard for a ship decision. Benjamini-Hochberg controls
+which is the right standard for a ship decision. Benjamini-Hochberg (BH) controls
 the false discovery rate (FDR), the expected share of flagged metrics that
 are false, which is the right standard for a screening pass.
 
@@ -702,7 +702,7 @@ back across the line.""",
     trimmed = trimmed_mean_diff(revenue.control, revenue.treatment, trim=0.01)
     if welch.p_value < ALPHA or perm.p_value >= ALPHA or boot.ci_low <= 0.0:
         raise RuntimeError(
-            "section 7 narrates Welch not significant, permutation significant, "
+            "section 7 states Welch not significant, permutation significant, "
             "and a bootstrap interval excluding zero; the computed values no "
             f"longer support that (welch p={welch.p_value}, perm "
             f"p={perm.p_value}, boot low={boot.ci_low}); rewrite it"
@@ -806,7 +806,7 @@ were all planned. The disagreement itself is the finding, and it says
         SectionSpec(
             key="truth",
             title="What the generator actually did",
-            body=f"""| Quantity | Truth | Headline estimate | Best estimate |
+            body=f"""| Quantity | Truth | Full-run estimate | Best estimate |
 |---|---|---|---|
 | Persistent conversion lift | {pp(TRUE_LIFT, 1)} | {pp(primary.absolute_lift)} | {pp(late_r.absolute_lift)} (days 10-13, CI {pp(late_r.ci_low)} to {pp(late_r.ci_high)}) |
 | Day-0 novelty boost | {pp(NOVELTY_BOOST, 1)} | not separately reported | decay visible in the daily-lift panel in section {{{{sec:novelty}}}} |
@@ -814,8 +814,8 @@ were all planned. The disagreement itself is the finding, and it says
 | Revenue per user diff | {true_rev_diff:+.2f} | {welch.difference:+.2f} | Welch interval spanning zero; underpowered |
 
 The pipeline got the qualitative story right everywhere. It caught the broken
-first run, flagged the novelty inflation instead of shipping the headline
-number, and refused the spurious secondary result. On the underpowered revenue
+first run, flagged the novelty inflation instead of shipping the full-run
+estimate, and refused the spurious secondary result. On the underpowered revenue
 metric, it declined to quote an impact number at all. The place it cannot
 help is where the data simply do not contain the answer. The persistent
 lift and the revenue effect both need more time or a better metric, and the
@@ -824,7 +824,7 @@ report says so rather than manufacturing certainty.
 ### Recommendation
 
 Ship the redesign on the strength of the conversion result, quote the
-late-window interval rather than the headline, keep a holdback running for four
+late-window interval rather than the full-run estimate, keep a holdback running for four
 more weeks to measure the post-novelty effect, and define a capped revenue
 metric before the follow-up starts.""",
         )

@@ -35,19 +35,22 @@ def test_power_proportions_matches_simulation():
     assert simulated == pytest.approx(analytic, abs=0.025)
 
 
-def _exact_power_two_proportions(rate_c, rate_t, n, alpha=0.05):
+def _exact_power_two_proportions(rate_c, rate_t, n, alpha=0.05, n_t=None):
     """Rejection probability of the pooled z-test, summed over the binomial grid.
 
     No Monte Carlo error and no shared code with power.py, so this pins the
     specific variance placement the module documents (pooled under the null,
     unpooled under the alternative) rather than merely the right ballpark.
     """
-    k = np.arange(n + 1)
-    joint = np.outer(stats.binom.pmf(k, n, rate_c), stats.binom.pmf(k, n, rate_t))
-    pooled = (k[:, None] + k[None, :]) / (2 * n)
-    se = np.sqrt(pooled * (1.0 - pooled) * (2 / n))
+    n_c = n
+    n_t = n if n_t is None else n_t
+    k_c = np.arange(n_c + 1)
+    k_t = np.arange(n_t + 1)
+    joint = np.outer(stats.binom.pmf(k_c, n_c, rate_c), stats.binom.pmf(k_t, n_t, rate_t))
+    pooled = (k_c[:, None] + k_t[None, :]) / (n_c + n_t)
+    se = np.sqrt(pooled * (1.0 - pooled) * (1 / n_c + 1 / n_t))
     with np.errstate(divide="ignore", invalid="ignore"):
-        z = (k[None, :] / n - k[:, None] / n) / se
+        z = (k_t[None, :] / n_t - k_c[:, None] / n_c) / se
     return float(np.sum(joint * (np.abs(z) >= stats.norm.isf(alpha / 2))))
 
 
@@ -58,6 +61,17 @@ def test_power_proportions_matches_exact_binomial_calculation():
     analytic = power_two_proportions(0.30, 0.45, 150)
     exact = _exact_power_two_proportions(0.30, 0.45, 150)
     assert analytic == pytest.approx(exact, abs=1e-3)
+
+
+def test_power_proportions_unequal_arms_matches_exact_binomial_calculation():
+    # a 1:3 split in both orientations. The documented formula lands within
+    # 2.7e-3 of exact; an unweighted pooled rate misses by 7.7e-3 or more and
+    # unpooled variance in both places by 2e-2 or more, so 3e-3 discriminates
+    # the weighting as well as the placement.
+    for n_c, n_t in ((100, 300), (300, 100)):
+        analytic = power_two_proportions(0.30, 0.45, n_c, n_treatment=n_t)
+        exact = _exact_power_two_proportions(0.30, 0.45, n_c, n_t=n_t)
+        assert analytic == pytest.approx(exact, abs=3e-3)
 
 
 def test_power_is_monotone():
@@ -71,6 +85,18 @@ def test_mde_round_trips_with_sample_size():
     mde = mde_two_proportions(0.05, n)
     assert mde == pytest.approx(0.005, rel=0.02)
     assert power_two_proportions(0.05, 0.05 + mde, n) == pytest.approx(0.8, abs=1e-6)
+
+
+def test_mde_unequal_arms_round_trips_and_sits_between_the_equal_designs():
+    mde = mde_two_proportions(0.05, 10_000, n_treatment=100_000)
+    assert power_two_proportions(0.05, 0.05 + mde, 10_000, n_treatment=100_000) == pytest.approx(
+        0.8, abs=1e-6
+    )
+    # a big second arm helps, but the small arm still limits what is detectable
+    assert mde_two_proportions(0.05, 100_000) < mde < mde_two_proportions(0.05, 10_000)
+    assert mde_two_proportions(0.05, 10_000, n_treatment=10_000) == mde_two_proportions(
+        0.05, 10_000
+    )
 
 
 def test_mde_raises_when_n_hopeless():

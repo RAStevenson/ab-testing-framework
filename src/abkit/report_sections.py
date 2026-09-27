@@ -5,8 +5,8 @@ and returns a ``SectionSpec`` for the report engine, or ``None`` when the
 analysis is impossible even though the capability gate passed (an
 all-constant metric, say). ``default_sections`` assembles the standard
 report in order. Prose here is the neutral template voice shared by every
-data source; a flagship builder may append its own commentary paragraphs
-to any section body before rendering.
+data source; a dataset-specific builder such as the checkout one may
+append its own commentary paragraphs to any section body before rendering.
 
 Figures are drawn at section-build time into the given directory.
 matplotlib is imported lazily inside the figure helpers, so the library's
@@ -42,7 +42,7 @@ from abkit.io import (
 from abkit.power import mde_two_proportions
 from abkit.report import FigureSpec, SectionSpec
 from abkit.resampling import bootstrap_mean_diff, permutation_test_mean_diff, trimmed_mean_diff
-from abkit.results import BootstrapResult, MeanComparison, RateComparison
+from abkit.results import BootstrapResult, MeanComparison, PermutationResult, RateComparison
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -78,6 +78,22 @@ def fmt_p(p: float) -> str:
     if p < 1e-4:
         return f"{p:.1e}"
     return f"{p:.4f}" if p < 0.001 else f"{p:.3f}"
+
+
+def fmt_perm_p(perm: PermutationResult) -> str:
+    """Permutation p-value as report text, flagged when it sits at the estimator's floor.
+
+    The add-one estimator's smallest possible value is 1 / (n_permutations + 1),
+    reached when no relabeling is as extreme as the observed difference. That
+    value is still a valid, conservative p-value, but printed bare it reads as
+    a measurement rather than as the resolution limit of the relabeling count.
+    """
+    if perm.p_value <= 1.0 / (perm.n_permutations + 1):
+        return (
+            f"p = {fmt_p(perm.p_value)}, the smallest value "
+            f"{perm.n_permutations:,} relabelings can give"
+        )
+    return f"p = {fmt_p(perm.p_value)}"
 
 
 def _style_axis(ax: Axes, *, grid_axis: str = "y") -> None:
@@ -264,14 +280,14 @@ def sec_design_power(exp: Experiment) -> SectionSpec | None:
     treatment = _agg(exp, exp.arms[1], metric.name, None)
     if not 0.0 < control.mean < 1.0:
         return None
-    n_per_arm = min(control.n, treatment.n)
-    mde = mde_two_proportions(control.mean, n_per_arm, alpha=exp.alpha)
+    mde = mde_two_proportions(control.mean, control.n, alpha=exp.alpha, n_treatment=treatment.n)
     body = (
-        f"At the realized sample size ({n_per_arm:,} in the smaller arm of the "
-        f"first contrast) and the control rate of {pct(control.mean, 1)}, the "
-        f"smallest absolute lift this experiment could detect with 80% power at "
-        f"alpha {exp.alpha} is {100 * mde:.2f} percentage points (pp), the minimum "
-        "detectable effect (MDE). Effects smaller than that could be real and still "
+        f"At the realized sample sizes of the first contrast ({control.n:,} "
+        f"control and {treatment.n:,} treatment users) and the control rate of "
+        f"{pct(control.mean, 1)}, the smallest absolute lift that contrast could "
+        f"detect with 80% power at alpha {exp.alpha} is {100 * mde:.2f} "
+        "percentage points (pp). This is the minimum detectable effect (MDE). "
+        "Effects smaller than that could be real and still "
         "produce an "
         "unremarkable p-value here. That is a property of the sample size, not "
         "evidence of absence."
@@ -300,22 +316,22 @@ def sec_srm(exp: Experiment) -> SectionSpec:
                 f"| {_contrast_label(exp, treatment_arm)} | {n_c:,} | {n_t:,} "
                 f"| {r.statistic:.2f} | {fmt_p(r.p_value)} |"
             )
-        verdict = (
+        srm_conclusion = (
             "No contrast fails the check (conventional alarm threshold p < 1e-3), "
             "so the realized split is consistent with the declared one."
             if worst_p >= 1e-3
             else "At least one contrast FAILS the check: users went missing or were "
             "assigned asymmetrically, and no downstream statistic can repair that. "
-            "The results below describe the data as collected, under that cloud."
+            "The results below describe the data as collected, with that caveat."
         )
         body = (
-            "A sample-ratio mismatch check (SRM) asks whether the number of users "
+            "A sample-ratio mismatch (SRM) check asks whether the number of users "
             "who actually landed in each arm matches the intended split. A failure "
             "means the assignment or logging lost users asymmetrically, which "
             "biases every metric in ways no downstream statistic can fix.\n\n"
             + "\n".join(lines)
             + "\n\n"
-            + verdict
+            + srm_conclusion
         )
     elif "time_axis" in caps:
         lines = ["| Contrast | Checkpoints | Chi-square | df | p |", "|---|---|---|---|---|"]
@@ -343,14 +359,15 @@ def sec_srm(exp: Experiment) -> SectionSpec:
                 f"| {_contrast_label(exp, treatment_arm)} | {n_intervals} | {statistic:.2f} "
                 f"| {df} | {fmt_p(p)} |"
             )
-        verdict = (
+        srm_conclusion = (
             "The arm ratio is stable across checkpoints in every contrast "
             "(alarm threshold p < 1e-3), which is what can still be checked "
             "without a declared split."
             if worst_p >= 1e-3
             else "The arm ratio SHIFTS over time in at least one contrast (p < 1e-3). "
             "A ratio that drifts mid-experiment is sample-ratio-mismatch evidence "
-            "regardless of what split was intended, and it dates the breakage."
+            "regardless of what split was intended, and the checkpoint where it "
+            "shifts shows when assignment broke."
         )
         body = (
             "The intended allocation for this experiment is not on record, so a "
@@ -362,7 +379,7 @@ def sec_srm(exp: Experiment) -> SectionSpec:
             "assignment counts (denominators from the primary metric).\n\n"
             + "\n".join(lines)
             + "\n\n"
-            + verdict
+            + srm_conclusion
         )
     else:
         sizes = ", ".join(f"{arm} {_agg(exp, arm, metric.name, None).n:,}" for arm in exp.arms)
@@ -433,7 +450,9 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "The statistics published there therefore do not describe a superset "
         "of the previous checkpoint's sample. A recompute after late-arriving "
         "data or a correction published in place would produce this. The "
-        "exclusion is stated here rather than applied silently."
+        "exclusion is stated here rather than applied silently. The "
+        "end-of-run results in the other sections still use the final "
+        "checkpoint's published totals."
     )
     w = max(1, k // 3)
 
@@ -469,7 +488,7 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "reaction decays. The comparison below tests the first "
         + (f"{w} checkpoints" if w != 1 else "checkpoint")
         + f" against the last {w} directly, because two "
-        "separately-significant windows are not by themselves evidence that the "
+        "separately significant windows are not by themselves evidence that the "
         "windows differ. Interval values are recovered from the cumulative "
         "series by differencing. {{fig:novelty}} shows the per-interval means.\n\n"
         + "\n".join(lines)
@@ -480,7 +499,7 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "means the effect moved down over the run, and a negative z means it "
         "moved up. Whether that is novelty fading, a harm emerging, or a "
         "primacy pattern depends on the effect signs in the table. Either way "
-        "the late window is the honest number to quote."
+        "the late window is the number to quote."
         + (
             ""
             if exp.rows is not None
@@ -635,9 +654,9 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
         + spend_sentence
         + " "
         + naive_sentence
-        + "\n\nEven a correctly-stopped estimate is biased away from zero at the "
-        "stopping look. Monitoring is a tool for catching regressions early, "
-        "not for shipping winners early."
+        + "\n\nEven a correctly stopped estimate is biased away from zero at the "
+        "stopping look. Monitoring is a tool for catching harmful changes early, "
+        "not for launching apparent improvements early."
         + (
             ""
             if len(fractions) <= 48
@@ -840,7 +859,7 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
         if welch_significant == (perm.p_value < exp.alpha)
         and boot_excludes_zero == welch_significant
         else "The methods DISAGREE at the alpha line. That disagreement is the "
-        "finding. It says the estimate rests on the tail, and the honest move "
+        "finding. It says the estimate rests on the tail, and the right move "
         "is to report it rather than quote whichever method crossed the line."
     )
     trim_note = (
@@ -865,16 +884,17 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
         "(resamples the observed tail), a permutation test (no normal "
         "approximation, with a p-value computed from 10,000 random "
         "relabelings under the null that the arms' distributions are "
-        "identical), and a trimmed-mean difference, a diagnostic for tail "
-        "dependence that deliberately estimates a different quantity (a "
-        "different estimand), so its number is not comparable to the other "
+        "identical), and a trimmed-mean difference. The trimmed-mean difference "
+        "is a diagnostic for how much the estimate depends on the tail. It "
+        "deliberately estimates a "
+        "different quantity (a different estimand), so its number is not comparable to the other "
         "three.\n\n"
         f"| Method | Estimate | Interval / p |\n|---|---|---|\n"
         f"| Welch t-test | {welch.difference:+.3f} | 95% CI {welch.ci_low:+.3f} "
         f"to {welch.ci_high:+.3f}, p = {fmt_p(welch.p_value)} |\n"
         f"| Percentile bootstrap | {boot.estimate:+.3f} | 95% CI {boot.ci_low:+.3f} "
         f"to {boot.ci_high:+.3f} |\n"
-        f"| Permutation test | {perm.observed:+.3f} | p = {fmt_p(perm.p_value)} |\n"
+        f"| Permutation test | {perm.observed:+.3f} | {fmt_perm_p(perm)} |\n"
         f"| Trimmed mean diff (1%) | {trimmed:+.3f} | different estimand |\n\n"
         f"{{{{fig:heavy_tail}}}} shows the distributions and the interval "
         "comparison. " + agreement + trim_note
@@ -949,10 +969,10 @@ def sec_truth(exp: Experiment) -> SectionSpec:
     rows = "\n".join(f"| {k} | {v} |" for k, v in sorted(exp.truth.items()))
     body = (
         "This data is SYNTHETIC, and that is disclosed here rather than in a "
-        "footnote. The generator's parameters below are the exam key the "
-        "analysis above can be scored against. No real-data section of any "
+        "footnote. The generator's parameters below are the true values the "
+        "analysis above can be checked against. No real-data section of any "
         "report produced by this pipeline carries this section, which is "
-        "itself the honest signal of which results came from manufactured "
+        "itself the signal of which results came from synthetic "
         "data.\n\n| Parameter | Value |\n|---|---|\n" + rows
     )
     return SectionSpec(
@@ -982,7 +1002,7 @@ def default_sections(exp: Experiment, rng: np.random.Generator, figdir: Path) ->
 
 def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
     """One section summarizing an ENTIRE aggregate archive, every
-    experiment, alongside the deep dive the rest of the report gives one.
+    experiment, alongside the close read the rest of the report gives one.
 
     Two questions per experiment: is the assignment ratio stable across
     checkpoints (the no-declared-split SRM form, via _ratio_stability on

@@ -18,7 +18,7 @@ never stated a license, so the file is fetched from its original URL by
 scripts/run_fetch_hillstrom.py (SHA-256 pinned there) rather than
 redistributed in this repository. The data carries no per-day fields,
 so the time-based sections do not appear below. That omission is the
-report adapting to the data. It does carry a genuine data wart. One
+report adapting to the data. The data does contain one error. A
 category value arrives misspelled, in a background column the analyses
 never use, and the validation section records normalizing it. That is
 the kind of cleaning an intake has to report rather than do silently."""

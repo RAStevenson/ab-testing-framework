@@ -24,8 +24,8 @@ jobs:
 
   report-drift:
     # analysis/checkout/report.md and analysis/asos/report.md are committed so
-    # they read without running anything. This job is what keeps that promise
-    # honest: regenerate both and fail if the working tree moved. Figures are
+    # they read without running anything. This job checks that they still match
+    # the code: regenerate both and fail if the working tree moved. Figures are
     # excluded because matplotlib renders them differently across versions.
     runs-on: ubuntu-latest
     steps:

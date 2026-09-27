@@ -11,7 +11,8 @@ import pytest
 
 from abkit.io import capabilities, load_aggregates, load_config, load_user_rows
 from abkit.report import render_report
-from abkit.report_sections import default_sections
+from abkit.report_sections import default_sections, fmt_perm_p
+from abkit.results import PermutationResult
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -232,3 +233,11 @@ class TestCommittedHillstromReport:
         assert "sequential monitoring" not in text.lower()
         assert "Heavy-tailed metric: spend" in text
         assert "alias_normalized" in text
+
+
+def test_permutation_p_at_its_floor_is_stated_as_a_bound():
+    """A p-value at the add-one floor names the floor, anything above prints as a plain value."""
+    floor = PermutationResult(observed=0.5, p_value=1 / 10_001, n_permutations=10_000)
+    assert fmt_perm_p(floor) == "p = 1.0e-04, the smallest value 10,000 relabelings can give"
+    above = PermutationResult(observed=0.5, p_value=2 / 10_001, n_permutations=10_000)
+    assert fmt_perm_p(above) == "p = 0.0002"

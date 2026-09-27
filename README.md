@@ -22,7 +22,7 @@ It walks a synthetic checkout-redesign experiment from power analysis to a
 ship recommendation. That includes a revenue metric where Welch, the
 bootstrap, and a permutation test disagree on the same data, and the
 right move is to say so rather than pick one. Because the data are
-synthetic, the report closes by putting its headline conclusions next to the
+synthetic, the report closes by putting its main conclusions next to the
 effects the generator actually planted.
 
 The same engine also runs on real data, and on yours. Two real-data reports
@@ -33,8 +33,8 @@ experiments in the archive. Its final checkpoint turned out to be internally
 inconsistent, and the report excludes it and says so.
 [analysis/hillstrom/report.md](analysis/hillstrom/report.md) reads the
 classic 2008 retail e-mail experiment, user-level rows with a heavy-tailed
-spend metric and a misspelled category value the validator normalizes on
-the record. Sections render only where the data can support them, and
+spend metric and a misspelled category value the validator normalizes and
+records in the report. Sections render only where the data can support them, and
 because the two datasets are opposite in shape, the same engine produces
 two structurally different reports without special-casing either.
 
@@ -61,14 +61,14 @@ two structurally different reports without special-casing either.
   schedules work (the report uses the 14 realized daily information
   fractions).
 - `src/abkit/power.py` - analytic power, sample size, and minimum detectable
-  effect (MDE), plus a simulated-power routine that the tests use to keep the
-  formulas honest.
+  effect (MDE), plus a simulated-power routine that the tests use to check the
+  analytic formulas.
 - `src/abkit/io.py` - the intake: a TOML experiment description, loaders for
   user-level rows and for per-arm cumulative aggregates, and a validator
   whose every cleaning action lands in the report rather than happening
   silently.
 - `src/abkit/report.py` and `src/abkit/report_sections.py` - the report
-  engine and the presence-gated sections it renders. Numbering and
+  engine and the sections it renders when the data supports them. Numbering and
   cross-references are resolved at render time, and the build fails if a
   figure is never cited from body prose.
 
@@ -101,7 +101,7 @@ rather than manufacture a significant result.
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt  # .venv/bin/python on Unix
 .venv/Scripts/python -m pytest
-.venv/Scripts/python scripts/run_build_checkout_report.py # regenerates the flagship report
+.venv/Scripts/python scripts/run_build_checkout_report.py # regenerates the checkout report
 .venv/Scripts/python scripts/run_analyze_experiment.py --config analysis/asos/config.toml --sweep
 .venv/Scripts/python scripts/run_fetch_hillstrom.py       # fetches the 2008 dataset (not redistributed)
 .venv/Scripts/python scripts/run_analyze_experiment.py --config analysis/hillstrom/config.toml
@@ -147,7 +147,7 @@ figures can shift across matplotlib versions. CI regenerates the checkout
 and ASOS reports on every push to master and fails if a committed copy has
 drifted.
 
-The Hillstrom report sits outside that gate on purpose. Its data is
+The Hillstrom report is left out of that check on purpose. Its data is
 fetched rather than committed, and CI should not depend on a 2008 URL
 staying up. There is no hidden global random-number state anywhere in
 the library, because every function that draws randomness takes an explicit
@@ -156,11 +156,11 @@ the library, because every function that draws randomness takes an explicit
 ## What it does not do
 
 It has no CUPED or regression adjustment, the standard ways of using
-pre-experiment data to shrink variance. That is the largest sensitivity win
+pre-experiment data to shrink variance. That is the largest sensitivity gain
 available for this kind of analysis and the first thing I would add, but it
 needs the generators to emit a pre-experiment covariate first. There are no
-futility boundaries, so the monitoring code can stop a clear winner early but
-not a hopeless run. There is no confidence interval for the effect after a
+futility boundaries, so the monitoring code can stop early on a clear improvement
+but not on a hopeless run. There is no confidence interval for the effect after a
 sequential stop, which is why the sequential replay warns that the estimate at the
 stopping look is biased away from zero rather than correcting it. The bootstrap
 handles mean differences only, so it can stay fully vectorized. Users are

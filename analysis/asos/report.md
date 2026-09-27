@@ -10,7 +10,7 @@ Provenance and integrity notes are in data/asos/LICENSE-DATA.md. Metrics
 are anonymized by the publisher. The dataset's OSF wiki describes metric 1 as
 binary, metrics 2 and 3 as count-based, and metric 4 as non-negative
 real, with metrics 2 to 4 right-skewed, so numbered names are the only
-honest ones available. The single-experiment analysis below reads
+accurate ones available. The single-experiment analysis below reads
 experiment 54a85a, chosen by a rule that does not look at this
 pipeline's results. The datasheet flags one experiment for a possible
 primacy effect (the passage is quoted in LICENSE-DATA.md). The rule
@@ -27,7 +27,7 @@ Arm sizes: control 3,320,536, variant_0 102,316, variant_1 3,316,730, variant_2 
 
 ## 2. Sensitivity at this sample size
 
-At the realized sample size (102,316 in the smaller arm of the first contrast) and the control rate of 25.1%, the smallest absolute lift this experiment could detect with 80% power at alpha 0.05 is 0.54 percentage points (pp), the minimum detectable effect (MDE). Effects smaller than that could be real and still produce an unremarkable p-value here. That is a property of the sample size, not evidence of absence.
+At the realized sample sizes of the first contrast (3,320,536 control and 102,316 treatment users) and the control rate of 25.1%, the smallest absolute lift that contrast could detect with 80% power at alpha 0.05 is 0.39 percentage points (pp). This is the minimum detectable effect (MDE). Effects smaller than that could be real and still produce an unremarkable p-value here. That is a property of the sample size, not evidence of absence.
 
 ## 3. Assignment validation
 
@@ -53,7 +53,7 @@ The primary metric is **metric_1** (binary). Each treatment arm is compared agai
 
 ## 5. Effect stability over time
 
-A treatment effect that fades within the run is the signature of a novelty effect, where users react to the change itself and the reaction decays. The comparison below tests the first 31 checkpoints against the last 31 directly, because two separately-significant windows are not by themselves evidence that the windows differ. Interval values are recovered from the cumulative series by differencing. Figure 1 shows the per-interval means.
+A treatment effect that fades within the run is the signature of a novelty effect, where users react to the change itself and the reaction decays. The comparison below tests the first 31 checkpoints against the last 31 directly, because two separately significant windows are not by themselves evidence that the windows differ. Interval values are recovered from the cumulative series by differencing. Figure 1 shows the per-interval means.
 
 ![Figure 1: Per-interval metric_1 by arm](figures/novelty.png)
 
@@ -63,11 +63,11 @@ A treatment effect that fades within the run is the signature of a novelty effec
 | variant_1 vs control | +0.09 pp | +0.08 pp | 0.09 | 0.924 |
 | variant_2 vs control | -0.17 pp | +0.23 pp | -3.70 | 0.0002 |
 
-A significant z is evidence that the early and late windows differ, so the end-of-run cumulative number blends two regimes and can sit far from the late-window effect that best describes where the experiment ended up. The z is early minus late. A positive z means the effect moved down over the run, and a negative z means it moved up. Whether that is novelty fading, a harm emerging, or a primacy pattern depends on the effect signs in the table. Either way the late window is the honest number to quote.
+A significant z is evidence that the early and late windows differ, so the end-of-run cumulative number blends two regimes and can sit far from the late-window effect that best describes where the experiment ended up. The z is early minus late. A positive z means the effect moved down over the run, and a negative z means it moved up. Whether that is novelty fading, a harm emerging, or a primacy pattern depends on the effect signs in the table. Either way the late window is the number to quote.
 
 One assumption matters for aggregate archives. Differencing cumulative statistics treats each increment as new users only. An archive that recomputes its metrics over all enrolled users at each checkpoint blurs the increments, and this test is approximate there.
 
-The final checkpoint is EXCLUDED from this section. Each increment's variance can be recovered from consecutive cumulative counts, means, and variances. For the first excluded increment that recovery is negative, which no real accumulation of observations can produce. The statistics published there therefore do not describe a superset of the previous checkpoint's sample. A recompute after late-arriving data or a correction published in place would produce this. The exclusion is stated here rather than applied silently.
+The final checkpoint is EXCLUDED from this section. Each increment's variance can be recovered from consecutive cumulative counts, means, and variances. For the first excluded increment that recovery is negative, which no real accumulation of observations can produce. The statistics published there therefore do not describe a superset of the previous checkpoint's sample. A recompute after late-arriving data or a correction published in place would produce this. The exclusion is stated here rather than applied silently. The end-of-run results in the other sections still use the final checkpoint's published totals.
 
 ## 6. What sequential monitoring would have decided
 
@@ -77,7 +77,7 @@ Anyone watching a dashboard peeks. Checking the result at every checkpoint again
 
 The spending design never crosses in 95 looks, so under monitoring priced for peeking this run does not support stopping early in either direction. The naive rule never fires either. The two agree on this run.
 
-Even a correctly-stopped estimate is biased away from zero at the stopping look. Monitoring is a tool for catching regressions early, not for shipping winners early.
+Even a correctly stopped estimate is biased away from zero at the stopping look. Monitoring is a tool for catching harmful changes early, not for launching apparent improvements early.
 
 One numerical caveat applies at this look count. The boundaries come from a recursive numerical integration whose grid convergence is pinned by test on a 14-look schedule, so treat the 95-look boundary values as approximate.
 

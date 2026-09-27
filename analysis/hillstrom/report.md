@@ -12,7 +12,7 @@ never stated a license, so the file is fetched from its original URL by
 scripts/run_fetch_hillstrom.py (SHA-256 pinned there) rather than
 redistributed in this repository. The data carries no per-day fields,
 so the time-based sections do not appear below. That omission is the
-report adapting to the data. It does carry a genuine data wart. One
+report adapting to the data. The data does contain one error. A
 category value arrives misspelled, in a background column the analyses
 never use, and the validation section records normalizing it. That is
 the kind of cleaning an intake has to report rather than do silently.
@@ -27,11 +27,11 @@ Arm sizes after validation: No E-Mail 21,306, Mens E-Mail 21,307, Womens E-Mail 
 
 ## 2. Sensitivity at this sample size
 
-At the realized sample size (21,306 in the smaller arm of the first contrast) and the control rate of 10.6%, the smallest absolute lift this experiment could detect with 80% power at alpha 0.05 is 0.85 percentage points (pp), the minimum detectable effect (MDE). Effects smaller than that could be real and still produce an unremarkable p-value here. That is a property of the sample size, not evidence of absence.
+At the realized sample sizes of the first contrast (21,306 control and 21,307 treatment users) and the control rate of 10.6%, the smallest absolute lift that contrast could detect with 80% power at alpha 0.05 is 0.85 percentage points (pp). This is the minimum detectable effect (MDE). Effects smaller than that could be real and still produce an unremarkable p-value here. That is a property of the sample size, not evidence of absence.
 
 ## 3. Assignment validation
 
-A sample-ratio mismatch check (SRM) asks whether the number of users who actually landed in each arm matches the intended split. A failure means the assignment or logging lost users asymmetrically, which biases every metric in ways no downstream statistic can fix.
+A sample-ratio mismatch (SRM) check asks whether the number of users who actually landed in each arm matches the intended split. A failure means the assignment or logging lost users asymmetrically, which biases every metric in ways no downstream statistic can fix.
 
 | Contrast | Control n | Treatment n | Chi-square | p |
 |---|---|---|---|---|
@@ -66,13 +66,13 @@ Unadjusted, 4 comparisons clear alpha. After Holm, 4 survive. Figure 1 shows eac
 
 ## 6. Heavy-tailed metric: spend
 
-**spend** is the kind of metric where a few extreme users can dominate the average (99% of users in the first contrast sit at zero). The first contrast (Mens E-Mail vs No E-Mail) is analyzed four ways, each stressing the tail differently: a Welch t-test (relies on the normal approximation of the mean), a percentile bootstrap (resamples the observed tail), a permutation test (no normal approximation, with a p-value computed from 10,000 random relabelings under the null that the arms' distributions are identical), and a trimmed-mean difference, a diagnostic for tail dependence that deliberately estimates a different quantity (a different estimand), so its number is not comparable to the other three.
+**spend** is the kind of metric where a few extreme users can dominate the average (99% of users in the first contrast sit at zero). The first contrast (Mens E-Mail vs No E-Mail) is analyzed four ways, each stressing the tail differently: a Welch t-test (relies on the normal approximation of the mean), a percentile bootstrap (resamples the observed tail), a permutation test (no normal approximation, with a p-value computed from 10,000 random relabelings under the null that the arms' distributions are identical), and a trimmed-mean difference. The trimmed-mean difference is a diagnostic for how much the estimate depends on the tail. It deliberately estimates a different quantity (a different estimand), so its number is not comparable to the other three.
 
 | Method | Estimate | Interval / p |
 |---|---|---|
 | Welch t-test | +0.770 | 95% CI +0.485 to +1.055, p = 1.2e-07 |
 | Percentile bootstrap | +0.770 | 95% CI +0.482 to +1.059 |
-| Permutation test | +0.770 | p = 1.0e-04 |
+| Permutation test | +0.770 | p = 1.0e-04, the smallest value 10,000 relabelings can give |
 | Trimmed mean diff (1%) | +0.078 | different estimand |
 
 Figure 2 shows the distributions and the interval comparison. The three same-estimand methods agree here, which is what a well-behaved tail looks like. The trimmed row is not a tail check on this data. With 99% of users at zero, cutting 1% from each end of each arm removes most or all of the users with a nonzero value along with the extreme ones, so the trimmed difference sits near zero whatever the true effect.

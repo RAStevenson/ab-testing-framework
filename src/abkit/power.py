@@ -36,18 +36,25 @@ def power_two_proportions(
     n_per_arm: int,
     *,
     alpha: float = 0.05,
+    n_treatment: int | None = None,
 ) -> float:
-    """Power of the two-sided pooled z-test with equal arm sizes."""
+    """Power of the two-sided pooled z-test.
+
+    The arms are equal at n_per_arm unless n_treatment is given, in which case
+    n_per_arm is the control arm's size and n_treatment the treatment arm's.
+    """
     _validate_rates(rate_control, rate_treatment)
     _validate_alpha_power(alpha)
-    if n_per_arm < 2:
-        raise ValueError(f"n_per_arm must be at least 2, got {n_per_arm}")
+    n_c = n_per_arm
+    n_t = n_per_arm if n_treatment is None else n_treatment
+    if n_c < 2 or n_t < 2:
+        raise ValueError(f"each arm needs at least 2 users, got {n_c} and {n_t}")
 
     delta = abs(rate_treatment - rate_control)
-    pooled = (rate_control + rate_treatment) / 2.0
-    se_null = np.sqrt(2.0 * pooled * (1.0 - pooled) / n_per_arm)
+    pooled = (n_c * rate_control + n_t * rate_treatment) / (n_c + n_t)
+    se_null = np.sqrt(pooled * (1.0 - pooled) * (1.0 / n_c + 1.0 / n_t))
     se_alt = np.sqrt(
-        (rate_control * (1.0 - rate_control) + rate_treatment * (1.0 - rate_treatment)) / n_per_arm
+        rate_control * (1.0 - rate_control) / n_c + rate_treatment * (1.0 - rate_treatment) / n_t
     )
     z_crit = stats.norm.isf(alpha / 2.0)
     return float(stats.norm.sf((z_crit * se_null - delta) / se_alt))
@@ -96,8 +103,12 @@ def mde_two_proportions(
     *,
     alpha: float = 0.05,
     power: float = 0.8,
+    n_treatment: int | None = None,
 ) -> float:
     """Minimum detectable absolute lift (upward) at the given n and power.
+
+    The arms are equal at n_per_arm unless n_treatment is given, with the same
+    meaning as in power_two_proportions.
 
     Power is unimodal rather than monotone in the lift: at rates near 1 the
     alternative variance collapses and power can fall again. The solve is
@@ -108,8 +119,8 @@ def mde_two_proportions(
     if not 0.0 < rate_control < 1.0:
         raise ValueError(f"rate_control must be in (0, 1), got {rate_control}")
     _validate_alpha_power(alpha, power)
-    if n_per_arm < 2:
-        raise ValueError(f"n_per_arm must be at least 2, got {n_per_arm}")
+    if n_per_arm < 2 or (n_treatment is not None and n_treatment < 2):
+        raise ValueError(f"each arm needs at least 2 users, got {n_per_arm} and {n_treatment}")
     # power tends to alpha/2 as the lift vanishes, so a target at or below
     # that has no crossing at all and would surface as a raw solver error
     if power <= alpha / 2.0:
@@ -119,7 +130,12 @@ def mde_two_proportions(
         )
 
     upper = 1.0 - rate_control - 1e-9
-    if power_two_proportions(rate_control, rate_control + upper, n_per_arm, alpha=alpha) < power:
+    if (
+        power_two_proportions(
+            rate_control, rate_control + upper, n_per_arm, alpha=alpha, n_treatment=n_treatment
+        )
+        < power
+    ):
         raise ValueError(
             f"n_per_arm={n_per_arm} cannot reach power {power} for any lift "
             f"from rate_control={rate_control}"
@@ -127,7 +143,10 @@ def mde_two_proportions(
 
     def gap(lift: float) -> float:
         return (
-            power_two_proportions(rate_control, rate_control + lift, n_per_arm, alpha=alpha) - power
+            power_two_proportions(
+                rate_control, rate_control + lift, n_per_arm, alpha=alpha, n_treatment=n_treatment
+            )
+            - power
         )
 
     return float(optimize.brentq(gap, 1e-12, upper, xtol=1e-12))
