@@ -4,6 +4,8 @@ spot-pinned number proves the analyses run on the real fixture values."""
 
 from __future__ import annotations
 
+import dataclasses
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +13,13 @@ import pytest
 
 from abkit.io import capabilities, load_aggregates, load_config, load_user_rows
 from abkit.report import render_report
-from abkit.report_sections import default_sections, fmt_perm_p
+from abkit.report_sections import (
+    _consistent_prefix,
+    default_sections,
+    fmt_perm_p,
+    sec_novelty,
+    sec_sequential,
+)
 from abkit.results import PermutationResult
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -241,3 +249,44 @@ def test_permutation_p_at_its_floor_is_stated_as_a_bound():
     assert fmt_perm_p(floor) == "p = 1.0e-04, the smallest value 10,000 relabelings can give"
     above = PermutationResult(observed=0.5, p_value=2 / 10_001, n_permutations=10_000)
     assert fmt_perm_p(above) == "p = 0.0002"
+
+
+class TestOmittedSections:
+    """A section the data cannot support is omitted, the run carries on, and
+    the console says which section and why, with the error in full."""
+
+    def test_missing_series_omits_both_time_sections_and_says_so(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        cfg = load_config(FIXTURES / "aggregates_config.toml")
+        experiment = load_aggregates(cfg, FIXTURES / "aggregates_ok.csv")
+        treatment_arm = experiment.arms[1]
+        # keep the end-of-run cells, drop that arm's per-checkpoint cells
+        damaged = dataclasses.replace(
+            experiment,
+            aggregates=tuple(
+                cell
+                for cell in experiment.aggregates
+                if not (cell.arm == treatment_arm and cell.checkpoint is not None)
+            ),
+        )
+        assert sec_novelty(damaged, tmp_path / "figs") is None
+        assert sec_sequential(damaged, tmp_path / "figs") is None
+        stderr = capsys.readouterr().err
+        assert stderr.count("Traceback") == 2
+        assert "no per-checkpoint aggregates" in stderr
+        assert "omits the section 'Effect stability over time'" in stderr
+        assert "omits the section 'What sequential monitoring would have decided'" in stderr
+
+
+def test_consistent_prefix_needs_no_warning_block_for_short_increments():
+    """One-observation and zero increments are skipped by the division itself,
+    so the check runs clean with every RuntimeWarning turned into an error."""
+    observations = np.random.default_rng(4).lognormal(1.0, 0.6, size=60)
+    splits = [30, 31, 31, 60]
+    counts = np.array([float(end) for end in splits])
+    means = np.array([observations[:end].mean() for end in splits])
+    variances = np.array([observations[:end].var(ddof=1) for end in splits])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        assert _consistent_prefix(counts, means, variances) == len(splits)

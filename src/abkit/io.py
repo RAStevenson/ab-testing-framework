@@ -550,8 +550,8 @@ def load_aggregates(config: dict, data_path: Path) -> Experiment:
         raw = (row[agg[key]] or "").strip()
         try:
             value = float(raw)
-        except ValueError:
-            raise ValueError(f"unparseable {key} value {raw!r} at data row {index}") from None
+        except ValueError as error:
+            raise ValueError(f"unparseable {key} value {raw!r} at data row {index}") from error
         return value
 
     for index, row in enumerate(raw_rows, start=2):
@@ -695,9 +695,12 @@ def interval_from_cumulative(
     if np.any(int_n == 0):
         raise ValueError("an interval has zero observations; drop repeated checkpoints first")
     int_mean = int_sums / int_n
-    with np.errstate(invalid="ignore", divide="ignore"):
-        int_var = (int_squares - int_n * int_mean**2) / (int_n - 1.0)
-    int_var = np.where(int_n < 2, np.nan, int_var)
+    int_var = np.divide(
+        int_squares - int_n * int_mean**2,
+        int_n - 1.0,
+        out=np.full_like(int_n, np.nan),
+        where=int_n >= 2,
+    )
     # float cancellation can push a true-zero variance slightly negative;
     # a materially negative value means the inputs were inconsistent
     bad = int_var < -1e-6 * np.maximum(var_arr, 1.0)

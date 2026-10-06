@@ -3,6 +3,7 @@ capabilities, and every validator rule proven on injected bad data."""
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -413,3 +414,29 @@ class TestBatteryRegressions:
         exp = load_user_rows(cfg, data)
         assert sum(e.count for e in exp.validation if e.rule == "arm_label_normalized") == 2
         assert exp.rows["arm"].size == 4
+
+
+def test_unparseable_aggregate_keeps_the_parse_error(tmp_path: Path) -> None:
+    source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
+    bad = tmp_path / "bad.csv"
+    bad.write_text(source + "expA,2,1,4.0,abc,0.1,0.09,400,0.12,0.11\n", encoding="utf-8")
+    cfg = load_config(FIXTURES / "aggregates_config.toml")
+    with pytest.raises(ValueError, match="unparseable") as raised:
+        load_aggregates(cfg, bad)
+    assert isinstance(raised.value.__cause__, ValueError)
+
+
+def test_single_observation_interval_is_nan_without_any_warning() -> None:
+    # no warning is blocked here: the division is skipped where it has no answer
+    observations = np.random.default_rng(5).lognormal(1.0, 0.8, size=40)
+    splits = [20, 21, 40]
+    counts = np.array([float(end) for end in splits])
+    means = np.array([observations[:end].mean() for end in splits])
+    variances = np.array([observations[:end].var(ddof=1) for end in splits])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        interval_n, _, interval_var = interval_from_cumulative(counts, means, variances)
+    assert interval_n[1] == 1.0
+    assert np.isnan(interval_var[1])
+    expected = [observations[:20].var(ddof=1), observations[21:40].var(ddof=1)]
+    assert np.allclose(interval_var[[0, 2]], expected, rtol=1e-8)

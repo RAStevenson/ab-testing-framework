@@ -27,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import hashlib
+import traceback
 import urllib.request
 
 URL = (
@@ -54,9 +55,14 @@ def main() -> int:
         with urllib.request.urlopen(URL, timeout=60) as response, open(tmp, "wb") as out:
             while chunk := response.read(1 << 16):
                 out.write(chunk)
-    except OSError as error:
+    except OSError:
+        traceback.print_exc()
         tmp.unlink(missing_ok=True)
-        print(f"error: download failed: {error}", file=sys.stderr)
+        print(
+            f"error: the download failed, so nothing was written to {DEST.parent}. "
+            "Rerun this script once the site is reachable.",
+            file=sys.stderr,
+        )
         return 2
 
     try:
@@ -74,8 +80,14 @@ def main() -> int:
             )
             return 2
         tmp.replace(DEST)
-    except OSError as error:
-        print(f"error: could not finalize the download: {error}", file=sys.stderr)
+    except OSError:
+        traceback.print_exc()
+        print(
+            f"error: the download finished but could not be moved into place, so "
+            f"{DEST} was not updated (a partial copy may remain at {tmp}). "
+            "Rerun this script.",
+            file=sys.stderr,
+        )
         return 2
     print(f"fetched and verified: {DEST} ({DEST.stat().st_size:,} bytes)")
     print(

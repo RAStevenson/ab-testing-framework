@@ -49,7 +49,11 @@ def _exact_power_two_proportions(rate_c, rate_t, n, alpha=0.05, n_t=None):
     joint = np.outer(stats.binom.pmf(k_c, n_c, rate_c), stats.binom.pmf(k_t, n_t, rate_t))
     pooled = (k_c[:, None] + k_t[None, :]) / (n_c + n_t)
     se = np.sqrt(pooled * (1.0 - pooled) * (1 / n_c + 1 / n_t))
-    with np.errstate(divide="ignore", invalid="ignore"):
+    # se is zero only where both arms are all-failure or all-success, which
+    # makes the difference zero too: 0/0 is NaN, NaN >= threshold is False,
+    # and that corner correctly counts as no rejection. A recorded run with
+    # this block removed (2026-10-05) raised only this invalid-divide warning.
+    with np.errstate(invalid="ignore"):
         z = (k_t[None, :] / n_t - k_c[:, None] / n_c) / se
     return float(np.sum(joint * (np.abs(z) >= stats.norm.isf(alpha / 2))))
 

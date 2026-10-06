@@ -32,6 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import argparse
 import hashlib
+import traceback
 
 import numpy as np
 
@@ -127,15 +128,26 @@ def main() -> int:
         print(f"wrote {report_path} with {len(sections)} sections")
         return 0
     except ImportError as error:
+        # only a missing matplotlib has a known fix; any other failed import
+        # is a broken install or a bug and keeps Python's own report
+        if (error.name or "").partition(".")[0] != "matplotlib":
+            raise
+        traceback.print_exc()
         print(
-            f"error: {error}. Building a report draws figures with "
-            "matplotlib, which installs with the dev extras: "
-            'pip install -e ".[dev]"',
+            "error: building a report draws figures with matplotlib, which "
+            'installs with the dev extras: pip install -e ".[dev]". '
+            "No report was written.",
             file=sys.stderr,
         )
         return 2
-    except (ReportBuildError, ValueError, OSError) as error:
-        print(f"error: {error}", file=sys.stderr)
+    except (ReportBuildError, ValueError, OSError):
+        traceback.print_exc()
+        print(
+            "error: the analysis stopped before report.md was fully written; figures "
+            "drawn before the failure may already be replaced. Fix the problem named "
+            "in the error above and rerun the same command.",
+            file=sys.stderr,
+        )
         return 2
 
 

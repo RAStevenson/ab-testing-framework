@@ -17,6 +17,8 @@ dependency of the report scripts.
 
 from __future__ import annotations
 
+import sys
+import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -108,6 +110,15 @@ def _arm_color(index: int) -> str:
     if index == 1:
         return COLOR_TREATMENT
     return _EXTRA_ARM_COLORS[(index - 2) % len(_EXTRA_ARM_COLORS)]
+
+
+def _report_skipped_section(title: str) -> None:
+    """Print the error being handled, then one line naming the section the
+    report omits because of it. Call only inside an except block."""
+    traceback.print_exc()
+    print(
+        f"note: the report omits the section '{title}' because of the error above.", file=sys.stderr
+    )
 
 
 def _primary(exp: Experiment) -> MetricSpec:
@@ -213,9 +224,13 @@ def _consistent_prefix(n: NDArray, mean: NDArray, variance: NDArray) -> int:
     int_n = np.diff(n, prepend=0.0)
     int_s = np.diff(sums, prepend=0.0)
     int_q = np.diff(squares, prepend=0.0)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        int_mean = int_s / int_n
-        int_var = (int_q - int_n * int_mean**2) / (int_n - 1.0)
+    int_mean = np.divide(int_s, int_n, out=np.full_like(int_n, np.nan), where=int_n != 0)
+    int_var = np.divide(
+        int_q - int_n * int_mean**2,
+        int_n - 1.0,
+        out=np.full_like(int_n, np.nan),
+        where=int_n != 1.0,
+    )
     bad = np.nonzero(np.isfinite(int_var) & (int_var < -1e-6 * np.maximum(variance, 1.0)))[0]
     return int(bad[0]) if bad.size else int(n.size)
 
@@ -429,6 +444,7 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         series_c = _series(exp, control_arm, metric.name)
         all_series = [series_c] + [_series(exp, arm, metric.name) for _, arm in _contrasts(exp)]
     except ValueError:
+        _report_skipped_section("Effect stability over time")
         return None
     k_full = len(exp.checkpoints)
     k = min(_consistent_prefix(*ser) for ser in all_series)
@@ -465,6 +481,7 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
             e_t = _window(*series_t, 0, w)
             l_t = _window(*series_t, k - w, k)
         except ValueError:
+            _report_skipped_section("Effect stability over time")
             return None
         early = e_t[1] - e_c[1]
         late = l_t[1] - l_c[1]
@@ -535,8 +552,7 @@ def _fig_novelty(exp: Experiment, metric: MetricSpec, figdir: Path, k_use: int) 
         # of raising; means are exact, and the figure needs no variances
         int_n = np.diff(n, prepend=0.0)
         int_sums = np.diff(n * mean, prepend=0.0)
-        with np.errstate(invalid="ignore", divide="ignore"):
-            int_mean = np.where(int_n > 0, int_sums / np.maximum(int_n, 1.0), np.nan)
+        int_mean = np.where(int_n > 0, int_sums / np.maximum(int_n, 1.0), np.nan)
         checkpoints = np.asarray(exp.checkpoints[:k_use], dtype=np.float64)
         ax.plot(
             checkpoints,
@@ -568,6 +584,7 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
         nc, mean_c, var_c = _series(exp, control_arm, metric.name)
         nt, mean_t, var_t = _series(exp, treatment_arm, metric.name)
     except ValueError:
+        _report_skipped_section("What sequential monitoring would have decided")
         return None
     k_full = int(nc.size)
     k_use = min(_consistent_prefix(nc, mean_c, var_c), _consistent_prefix(nt, mean_t, var_t))
