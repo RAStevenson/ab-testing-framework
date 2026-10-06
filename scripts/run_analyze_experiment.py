@@ -41,7 +41,7 @@ from abkit.report import ReportBuildError, render_report
 from abkit.report_sections import default_sections, sweep_aggregate_archive
 
 
-def main() -> int:
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--config", required=True, type=Path, help="experiment TOML")
     parser.add_argument("--data", type=Path, help="data file; overrides the config's input path")
@@ -97,7 +97,7 @@ def main() -> int:
             print("validation: clean, nothing altered or dropped")
 
         if args.no_report:
-            return 0
+            return
 
         repo_root = Path(__file__).resolve().parents[1]
         try:
@@ -126,7 +126,7 @@ def main() -> int:
         report_path = out_dir / "report.md"
         report_path.write_text(report, encoding="utf-8", newline="\n")
         print(f"wrote {report_path} with {len(sections)} sections")
-        return 0
+        return
     except ImportError as error:
         # only a missing matplotlib has a known fix; any other failed import
         # is a broken install or a bug and keeps Python's own report
@@ -139,7 +139,7 @@ def main() -> int:
             "No report was written.",
             file=sys.stderr,
         )
-        return 2
+        sys.exit(2)
     except (ReportBuildError, ValueError, OSError):
         traceback.print_exc()
         print(
@@ -148,8 +148,8 @@ def main() -> int:
             "in the error above and rerun the same command.",
             file=sys.stderr,
         )
-        return 2
+        sys.exit(2)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

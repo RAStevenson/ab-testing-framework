@@ -41,7 +41,10 @@ class TestFetchHillstrom:
             raise OSError("simulated network failure")
 
         monkeypatch.setattr(urllib.request, "urlopen", refuse_connection)
-        assert fetch.main() == 2
+        monkeypatch.setattr(sys, "argv", ["run_fetch_hillstrom.py"])
+        with pytest.raises(SystemExit) as stopped:
+            fetch.main()
+        assert stopped.value.code == 2
         stderr = capsys.readouterr().err
         assert "Traceback" in stderr
         assert "simulated network failure" in stderr
@@ -64,7 +67,9 @@ class TestAnalyzeExperiment:
             "argv",
             ["run_analyze_experiment.py", "--config", str(config), "--out", str(out_dir)],
         )
-        assert analyze.main() == 2
+        with pytest.raises(SystemExit) as stopped:
+            analyze.main()
+        assert stopped.value.code == 2
         stderr = capsys.readouterr().err
         assert "Traceback" in stderr
         assert "data file not found" in stderr
@@ -83,7 +88,9 @@ class TestAnalyzeExperiment:
         monkeypatch.setattr(
             sys, "argv", ["run_analyze_experiment.py", "--config", str(tmp_path / "unused.toml")]
         )
-        assert analyze.main() == 2
+        with pytest.raises(SystemExit) as stopped:
+            analyze.main()
+        assert stopped.value.code == 2
         stderr = capsys.readouterr().err
         assert "Traceback" in stderr
         assert 'pip install -e ".[dev]"' in _last_line(stderr)

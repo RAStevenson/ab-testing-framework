@@ -24,12 +24,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import argparse
 import tomllib
 from typing import Literal
 
 import matplotlib
-
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.transforms
 import numpy as np
@@ -57,47 +56,6 @@ from abkit.sequential import design, monitor, z_from_cumulative_counts
 ANALYSIS = Path(__file__).resolve().parents[1] / "analysis" / "checkout"
 FIGURES = ANALYSIS / "figures"
 
-# experiment configuration (the "truth" the analysis tries to recover)
-# lives in config.toml next to the committed report; the report's final
-# section scores the analysis against exactly these values
-with open(ANALYSIS / "config.toml", "rb") as _config_file:
-    _CFG = tomllib.load(_config_file)
-_TRUTH = _CFG["truth"]
-
-N_USERS = int(_TRUTH["n_users"])
-N_DAYS = int(_TRUTH["n_days"])
-BASE_RATE = float(_TRUTH["base_rate"])
-TRUE_LIFT = float(_TRUTH["true_lift"])
-NOVELTY_BOOST = float(_TRUTH["novelty_boost"])
-NOVELTY_HALF_LIFE = float(_TRUTH["novelty_half_life_days"])
-
-SPEND_RATE = float(_TRUTH["spend_rate"])
-SPEND_RATE_LIFT = float(_TRUTH["spend_rate_lift"])
-LOG_MEAN = float(_TRUTH["log_mean"])
-LOG_SIGMA = float(_TRUTH["log_sigma"])
-WHALE_RATE = float(_TRUTH["whale_rate"])
-WHALE_SHAPE = float(_TRUTH["whale_shape"])
-WHALE_SCALE = float(_TRUTH["whale_scale"])
-
-SEED_ABORTED_RUN = int(_TRUTH["seeds"]["aborted_run"])
-SEED_PRIMARY = int(_TRUTH["seeds"]["primary"])
-SEED_SECONDARY_BASE = int(_TRUTH["seeds"]["secondary_base"])
-SEED_REVENUE = int(_TRUTH["seeds"]["revenue"])
-SEED_BOOTSTRAP = int(_TRUTH["seeds"]["bootstrap"])
-SEED_PERMUTATION = int(_TRUTH["seeds"]["permutation"])
-SEED_NULL_SIM = int(_TRUTH["seeds"]["null_sim"])
-
-SECONDARY_METRICS = list(_TRUTH["secondary_metrics"])
-ALPHA = float(_CFG["experiment"]["alpha"])
-# the naive rule being replayed is the conventional dashboard threshold,
-# which practitioners quote to two decimals (1.96 at alpha 0.05)
-Z_NAIVE = float(np.round(stats.norm.isf(ALPHA / 2.0), 2))
-
-if N_DAYS != 14:
-    raise RuntimeError(
-        "the novelty windows (days 0-2 vs 10-13) and their prose labels are "
-        "written for the 14-day design; change them together with n_days"
-    )
 
 _SMALL_NUMBERS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
 
@@ -132,8 +90,15 @@ def lift_se(comparison: RateComparison) -> float:
     )
 
 
-def fig_daily_rates(experiment_data: ExperimentData) -> None:
-    days = np.arange(N_DAYS)
+def fig_daily_rates(
+    experiment_data: ExperimentData,
+    *,
+    n_days: int,
+    true_lift: float,
+    novelty_boost: float,
+    novelty_half_life: float,
+) -> None:
+    days = np.arange(n_days)
     control_rates, treatment_rates, lifts, errors = [], [], [], []
     for day in days:
         day_data = experiment_data.subset(experiment_data.day == day)
@@ -162,12 +127,12 @@ def fig_daily_rates(experiment_data: ExperimentData) -> None:
         capsize=2,
         label="Observed daily lift (95% CI)",
     )
-    truth = (TRUE_LIFT + NOVELTY_BOOST * 0.5 ** (days / NOVELTY_HALF_LIFE)) * 100
+    truth = (true_lift + novelty_boost * 0.5 ** (days / novelty_half_life)) * 100
     lift_ax.plot(
         days, truth, color=COLOR_TREATMENT, linewidth=2, label="True effect (with novelty)"
     )
     lift_ax.axhline(
-        TRUE_LIFT * 100,
+        true_lift * 100,
         color=COLOR_REFERENCE,
         linewidth=1.5,
         linestyle="--",
@@ -243,9 +208,11 @@ def fig_sequential(
     plt.close(fig)
 
 
-def fig_secondary(naive: NDArray[np.float64], adjusted: NDArray[np.float64]) -> None:
+def fig_secondary(
+    naive: NDArray[np.float64], adjusted: NDArray[np.float64], *, secondary_metrics: list[str]
+) -> None:
     fig, ax = plt.subplots(figsize=(8, 4.0))
-    positions = np.arange(len(SECONDARY_METRICS))
+    positions = np.arange(len(secondary_metrics))
     ax.scatter(naive, positions, s=55, color=COLOR_CONTROL, label="Unadjusted p", zorder=3)
     ax.scatter(
         adjusted,
@@ -274,7 +241,7 @@ def fig_secondary(naive: NDArray[np.float64], adjusted: NDArray[np.float64]) -> 
         color=COLOR_INK,
         va="top",
     )
-    ax.set_yticks(positions, SECONDARY_METRICS)
+    ax.set_yticks(positions, secondary_metrics)
     ax.set_xscale("log")
     ax.set_xlabel("p-value (log scale)")
     ax.set_title(
@@ -371,6 +338,51 @@ def fig_revenue(
 
 
 def main() -> None:
+    argparse.ArgumentParser(description=__doc__).parse_args()
+    matplotlib.use("Agg")
+
+    # experiment configuration (the "truth" the analysis tries to recover)
+    # lives in config.toml next to the committed report; the report's final
+    # section scores the analysis against exactly these values
+    with open(ANALYSIS / "config.toml", "rb") as config_file:
+        config = tomllib.load(config_file)
+    truth = config["truth"]
+
+    n_users = int(truth["n_users"])
+    n_days = int(truth["n_days"])
+    base_rate = float(truth["base_rate"])
+    true_lift = float(truth["true_lift"])
+    novelty_boost = float(truth["novelty_boost"])
+    novelty_half_life = float(truth["novelty_half_life_days"])
+
+    spend_rate = float(truth["spend_rate"])
+    spend_rate_lift = float(truth["spend_rate_lift"])
+    log_mean = float(truth["log_mean"])
+    log_sigma = float(truth["log_sigma"])
+    whale_rate = float(truth["whale_rate"])
+    whale_shape = float(truth["whale_shape"])
+    whale_scale = float(truth["whale_scale"])
+
+    seed_aborted_run = int(truth["seeds"]["aborted_run"])
+    seed_primary = int(truth["seeds"]["primary"])
+    seed_secondary_base = int(truth["seeds"]["secondary_base"])
+    seed_revenue = int(truth["seeds"]["revenue"])
+    seed_bootstrap = int(truth["seeds"]["bootstrap"])
+    seed_permutation = int(truth["seeds"]["permutation"])
+    seed_null_sim = int(truth["seeds"]["null_sim"])
+
+    secondary_metrics = list(truth["secondary_metrics"])
+    alpha = float(config["experiment"]["alpha"])
+    # the naive rule being replayed is the conventional dashboard threshold,
+    # which practitioners quote to two decimals (1.96 at alpha 0.05)
+    z_naive = float(np.round(stats.norm.isf(alpha / 2.0), 2))
+
+    if n_days != 14:
+        raise RuntimeError(
+            "the novelty windows (days 0-2 vs 10-13) and their prose labels are "
+            "written for the 14-day design; change them together with n_days"
+        )
+
     FIGURES.mkdir(parents=True, exist_ok=True)
     sections: list[SectionSpec] = []
 
@@ -393,42 +405,42 @@ document is rendered by the same engine that renders reports on a user's own
 data (`run_analyze_experiment.py`)."""
 
     # ------------------------------------------------------------- design
-    n_required = sample_size_two_proportions(BASE_RATE, BASE_RATE + TRUE_LIFT, alpha=ALPHA)
+    n_required = sample_size_two_proportions(base_rate, base_rate + true_lift, alpha=alpha)
     sections.append(
         SectionSpec(
             key="design_power",
             title="Design and power",
-            body=f"""The primary metric is checkout conversion, baseline {pct(BASE_RATE, 1)}. The
-smallest effect worth shipping was set at +{100 * TRUE_LIFT:.1f} percentage points (pp) absolute. For a
-two-sided test at alpha {ALPHA} and 80% power, that needs
+            body=f"""The primary metric is checkout conversion, baseline {pct(base_rate, 1)}. The
+smallest effect worth shipping was set at +{100 * true_lift:.1f} percentage points (pp) absolute. For a
+two-sided test at alpha {alpha} and 80% power, that needs
 **{n_required:,} users per arm** (`sample_size_two_proportions`), so the
-experiment was sized at {N_USERS:,} users over {N_DAYS} days with a 50/50
-split, giving roughly {N_USERS // 2:,} per arm, which leaves some margin over the minimum.""",
+experiment was sized at {n_users:,} users over {n_days} days with a 50/50
+split, giving roughly {n_users // 2:,} per arm, which leaves some margin over the minimum.""",
         )
     )
 
     # ------------------------------------------- aborted first run: SRM
-    aborted_run_generator = np.random.default_rng(SEED_ABORTED_RUN)
+    aborted_run_generator = np.random.default_rng(seed_aborted_run)
     bad = generate_binary(
-        N_USERS,
-        BASE_RATE,
-        TRUE_LIFT,
+        n_users,
+        base_rate,
+        true_lift,
         random_generator=aborted_run_generator,
-        novelty_boost=NOVELTY_BOOST,
-        novelty_half_life_days=NOVELTY_HALF_LIFE,
+        novelty_boost=novelty_boost,
+        novelty_half_life_days=novelty_half_life,
         treatment_loss_rate=0.03,
     )
     bad_srm = srm_check(bad.n_control, bad.n_treatment)
     bad_result = rate_test(bad)
 
-    random_generator = np.random.default_rng(SEED_PRIMARY)
+    random_generator = np.random.default_rng(seed_primary)
     experiment_data = generate_binary(
-        N_USERS,
-        BASE_RATE,
-        TRUE_LIFT,
+        n_users,
+        base_rate,
+        true_lift,
         random_generator=random_generator,
-        novelty_boost=NOVELTY_BOOST,
-        novelty_half_life_days=NOVELTY_HALF_LIFE,
+        novelty_boost=novelty_boost,
+        novelty_half_life_days=novelty_half_life,
     )
     clean_srm = srm_check(experiment_data.n_control, experiment_data.n_treatment)
 
@@ -471,7 +483,7 @@ rerun, which passes the check.""",
 Absolute lift {pp(primary.absolute_lift)} (95% CI {pp(primary.ci_low)} to
 {pp(primary.ci_high)}), relative lift {pct(primary.relative_lift, 1)},
 z = {primary.statistic:.2f}, p = {fmt_p(primary.p_value)}. This is the full-run
-estimate, computed over all {N_DAYS} days together. It is comfortably
+estimate, computed over all {n_days} days together. It is comfortably
 significant. But it is not the number I would ship a forecast on, for the reason in the next section.""",
         )
     )
@@ -497,7 +509,13 @@ significant. But it is not the number I would ship a forecast on, for the reason
         raise RuntimeError(
             f"the section 4 prose asserts a real novelty fade but decay p = {decay_p_value}; rewrite section 4"
         )
-    fig_daily_rates(experiment_data)
+    fig_daily_rates(
+        experiment_data,
+        n_days=n_days,
+        true_lift=true_lift,
+        novelty_boost=novelty_boost,
+        novelty_half_life=novelty_half_life,
+    )
     sections.append(
         SectionSpec(
             key="novelty",
@@ -523,10 +541,10 @@ side by side did not create it.
 The early days inflate the full-run estimate. The late window is the
 best available proxy for the persistent effect. It shows
 {pp(late_comparison.absolute_lift)} with a confidence interval wide enough to include
-both zero and the +{pp(TRUE_LIFT, 1)} the experiment was powered for. So my
+both zero and the +{pp(true_lift, 1)} the experiment was powered for. So my
 summary is that the treatment very likely helps, that the full-run estimate of
 {pp(primary.absolute_lift)} overstates the long-run effect, and that the
-{N_DAYS}-day window cannot pin the persistent lift precisely. I would report
+{n_days}-day window cannot pin the persistent lift precisely. I would report
 the late-window interval, not the full-run estimate, and keep a small holdback running
 to measure the effect after habituation.""",
             figures=(
@@ -540,7 +558,7 @@ to measure the effect after habituation.""",
     )
 
     # -------------------------------------------------- sequential replay
-    look_days = np.arange(N_DAYS)
+    look_days = np.arange(n_days)
     control_counts = np.array(
         [
             np.sum((experiment_data.assignment == 0) & (experiment_data.day <= day))
@@ -581,9 +599,9 @@ to measure the effect after habituation.""",
     z_path = z_from_cumulative_counts(
         control_conversions, control_counts, treatment_conversions, treatment_counts
     )
-    sequential_section = design(fractions.tolist(), alpha=ALPHA, spending="obrien-fleming")
+    sequential_section = design(fractions.tolist(), alpha=alpha, spending="obrien-fleming")
     outcome = monitor(z_path.tolist(), sequential_section)
-    naive_crossings = np.nonzero(np.abs(z_path) >= Z_NAIVE)[0]
+    naive_crossings = np.nonzero(np.abs(z_path) >= z_naive)[0]
     # the prose below describes one specific replay; fail loudly if a code change
     # alters the replay instead of silently describing the wrong one. A bare
     # assert would vanish under python -O, which is exactly when it matters.
@@ -606,13 +624,13 @@ to measure the effect after habituation.""",
     fig_sequential(look_days, z_path, np.array(sequential_section.boundaries))
 
     # type I error of both rules under the null, on the realized look schedule
-    null_generator = np.random.default_rng(SEED_NULL_SIM)
+    null_generator = np.random.default_rng(seed_null_sim)
     n_sims = 100_000
-    increments = null_generator.normal(size=(n_sims, N_DAYS)) * np.sqrt(
+    increments = null_generator.normal(size=(n_sims, n_days)) * np.sqrt(
         np.diff(fractions, prepend=0.0)
     )
     z_null = np.cumsum(increments, axis=1) / np.sqrt(fractions)
-    naive_alpha = float(np.any(np.abs(z_null) >= Z_NAIVE, axis=1).mean())
+    naive_alpha = float(np.any(np.abs(z_null) >= z_naive, axis=1).mean())
     spent_alpha = float(
         np.any(np.abs(z_null) >= np.array(sequential_section.boundaries), axis=1).mean()
     )
@@ -620,29 +638,29 @@ to measure the effect after habituation.""",
     unspendable_phrase = (
         "the first look has" if n_unspendable == 1 else f"the first {n_unspendable} looks have"
     )
-    max_fraction_drift = float(np.max(np.abs(fractions - (look_days + 1) / N_DAYS)))
+    max_fraction_drift = float(np.max(np.abs(fractions - (look_days + 1) / n_days)))
 
     sections.append(
         SectionSpec(
             key="sequential",
             title="What daily monitoring would have decided",
             body=f"""Everyone peeks. The question is whether the peeking is accounted for. I
-replayed the experiment as {N_DAYS} daily looks two ways: a naive rule that
-calls the result at the first |z| > {Z_NAIVE:.2f}, and an O'Brien-Fleming alpha-spending
+replayed the experiment as {n_days} daily looks two ways: a naive rule that
+calls the result at the first |z| > {z_naive:.2f}, and an O'Brien-Fleming alpha-spending
 design built on the realized information fractions, each look's share of
 the final sample (`abkit.sequential`).
 
 Using realized rather than planned fractions is what the spending-function
 approach is for, and it does not cost anything here. The look *schedule* was
 fixed in advance at one look per day, and the realized fractions differ from
-an even {N_DAYS}-way split by at most {max_fraction_drift:.4f}. What would void the
+an even {n_days}-way split by at most {max_fraction_drift:.4f}. What would void the
 guarantee is choosing the looks after seeing the data, which is a different
 thing entirely. {{{{fig:sequential}}}} shows both rules against the observed
 z path.
 
 The naive rule would have stopped at **look {first_naive}**, when the novelty
 effect was near its peak, locking in a cumulative lift of
-{pp(naive_lift)}, about {naive_lift / TRUE_LIFT:.1f}x the true persistent effect.
+{pp(naive_lift)}, about {naive_lift / true_lift:.1f}x the true persistent effect.
 The spending design first crosses at **look {outcome.stopped_at_look}**,
 spending almost no alpha in the noisy early days. In fact it spends so little
 that {unspendable_phrase} no finite boundary at all. The alpha allocated
@@ -652,7 +670,7 @@ which is why the boundary line in the figure starts at look
 {n_unspendable + 1}.
 Under a true null on this exact look schedule, simulation ({n_sims:,} runs)
 puts the naive rule's false-positive rate at {pct(naive_alpha, 1)} against the
-nominal {pct(ALPHA, 0)}; the spending design holds {pct(spent_alpha, 1)}.
+nominal {pct(alpha, 0)}; the spending design holds {pct(spent_alpha, 1)}.
 
 Early stopping is a tool for catching harmful changes quickly, not for
 launching apparent improvements early. Even the correctly stopped estimate is biased away from zero
@@ -665,24 +683,24 @@ novelty effect at that point in the run.""",
     # ----------------------------------------- secondary metrics screen
     naive_p_values = []
     lifts = []
-    for i in range(len(SECONDARY_METRICS)):
-        secondary_generator = np.random.default_rng(SEED_SECONDARY_BASE + i)
-        metric_data = generate_binary(N_USERS, 0.20, 0.0, random_generator=secondary_generator)
+    for i in range(len(secondary_metrics)):
+        secondary_generator = np.random.default_rng(seed_secondary_base + i)
+        metric_data = generate_binary(n_users, 0.20, 0.0, random_generator=secondary_generator)
         comparison = rate_test(metric_data)
         naive_p_values.append(comparison.p_value)
         lifts.append(comparison.absolute_lift)
     naive_p_value_array = np.array(naive_p_values)
     holm_p_values = holm(naive_p_value_array)
     bh_q_values = benjamini_hochberg(naive_p_value_array)
-    fig_secondary(naive_p_value_array, holm_p_values)
+    fig_secondary(naive_p_value_array, holm_p_values, secondary_metrics=secondary_metrics)
 
     # the smallest p-value, whichever direction it points; calling it an
     # improvement without checking the sign is how a harmful change gets shipped
     flagged = int(np.argmin(naive_p_value_array))
     flagged_direction = "an improvement" if lifts[flagged] > 0 else "a drop"
-    family_error = 1.0 - (1.0 - ALPHA) ** len(SECONDARY_METRICS)
-    exactly_one = len(SECONDARY_METRICS) * ALPHA * (1.0 - ALPHA) ** (len(SECONDARY_METRICS) - 1)
-    if int(np.sum(naive_p_value_array < ALPHA)) != 1 or bool(np.any(holm_p_values < ALPHA)):
+    family_error = 1.0 - (1.0 - alpha) ** len(secondary_metrics)
+    exactly_one = len(secondary_metrics) * alpha * (1.0 - alpha) ** (len(secondary_metrics) - 1)
+    if int(np.sum(naive_p_value_array < alpha)) != 1 or bool(np.any(holm_p_values < alpha)):
         # the prose AND fig_secondary's baked-in title both describe exactly
         # one naive false positive that the adjustment removes
         raise RuntimeError(
@@ -692,25 +710,25 @@ novelty effect at that point in the run.""",
     rows = "\n".join(
         f"| {name} | {pp(lifts[i])} | {fmt_p(naive_p_value_array[i])} | {fmt_p(holm_p_values[i])} "
         f"| {fmt_p(bh_q_values[i])} |"
-        for i, name in enumerate(SECONDARY_METRICS)
+        for i, name in enumerate(secondary_metrics)
     )
     sections.append(
         SectionSpec(
             key="corrections",
             title="Secondary metrics and multiple comparisons",
-            body=f"""{spell(len(SECONDARY_METRICS)).capitalize()} secondary metrics were tracked. None of them was actually moved by
-the treatment (the generator applied zero lift to all {spell(len(SECONDARY_METRICS))}), which makes
+            body=f"""{spell(len(secondary_metrics)).capitalize()} secondary metrics were tracked. None of them was actually moved by
+the treatment (the generator applied zero lift to all {spell(len(secondary_metrics))}), which makes
 this a live-fire test of the correction machinery.
 
 | Metric | Observed lift | Unadjusted p | Holm p | BH q |
 |---|---|---|---|---|
 {rows}
 
-Read naively, **{SECONDARY_METRICS[flagged]}** clears the line at
+Read naively, **{secondary_metrics[flagged]}** clears the line at
 p = {fmt_p(naive_p_value_array[flagged])}. Note the direction. The observed lift is
 {pp(lifts[flagged])}, so the naive reading is {flagged_direction}, not the improvement a
 scan of the p-value column alone would suggest. That is the trap twice over.
-With {spell(len(SECONDARY_METRICS))} true nulls the chance of at least one unadjusted p below 0.05 is
+With {spell(len(secondary_metrics))} true nulls the chance of at least one unadjusted p below 0.05 is
 {family_error:.0%}, so one flagged metric is unremarkable rather than a
 discovery. Both corrections push every metric back above the line. Holm
 controls the family-wise error rate, the chance of even one false positive,
@@ -719,7 +737,7 @@ the false discovery rate (FDR), the expected share of flagged metrics that
 are false, which is the right standard for a screening pass.
 
 The seed here was chosen to land on a run that exhibits the false positive.
-Under {spell(len(SECONDARY_METRICS))} independent true nulls only about {exactly_one:.0%} of runs would produce exactly
+Under {spell(len(secondary_metrics))} independent true nulls only about {exactly_one:.0%} of runs would produce exactly
 one nominally significant metric, and most would produce none. The run was picked deliberately to show
 the machinery working, and a report about not reading luck as signal should
 say so rather than present the draw as typical.
@@ -734,33 +752,33 @@ back across the line.""",
     )
 
     # ------------------------------------------------ revenue: ambiguous
-    revenue_generator = np.random.default_rng(SEED_REVENUE)
+    revenue_generator = np.random.default_rng(seed_revenue)
     revenue = generate_continuous(
-        N_USERS,
+        n_users,
         random_generator=revenue_generator,
-        spend_rate=SPEND_RATE,
-        spend_rate_lift=SPEND_RATE_LIFT,
-        log_mean=LOG_MEAN,
-        log_sigma=LOG_SIGMA,
-        whale_rate=WHALE_RATE,
-        whale_shape=WHALE_SHAPE,
-        whale_scale=WHALE_SCALE,
+        spend_rate=spend_rate,
+        spend_rate_lift=spend_rate_lift,
+        log_mean=log_mean,
+        log_sigma=log_sigma,
+        whale_rate=whale_rate,
+        whale_shape=whale_shape,
+        whale_scale=whale_scale,
     )
     welch = welch_ttest(revenue.control, revenue.treatment)
     bootstrap = bootstrap_mean_diff(
         revenue.control,
         revenue.treatment,
-        random_generator=np.random.default_rng(SEED_BOOTSTRAP),
+        random_generator=np.random.default_rng(seed_bootstrap),
         n_resamples=10_000,
     )
     permutation = permutation_test_mean_diff(
         revenue.control,
         revenue.treatment,
-        random_generator=np.random.default_rng(SEED_PERMUTATION),
+        random_generator=np.random.default_rng(seed_permutation),
         n_permutations=10_000,
     )
     trimmed = trimmed_mean_diff(revenue.control, revenue.treatment, trim=0.01)
-    if welch.p_value < ALPHA or permutation.p_value >= ALPHA or bootstrap.ci_low <= 0.0:
+    if welch.p_value < alpha or permutation.p_value >= alpha or bootstrap.ci_low <= 0.0:
         raise RuntimeError(
             "section 7 states Welch not significant, permutation significant, "
             "and a bootstrap interval excluding zero; the computed values no "
@@ -768,10 +786,10 @@ back across the line.""",
             f"p={permutation.p_value}, bootstrap low={bootstrap.ci_low}); rewrite it"
         )
 
-    mean_spend = (1 - WHALE_RATE) * np.exp(LOG_MEAN + LOG_SIGMA**2 / 2) + (
-        WHALE_RATE * WHALE_SCALE * WHALE_SHAPE / (WHALE_SHAPE - 1)
+    mean_spend = (1 - whale_rate) * np.exp(log_mean + log_sigma**2 / 2) + (
+        whale_rate * whale_scale * whale_shape / (whale_shape - 1)
     )
-    true_revenue_difference = SPEND_RATE_LIFT * mean_spend
+    true_revenue_difference = spend_rate_lift * mean_spend
     sample_standard_deviation = np.concatenate([revenue.control, revenue.treatment]).std(ddof=1)
     # what the 1% trim actually removes, given a mostly-zero distribution
     zero_share = float(np.mean(revenue.outcome == 0.0))
@@ -793,7 +811,7 @@ back across the line.""",
             body=f"""Revenue per user is the metric leadership actually asks about, and it is the
 one this experiment cannot answer cleanly. The distribution is zero-inflated
 ({pct(zero_share, 0)} of users spend nothing) with a Pareto tail. The generator
-gives roughly 1 in {1 / WHALE_RATE:.0f} spenders a "whale" draw whose distribution has
+gives roughly 1 in {1 / whale_rate:.0f} spenders a "whale" draw whose distribution has
 infinite variance. The generator was built this way on purpose, so the
 analysis has to face the heavy tail a revenue metric carries. {{{{fig:revenue}}}} shows the distributions and the interval
 disagreement.
@@ -870,9 +888,9 @@ were all planned. The disagreement itself is the finding, and it says
             title="What the generator actually did",
             body=f"""| Quantity | Truth | Full-run estimate | Best estimate |
 |---|---|---|---|
-| Persistent conversion lift | {pp(TRUE_LIFT, 1)} | {pp(primary.absolute_lift)} | {pp(late_comparison.absolute_lift)} (days 10-13, CI {pp(late_comparison.ci_low)} to {pp(late_comparison.ci_high)}) |
-| Day-0 novelty boost | {pp(NOVELTY_BOOST, 1)} | not separately reported | decay visible in the daily-lift panel in section {{{{sec:novelty}}}} |
-| Secondary metric lifts | 0 on all {spell(len(SECONDARY_METRICS))} | one naive false positive | none significant after Holm |
+| Persistent conversion lift | {pp(true_lift, 1)} | {pp(primary.absolute_lift)} | {pp(late_comparison.absolute_lift)} (days 10-13, CI {pp(late_comparison.ci_low)} to {pp(late_comparison.ci_high)}) |
+| Day-0 novelty boost | {pp(novelty_boost, 1)} | not separately reported | decay visible in the daily-lift panel in section {{{{sec:novelty}}}} |
+| Secondary metric lifts | 0 on all {spell(len(secondary_metrics))} | one naive false positive | none significant after Holm |
 | Revenue per user diff | {true_revenue_difference:+.2f} | {welch.difference:+.2f} | Welch interval spanning zero; underpowered |
 
 The pipeline got the qualitative story right everywhere. It caught the broken

@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import argparse
 import hashlib
 import traceback
 import urllib.request
@@ -40,12 +41,13 @@ EXPECTED_SHA256 = "0e5893329d8b93cefecc571777672028290ab69865718020c78c7284f291a
 DEST = Path(__file__).resolve().parents[1] / "data" / "hillstrom" / "hillstrom.csv"
 
 
-def main() -> int:
+def main() -> None:
+    argparse.ArgumentParser(description=__doc__).parse_args()
     if DEST.is_file():
         digest = hashlib.sha256(DEST.read_bytes()).hexdigest()
         if digest == EXPECTED_SHA256:
             print(f"already cached and verified: {DEST}")
-            return 0
+            return
         print(f"cached file has sha256 {digest}, expected {EXPECTED_SHA256}; refetching")
 
     DEST.parent.mkdir(parents=True, exist_ok=True)
@@ -66,7 +68,7 @@ def main() -> int:
             "Rerun this script once the site is reachable.",
             file=sys.stderr,
         )
-        return 2
+        sys.exit(2)
 
     try:
         digest = hashlib.sha256(partial_download.read_bytes()).hexdigest()
@@ -81,7 +83,7 @@ def main() -> int:
                 "analysis describes the pinned version.",
                 file=sys.stderr,
             )
-            return 2
+            sys.exit(2)
         partial_download.replace(DEST)
     except OSError:
         traceback.print_exc()
@@ -91,15 +93,15 @@ def main() -> int:
             "Rerun this script.",
             file=sys.stderr,
         )
-        return 2
+        sys.exit(2)
     print(f"fetched and verified: {DEST} ({DEST.stat().st_size:,} bytes)")
     print(
         "data: Kevin Hillstrom, MineThatData E-Mail Analytics And Data "
         "Mining Challenge (2008). Not redistributed here; no license was "
         "ever stated by the publisher."
     )
-    return 0
+    return
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

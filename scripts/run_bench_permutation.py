@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import argparse
 import datetime
 import os
 import platform
@@ -43,8 +44,6 @@ CHUNK = 256  # matches _CHUNK in abkit.resampling
 SEED_DATA = 7
 SEED_DRAW = 2
 REPEATS = 3
-
-ChunkSums = Callable[[np.random.Generator, NDArray[np.float64], int, int], NDArray[np.float64]]
 
 
 def argsort_sums(
@@ -64,7 +63,9 @@ def shuffle_sums(
 
 
 def time_variant(
-    control: NDArray[np.float64], treatment: NDArray[np.float64], chunk_sums: ChunkSums
+    control: NDArray[np.float64],
+    treatment: NDArray[np.float64],
+    chunk_sums: Callable[[np.random.Generator, NDArray[np.float64], int, int], NDArray[np.float64]],
 ) -> tuple[float, float]:
     """Run one full permutation test with the given draw and return (seconds, p)."""
     random_generator = np.random.default_rng(SEED_DRAW)
@@ -100,6 +101,7 @@ def time_shipped(
 
 
 def main() -> None:
+    argparse.ArgumentParser(description=__doc__).parse_args()
     random_generator = np.random.default_rng(SEED_DATA)
     control = random_generator.standard_normal(N_PER_ARM)
     treatment = random_generator.standard_normal(N_PER_ARM)
