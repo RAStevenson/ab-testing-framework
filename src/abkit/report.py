@@ -71,18 +71,18 @@ def render_report(
     rendered section as ``## N. Title`` with tokens resolved and figures
     placed after their first citing paragraph.
     """
-    keys = [s.key for s in sections]
+    keys = [section.key for section in sections]
     if len(set(keys)) != len(keys):
-        dupes = sorted({k for k in keys if keys.count(k) > 1})
+        dupes = sorted({key for key in keys if keys.count(key) > 1})
         raise ReportBuildError(f"duplicate section keys: {dupes}")
 
-    rendered = [s for s in sections if s.requires <= caps]
-    section_number = {s.key: i + 1 for i, s in enumerate(rendered)}
+    rendered = [section for section in sections if section.requires <= caps]
+    section_number = {section.key: i + 1 for i, section in enumerate(rendered)}
 
     figure_keys: list[str] = []
     figure_by_key: dict[str, FigureSpec] = {}
-    for s in rendered:
-        for fig in s.figures:
+    for section in rendered:
+        for fig in section.figures:
             if fig.key in figure_by_key:
                 raise ReportBuildError(f"duplicate figure key {fig.key!r}")
             figure_by_key[fig.key] = fig
@@ -92,11 +92,11 @@ def render_report(
     # so "Figure 1" is the first figure a reader meets, not an accident of
     # which section owns it
     citation_order: list[str] = []
-    for s in rendered:
-        for kind, key in _TOKEN.findall(s.body):
+    for section in rendered:
+        for kind, key in _TOKEN.findall(section.body):
             if kind == "fig" and key in figure_by_key and key not in citation_order:
                 citation_order.append(key)
-    uncited = [k for k in figure_keys if k not in citation_order]
+    uncited = [key for key in figure_keys if key not in citation_order]
     if uncited:
         raise ReportBuildError(
             f"figures never cited from any rendered body: {uncited}; every figure "
@@ -108,7 +108,7 @@ def render_report(
         kind, key = match.group(1), match.group(2)
         if kind == "sec":
             if key not in section_number:
-                dropped = key in {s.key for s in sections}
+                dropped = key in {section.key for section in sections}
                 raise ReportBuildError(
                     f"{where} references section {key!r} which "
                     + ("did not render under the current data" if dropped else "does not exist")
@@ -116,7 +116,7 @@ def render_report(
                 )
             return str(section_number[key])
         if key not in figure_number:
-            supplied = {f.key for sec in sections for f in sec.figures}
+            supplied = {figure.key for sec in sections for figure in sec.figures}
             raise ReportBuildError(
                 f"{where} references figure {key!r} which "
                 + (
@@ -130,11 +130,13 @@ def render_report(
 
     out: list[str] = [header.rstrip() + "\n"]
     emitted: set[str] = set()
-    for s in rendered:
-        out.append(f"\n## {section_number[s.key]}. {s.title}\n")
-        for paragraph in s.body.split("\n\n"):
-            where = f"section {s.key!r}"
-            resolved = _TOKEN.sub(lambda m, w=where: resolve(m, where=w), paragraph).rstrip()
+    for section in rendered:
+        out.append(f"\n## {section_number[section.key]}. {section.title}\n")
+        for paragraph in section.body.split("\n\n"):
+            where = f"section {section.key!r}"
+            resolved = _TOKEN.sub(
+                lambda match, location=where: resolve(match, where=location), paragraph
+            ).rstrip()
             if resolved:
                 out.append("\n" + resolved + "\n")
             for kind, key in _TOKEN.findall(paragraph):

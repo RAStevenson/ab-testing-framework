@@ -55,8 +55,8 @@ def two_proportion_ztest(
     se_pooled = np.sqrt(pooled * (1.0 - pooled) * (1.0 / n_control + 1.0 / n_treatment))
     if se_pooled == 0.0:
         raise ValueError("all outcomes identical in both arms; z-test is undefined")
-    z = diff / se_pooled
-    p_value = 2.0 * stats.norm.sf(abs(z))
+    z_statistic = diff / se_pooled
+    p_value = 2.0 * stats.norm.sf(abs(z_statistic))
 
     # Agresti-Caffo: add one success and one failure to each arm, then form a
     # Wald interval on the adjusted rates. Plain Wald collapses to zero width
@@ -82,7 +82,7 @@ def two_proportion_ztest(
         rate_treatment=rate_t,
         absolute_lift=diff,
         relative_lift=diff / rate_c if rate_c > 0.0 else float("nan"),
-        statistic=float(z),
+        statistic=float(z_statistic),
         p_value=float(p_value),
         # a difference of proportions lives in [-1, 1], and the adjustment can
         # push the interval a hair outside it at extreme rates; clipping to the
@@ -104,36 +104,44 @@ def welch_ttest(
     Welch rather than Student because experiment arms routinely differ in
     both size and variance; Welch costs nothing when they do not.
     """
-    x = np.asarray(control, dtype=np.float64)
-    y = np.asarray(treatment, dtype=np.float64)
-    if x.ndim != 1 or y.ndim != 1:
-        raise ValueError(f"both arms must be 1-d, got shapes {x.shape} and {y.shape}")
-    if x.size < 2 or y.size < 2:
-        raise ValueError(f"need at least 2 observations per arm, got {x.size} and {y.size}")
-    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+    control_values = np.asarray(control, dtype=np.float64)
+    treatment_values = np.asarray(treatment, dtype=np.float64)
+    if control_values.ndim != 1 or treatment_values.ndim != 1:
+        raise ValueError(
+            f"both arms must be 1-d, got shapes {control_values.shape} and {treatment_values.shape}"
+        )
+    if control_values.size < 2 or treatment_values.size < 2:
+        raise ValueError(
+            f"need at least 2 observations per arm, got {control_values.size} "
+            f"and {treatment_values.size}"
+        )
+    if not np.all(np.isfinite(control_values)) or not np.all(np.isfinite(treatment_values)):
         raise ValueError("outcomes must all be finite; found NaN or infinity")
     if not 0.0 < confidence < 1.0:
         raise ValueError(f"confidence must be in (0, 1), got {confidence}")
 
-    var_x = x.var(ddof=1)
-    var_y = y.var(ddof=1)
-    se_sq = var_x / x.size + var_y / y.size
+    var_x = control_values.var(ddof=1)
+    var_y = treatment_values.var(ddof=1)
+    se_sq = var_x / control_values.size + var_y / treatment_values.size
     if se_sq == 0.0:
         raise ValueError("both arms are constant; t-test is undefined")
-    df = se_sq**2 / ((var_x / x.size) ** 2 / (x.size - 1) + (var_y / y.size) ** 2 / (y.size - 1))
-    diff = y.mean() - x.mean()
-    t = diff / np.sqrt(se_sq)
-    p_value = 2.0 * stats.t.sf(abs(t), df)
-    t_crit = stats.t.ppf(0.5 + confidence / 2.0, df)
+    degrees_of_freedom = se_sq**2 / (
+        (var_x / control_values.size) ** 2 / (control_values.size - 1)
+        + (var_y / treatment_values.size) ** 2 / (treatment_values.size - 1)
+    )
+    diff = treatment_values.mean() - control_values.mean()
+    t_statistic = diff / np.sqrt(se_sq)
+    p_value = 2.0 * stats.t.sf(abs(t_statistic), degrees_of_freedom)
+    t_crit = stats.t.ppf(0.5 + confidence / 2.0, degrees_of_freedom)
     half_width = t_crit * np.sqrt(se_sq)
     return MeanComparison(
-        n_control=int(x.size),
-        n_treatment=int(y.size),
-        mean_control=float(x.mean()),
-        mean_treatment=float(y.mean()),
+        n_control=int(control_values.size),
+        n_treatment=int(treatment_values.size),
+        mean_control=float(control_values.mean()),
+        mean_treatment=float(treatment_values.mean()),
         difference=float(diff),
-        statistic=float(t),
-        df=float(df),
+        statistic=float(t_statistic),
+        df=float(degrees_of_freedom),
         p_value=float(p_value),
         ci_low=float(diff - half_width),
         ci_high=float(diff + half_width),
@@ -158,9 +166,9 @@ def welch_ttest_from_stats(
     statistics of the same arrays, this returns exactly what
     ``welch_ttest`` returns; the property tests pin that agreement.
     """
-    for name, n in (("n_control", n_control), ("n_treatment", n_treatment)):
-        if n < 2:
-            raise ValueError(f"need at least 2 observations per arm, got {name}={n}")
+    for name, count in (("n_control", n_control), ("n_treatment", n_treatment)):
+        if count < 2:
+            raise ValueError(f"need at least 2 observations per arm, got {name}={count}")
     for name, value in (
         ("mean_control", mean_control),
         ("var_control", var_control),
@@ -177,14 +185,14 @@ def welch_ttest_from_stats(
     se_sq = var_control / n_control + var_treatment / n_treatment
     if se_sq == 0.0:
         raise ValueError("both arms are constant; t-test is undefined")
-    df = se_sq**2 / (
+    degrees_of_freedom = se_sq**2 / (
         (var_control / n_control) ** 2 / (n_control - 1)
         + (var_treatment / n_treatment) ** 2 / (n_treatment - 1)
     )
     diff = mean_treatment - mean_control
-    t = diff / np.sqrt(se_sq)
-    p_value = 2.0 * stats.t.sf(abs(t), df)
-    t_crit = stats.t.ppf(0.5 + confidence / 2.0, df)
+    t_statistic = diff / np.sqrt(se_sq)
+    p_value = 2.0 * stats.t.sf(abs(t_statistic), degrees_of_freedom)
+    t_crit = stats.t.ppf(0.5 + confidence / 2.0, degrees_of_freedom)
     half_width = t_crit * np.sqrt(se_sq)
     return MeanComparison(
         n_control=int(n_control),
@@ -192,8 +200,8 @@ def welch_ttest_from_stats(
         mean_control=float(mean_control),
         mean_treatment=float(mean_treatment),
         difference=float(diff),
-        statistic=float(t),
-        df=float(df),
+        statistic=float(t_statistic),
+        df=float(degrees_of_freedom),
         p_value=float(p_value),
         ci_low=float(diff - half_width),
         ci_high=float(diff + half_width),
@@ -236,18 +244,18 @@ def srm_check(
 
 
 def _validated_pvalues(p_values: ArrayLike) -> NDArray[np.float64]:
-    p = np.asarray(p_values, dtype=np.float64)
-    if p.ndim != 1 or p.size == 0:
+    valid_p_values = np.asarray(p_values, dtype=np.float64)
+    if valid_p_values.ndim != 1 or valid_p_values.size == 0:
         raise ValueError("p_values must be a non-empty 1-d array")
-    if np.any((p < 0.0) | (p > 1.0)) or np.any(np.isnan(p)):
+    if np.any((valid_p_values < 0.0) | (valid_p_values > 1.0)) or np.any(np.isnan(valid_p_values)):
         raise ValueError("p_values must lie in [0, 1]")
-    return p
+    return valid_p_values
 
 
 def bonferroni(p_values: ArrayLike) -> NDArray[np.float64]:
     """Bonferroni-adjusted p-values. Controls FWER; simple but conservative."""
-    p = _validated_pvalues(p_values)
-    return np.minimum(p * p.size, 1.0)
+    valid_p_values = _validated_pvalues(p_values)
+    return np.minimum(valid_p_values * valid_p_values.size, 1.0)
 
 
 def holm(p_values: ArrayLike) -> NDArray[np.float64]:
@@ -256,12 +264,12 @@ def holm(p_values: ArrayLike) -> NDArray[np.float64]:
     Controls FWER like Bonferroni but is uniformly more powerful, so
     there is no reason to prefer Bonferroni beyond hand-calculation.
     """
-    p = _validated_pvalues(p_values)
-    m = p.size
-    order = np.argsort(p)
-    scaled = p[order] * (m - np.arange(m))
+    valid_p_values = _validated_pvalues(p_values)
+    n_tests = valid_p_values.size
+    order = np.argsort(valid_p_values)
+    scaled = valid_p_values[order] * (n_tests - np.arange(n_tests))
     adjusted_sorted = np.minimum(np.maximum.accumulate(scaled), 1.0)
-    adjusted = np.empty(m)
+    adjusted = np.empty(n_tests)
     adjusted[order] = adjusted_sorted
     return adjusted
 
@@ -273,12 +281,12 @@ def benjamini_hochberg(p_values: ArrayLike) -> NDArray[np.float64]:
     over many secondary metrics where a few false positives are an
     acceptable price for power, not for a single ship decision.
     """
-    p = _validated_pvalues(p_values)
-    m = p.size
-    order = np.argsort(p)
-    ranks = np.arange(1, m + 1)
-    scaled = p[order] * m / ranks
+    valid_p_values = _validated_pvalues(p_values)
+    n_tests = valid_p_values.size
+    order = np.argsort(valid_p_values)
+    ranks = np.arange(1, n_tests + 1)
+    scaled = valid_p_values[order] * n_tests / ranks
     adjusted_sorted = np.minimum(np.minimum.accumulate(scaled[::-1])[::-1], 1.0)
-    adjusted = np.empty(m)
+    adjusted = np.empty(n_tests)
     adjusted[order] = adjusted_sorted
     return adjusted

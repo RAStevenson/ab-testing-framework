@@ -89,8 +89,8 @@ def test_subset_preserves_alignment():
 )
 def test_binary_rejects_bad_parameters(kwargs):
     defaults = {"n_users": 100, "base_rate": 0.1, "absolute_lift": 0.01}
-    call = {**defaults, **{k: v for k, v in kwargs.items() if k in defaults}}
-    extra = {k: v for k, v in kwargs.items() if k not in defaults}
+    call = {**defaults, **{name: value for name, value in kwargs.items() if name in defaults}}
+    extra = {name: value for name, value in kwargs.items() if name not in defaults}
     with pytest.raises(ValueError):
         generate_binary(
             call["n_users"],

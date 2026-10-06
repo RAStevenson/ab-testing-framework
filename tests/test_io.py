@@ -40,9 +40,9 @@ def _config_text(**overrides: str) -> str:
 
 
 def _write_config(tmp_path: Path, text: str) -> Path:
-    p = tmp_path / "config.toml"
-    p.write_text(text, encoding="utf-8")
-    return p
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(text, encoding="utf-8")
+    return config_path
 
 
 @pytest.fixture()
@@ -55,7 +55,7 @@ class TestConfig:
     def test_ok_fixture_parses(self) -> None:
         cfg = load_config(FIXTURES / "experiment_ok.toml")
         assert cfg["experiment"]["name"] == "fixture-experiment"
-        assert [m["name"] for m in cfg["metrics"]] == ["converted", "spend"]
+        assert [metric["name"] for metric in cfg["metrics"]] == ["converted", "spend"]
 
     def test_two_primaries_rejected(self, tmp_path: Path) -> None:
         text = _config_text(
@@ -104,7 +104,7 @@ class TestCleanLoad:
 
     def test_end_of_run_aggregates_match_hand_computed(self, ok_experiment: Experiment) -> None:
         # treatment/converted: 6 ones, 9 zeros -> mean 0.4, ddof=1 var 3.6/14
-        agg = {(a.arm, a.metric, a.checkpoint): a for a in ok_experiment.aggregates}
+        agg = {(cell.arm, cell.metric, cell.checkpoint): cell for cell in ok_experiment.aggregates}
         conv_t = agg[("treatment", "converted", None)]
         assert conv_t.n == 15
         assert conv_t.mean == pytest.approx(0.4)
@@ -114,12 +114,12 @@ class TestCleanLoad:
         assert spend_c.mean == pytest.approx(100 / 15)
 
     def test_cumulative_aggregates_grow_with_checkpoints(self, ok_experiment: Experiment) -> None:
-        ns = [
-            a.n
-            for a in ok_experiment.aggregates
-            if a.arm == "control" and a.metric == "converted" and a.checkpoint is not None
+        counts = [
+            cell.n
+            for cell in ok_experiment.aggregates
+            if cell.arm == "control" and cell.metric == "converted" and cell.checkpoint is not None
         ]
-        assert ns == [3, 6, 9, 12, 15]
+        assert counts == [3, 6, 9, 12, 15]
 
     def test_missing_declared_column_rejected(self, tmp_path: Path) -> None:
         cfg = load_config(FIXTURES / "experiment_ok.toml")
@@ -144,7 +144,7 @@ class TestValidatorRules:
         return load_user_rows(cfg, FIXTURES / "user_rows_dirty.csv")
 
     def _count(self, exp: Experiment, rule: str) -> int:
-        return sum(e.count for e in exp.validation if e.rule == rule)
+        return sum(event.count for event in exp.validation if event.rule == rule)
 
     def test_alias_normalized_fires(self, dirty: Experiment) -> None:
         assert self._count(dirty, "alias_normalized") == 1
@@ -175,7 +175,7 @@ class TestValidatorRules:
             load_user_rows(cfg, FIXTURES / "user_rows_dirty.csv")
 
     def test_events_carry_example_row(self, dirty: Experiment) -> None:
-        by_rule = {e.rule: e.detail for e in dirty.validation}
+        by_rule = {event.rule: event.detail for event in dirty.validation}
         assert by_rule["negative_value_dropped"] == "first at data row 8"
 
 
@@ -197,11 +197,15 @@ class TestAggregates:
         assert agg_experiment.checkpoints == (1.0, 2.0, 3.0)
 
     def test_experiment_filter_applied(self, agg_experiment: Experiment) -> None:
-        cells = {(a.arm, a.metric, a.checkpoint): a for a in agg_experiment.aggregates}
+        cells = {
+            (cell.arm, cell.metric, cell.checkpoint): cell for cell in agg_experiment.aggregates
+        }
         assert cells[("control", "metric_1", 1.0)].n == 100  # expA, not expB's 50
 
     def test_end_of_run_equals_last_checkpoint(self, agg_experiment: Experiment) -> None:
-        cells = {(a.arm, a.metric, a.checkpoint): a for a in agg_experiment.aggregates}
+        cells = {
+            (cell.arm, cell.metric, cell.checkpoint): cell for cell in agg_experiment.aggregates
+        }
         final = cells[("variant_2", "metric_4", None)]
         last = cells[("variant_2", "metric_4", 3.0)]
         assert (final.n, final.mean, final.variance) == (last.n, last.mean, last.variance)
@@ -239,8 +243,8 @@ class TestIntervalFromCumulative:
         )
         expected = [observations[:60], observations[60:140], observations[140:200]]
         assert np.allclose(int_n, [60, 80, 60])
-        assert np.allclose(int_mean, [c.mean() for c in expected], rtol=1e-10)
-        assert np.allclose(int_var, [c.var(ddof=1) for c in expected], rtol=1e-8)
+        assert np.allclose(int_mean, [chunk.mean() for chunk in expected], rtol=1e-10)
+        assert np.allclose(int_var, [chunk.var(ddof=1) for chunk in expected], rtol=1e-8)
 
     def test_repeated_checkpoint_rejected(self) -> None:
         with pytest.raises(ValueError, match="zero observations"):
@@ -298,7 +302,7 @@ class TestBatteryRegressions:
         )
         exp = load_user_rows(cfg, data)
         assert exp.rows["arm"].size == 4
-        assert not any(e.rule == "duplicate_user_dropped" for e in exp.validation)
+        assert not any(event.rule == "duplicate_user_dropped" for event in exp.validation)
 
     def test_nan_and_inf_metric_values_dropped(self, tmp_path: Path) -> None:
         cfg = load_config(_write_config(tmp_path, _config_text()))
@@ -310,7 +314,9 @@ class TestBatteryRegressions:
             encoding="utf-8",
         )
         exp = load_user_rows(cfg, data)
-        assert sum(e.count for e in exp.validation if e.rule == "uncoercible_dropped") == 2
+        assert (
+            sum(event.count for event in exp.validation if event.rule == "uncoercible_dropped") == 2
+        )
         assert np.all(np.isfinite(exp.rows["spend"]))
 
     def test_nonbinary_value_in_binary_metric_dropped(self, tmp_path: Path) -> None:
@@ -322,7 +328,9 @@ class TestBatteryRegressions:
             encoding="utf-8",
         )
         exp = load_user_rows(cfg, data)
-        assert sum(e.count for e in exp.validation if e.rule == "nonbinary_dropped") == 1
+        assert (
+            sum(event.count for event in exp.validation if event.rule == "nonbinary_dropped") == 1
+        )
 
     def test_garbage_day_dropped_not_crashed(self, tmp_path: Path) -> None:
         cfg = load_config(_write_config(tmp_path, _config_text()))
@@ -334,7 +342,9 @@ class TestBatteryRegressions:
         )
         exp = load_user_rows(cfg, data)
         assert exp.rows["arm"].size == 2
-        assert sum(e.count for e in exp.validation if e.rule == "uncoercible_dropped") == 2
+        assert (
+            sum(event.count for event in exp.validation if event.rule == "uncoercible_dropped") == 2
+        )
 
     def test_bom_header_accepted(self, tmp_path: Path) -> None:
         cfg = load_config(_write_config(tmp_path, _config_text()))
@@ -412,7 +422,10 @@ class TestBatteryRegressions:
             encoding="utf-8",
         )
         exp = load_user_rows(cfg, data)
-        assert sum(e.count for e in exp.validation if e.rule == "arm_label_normalized") == 2
+        assert (
+            sum(event.count for event in exp.validation if event.rule == "arm_label_normalized")
+            == 2
+        )
         assert exp.rows["arm"].size == 4
 
 

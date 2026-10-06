@@ -182,8 +182,8 @@ def generate_continuous(
     p_spend = np.where(treated, spend_rate + spend_rate_lift, spend_rate)
     spends = rng.random(n_users) < p_spend
 
-    mu = np.where(treated, log_mean + np.log1p(spend_uplift), log_mean)
-    amount = rng.lognormal(mean=mu, sigma=log_sigma)
+    user_log_mean = np.where(treated, log_mean + np.log1p(spend_uplift), log_mean)
+    amount = rng.lognormal(mean=user_log_mean, sigma=log_sigma)
     # rng.pareto samples the Lomax distribution; adding 1 gives Pareto I
     # with minimum 1, scaled to whale_scale
     whale_amount = whale_scale * (1.0 + rng.pareto(whale_shape, size=n_users))

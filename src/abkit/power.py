@@ -23,9 +23,9 @@ def _validate_alpha_power(alpha: float, power: float | None = None) -> None:
 
 
 def _validate_rates(rate_control: float, rate_treatment: float) -> None:
-    for name, r in (("rate_control", rate_control), ("rate_treatment", rate_treatment)):
-        if not 0.0 < r < 1.0:
-            raise ValueError(f"{name} must be in (0, 1), got {r}")
+    for name, rate in (("rate_control", rate_control), ("rate_treatment", rate_treatment)):
+        if not 0.0 < rate < 1.0:
+            raise ValueError(f"{name} must be in (0, 1), got {rate}")
     if rate_control == rate_treatment:
         raise ValueError("rates are equal; power against a zero effect is just alpha")
 
@@ -75,7 +75,7 @@ def sample_size_two_proportions(
     pooled = (rate_control + rate_treatment) / 2.0
     z_crit = stats.norm.isf(alpha / 2.0)
     z_power = stats.norm.isf(1.0 - power)
-    n = (
+    n_exact = (
         (
             z_crit * np.sqrt(2.0 * pooled * (1.0 - pooled))
             + z_power
@@ -83,7 +83,7 @@ def sample_size_two_proportions(
         )
         / delta
     ) ** 2
-    n_int = max(2, int(np.ceil(n)))
+    n_int = max(2, int(np.ceil(n_exact)))
     # the closed form is the algebraic inverse of power_two_proportions, so
     # these walks normally take zero steps; they exist to absorb the case
     # where floating-point error puts ceil() on the wrong side of the integer
@@ -154,51 +154,54 @@ def mde_two_proportions(
 
 def power_two_means(
     difference: float,
-    sd: float,
+    standard_deviation: float,
     n_per_arm: int,
     *,
     alpha: float = 0.05,
 ) -> float:
-    """Power of the two-sided two-sample test for means, common sd, equal n.
+    """Power of the two-sided two-sample test for means, common standard deviation, equal n.
 
     Normal approximation (no t correction), fine for the arm sizes online
     experiments run at.
     """
     _validate_alpha_power(alpha)
-    if sd <= 0.0:
-        raise ValueError(f"sd must be positive, got {sd}")
+    if standard_deviation <= 0.0:
+        raise ValueError(f"standard_deviation must be positive, got {standard_deviation}")
     if difference == 0.0:
         raise ValueError("difference is zero; power against a zero effect is just alpha")
     if n_per_arm < 2:
         raise ValueError(f"n_per_arm must be at least 2, got {n_per_arm}")
-    se = sd * np.sqrt(2.0 / n_per_arm)
+    standard_error = standard_deviation * np.sqrt(2.0 / n_per_arm)
     z_crit = stats.norm.isf(alpha / 2.0)
-    return float(stats.norm.sf(z_crit - abs(difference) / se))
+    return float(stats.norm.sf(z_crit - abs(difference) / standard_error))
 
 
 def sample_size_two_means(
     difference: float,
-    sd: float,
+    standard_deviation: float,
     *,
     alpha: float = 0.05,
     power: float = 0.8,
 ) -> int:
     """Smallest equal per-arm n reaching the target power for a mean difference."""
     _validate_alpha_power(alpha, power)
-    if sd <= 0.0:
-        raise ValueError(f"sd must be positive, got {sd}")
+    if standard_deviation <= 0.0:
+        raise ValueError(f"standard_deviation must be positive, got {standard_deviation}")
     if difference == 0.0:
         raise ValueError("difference is zero; no finite n reaches any power")
     z_crit = stats.norm.isf(alpha / 2.0)
     z_power = stats.norm.isf(1.0 - power)
-    n = 2.0 * ((z_crit + z_power) * sd / abs(difference)) ** 2
-    n_int = max(2, int(np.ceil(n)))
+    n_exact = 2.0 * ((z_crit + z_power) * standard_deviation / abs(difference)) ** 2
+    n_int = max(2, int(np.ceil(n_exact)))
     # both directions, for the same reason as sample_size_two_proportions:
     # when n* lands exactly on an integer, floating-point error can push
     # ceil() one past it, and walking up alone would never come back
-    while power_two_means(difference, sd, n_int, alpha=alpha) < power:
+    while power_two_means(difference, standard_deviation, n_int, alpha=alpha) < power:
         n_int += 1
-    while n_int > 2 and power_two_means(difference, sd, n_int - 1, alpha=alpha) >= power:
+    while (
+        n_int > 2
+        and power_two_means(difference, standard_deviation, n_int - 1, alpha=alpha) >= power
+    ):
         n_int -= 1
     return n_int
 

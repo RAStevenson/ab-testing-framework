@@ -25,18 +25,23 @@ _CHUNK = 256
 def _two_samples(
     control: ArrayLike, treatment: ArrayLike
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    x = np.asarray(control, dtype=np.float64)
-    y = np.asarray(treatment, dtype=np.float64)
-    if x.ndim != 1 or y.ndim != 1:
-        raise ValueError(f"both arms must be 1-d, got shapes {x.shape} and {y.shape}")
-    if x.size < 2 or y.size < 2:
-        raise ValueError(f"need at least 2 observations per arm, got {x.size} and {y.size}")
+    control_values = np.asarray(control, dtype=np.float64)
+    treatment_values = np.asarray(treatment, dtype=np.float64)
+    if control_values.ndim != 1 or treatment_values.ndim != 1:
+        raise ValueError(
+            f"both arms must be 1-d, got shapes {control_values.shape} and {treatment_values.shape}"
+        )
+    if control_values.size < 2 or treatment_values.size < 2:
+        raise ValueError(
+            f"need at least 2 observations per arm, got {control_values.size} "
+            f"and {treatment_values.size}"
+        )
     # NaN fails every comparison, which in the permutation test means no
     # resample ever counts as extreme: it would return p = 1/(n+1), its most
     # significant possible value, on unusable data. Refuse instead.
-    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+    if not np.all(np.isfinite(control_values)) or not np.all(np.isfinite(treatment_values)):
         raise ValueError("outcomes must all be finite; found NaN or infinity")
-    return x, y
+    return control_values, treatment_values
 
 
 def bootstrap_mean_diff(
@@ -54,7 +59,7 @@ def bootstrap_mean_diff(
     mean difference is close to symmetric at experiment-scale n; a BCa
     interval would tighten small-sample skew cases.
     """
-    x, y = _two_samples(control, treatment)
+    control_values, treatment_values = _two_samples(control, treatment)
     if n_resamples < 100:
         raise ValueError(f"n_resamples must be at least 100, got {n_resamples}")
     if not 0.0 < confidence < 1.0:
@@ -64,15 +69,17 @@ def bootstrap_mean_diff(
     done = 0
     while done < n_resamples:
         size = min(_CHUNK, n_resamples - done)
-        idx_x = rng.integers(0, x.size, size=(size, x.size))
-        idx_y = rng.integers(0, y.size, size=(size, y.size))
-        diffs[done : done + size] = y[idx_y].mean(axis=1) - x[idx_x].mean(axis=1)
+        idx_x = rng.integers(0, control_values.size, size=(size, control_values.size))
+        idx_y = rng.integers(0, treatment_values.size, size=(size, treatment_values.size))
+        diffs[done : done + size] = treatment_values[idx_y].mean(axis=1) - control_values[
+            idx_x
+        ].mean(axis=1)
         done += size
 
     tail = (1.0 - confidence) / 2.0
     low, high = np.quantile(diffs, [tail, 1.0 - tail])
     return BootstrapResult(
-        estimate=float(y.mean() - x.mean()),
+        estimate=float(treatment_values.mean() - control_values.mean()),
         ci_low=float(low),
         ci_high=float(high),
         confidence=confidence,
@@ -96,15 +103,15 @@ def permutation_test_mean_diff(
     ``(1 + hits) / (n_permutations + 1)``, which is conservative and
     never exactly zero.
     """
-    x, y = _two_samples(control, treatment)
+    control_values, treatment_values = _two_samples(control, treatment)
     if n_permutations < 100:
         raise ValueError(f"n_permutations must be at least 100, got {n_permutations}")
 
-    pooled = np.concatenate([x, y])
-    n_t = y.size
-    n_c = x.size
+    pooled = np.concatenate([control_values, treatment_values])
+    n_t = treatment_values.size
+    n_c = control_values.size
     total = pooled.sum()
-    observed = y.mean() - x.mean()
+    observed = treatment_values.mean() - control_values.mean()
 
     hits = 0
     done = 0
@@ -146,7 +153,7 @@ def trimmed_mean_diff(
     carrying the result. ``trim`` is the fraction cut from each tail of
     each arm.
     """
-    x, y = _two_samples(control, treatment)
+    control_values, treatment_values = _two_samples(control, treatment)
     if not 0.0 <= trim < 0.5:
         raise ValueError(f"trim must be in [0, 0.5), got {trim}")
-    return float(stats.trim_mean(y, trim) - stats.trim_mean(x, trim))
+    return float(stats.trim_mean(treatment_values, trim) - stats.trim_mean(control_values, trim))

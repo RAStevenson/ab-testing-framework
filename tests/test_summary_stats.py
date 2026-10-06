@@ -74,17 +74,28 @@ class TestZFromCumulativeStats:
         per_look_t = rng.integers(400, 900, size=n_looks)
         outcomes_c = rng.random(int(per_look_c.sum())) < 0.06
         outcomes_t = rng.random(int(per_look_t.sum())) < 0.066
-        nc = np.cumsum(per_look_c).astype(np.float64)
-        nt = np.cumsum(per_look_t).astype(np.float64)
-        xc = np.array([outcomes_c[: int(n)].sum() for n in nc], dtype=np.float64)
-        xt = np.array([outcomes_t[: int(n)].sum() for n in nt], dtype=np.float64)
-        rate_c, rate_t = xc / nc, xt / nt
+        control_counts = np.cumsum(per_look_c).astype(np.float64)
+        treatment_counts = np.cumsum(per_look_t).astype(np.float64)
+        control_conversions = np.array(
+            [outcomes_c[: int(count)].sum() for count in control_counts], dtype=np.float64
+        )
+        treatment_conversions = np.array(
+            [outcomes_t[: int(count)].sum() for count in treatment_counts], dtype=np.float64
+        )
+        rate_c, rate_t = (
+            control_conversions / control_counts,
+            treatment_conversions / treatment_counts,
+        )
         # ddof=1 sample variance of a 0/1 array with mean p is n*p*(1-p)/(n-1)
-        var_c = nc * rate_c * (1.0 - rate_c) / (nc - 1.0)
-        var_t = nt * rate_t * (1.0 - rate_t) / (nt - 1.0)
+        var_c = control_counts * rate_c * (1.0 - rate_c) / (control_counts - 1.0)
+        var_t = treatment_counts * rate_t * (1.0 - rate_t) / (treatment_counts - 1.0)
 
-        z_stats = z_from_cumulative_stats(nc, rate_c, var_c, nt, rate_t, var_t)
-        z_counts = z_from_cumulative_counts(xc, nc, xt, nt)
+        z_stats = z_from_cumulative_stats(
+            control_counts, rate_c, var_c, treatment_counts, rate_t, var_t
+        )
+        z_counts = z_from_cumulative_counts(
+            control_conversions, control_counts, treatment_conversions, treatment_counts
+        )
         # same numerator, so z_stats / z_counts is exactly the SE ratio and
         # a ratio bound is the fair comparison even where z is near zero
         ratio_dev = np.abs(z_stats / z_counts - 1.0)

@@ -121,11 +121,11 @@ def main() -> None:
     for name, run in variants:
         times: list[float] = []
         for _ in range(REPEATS):
-            elapsed, p = run()
+            elapsed, p_value = run()
             times.append(elapsed)
-            p_values[name] = p
+            p_values[name] = p_value
         best[name] = min(times)
-        runs = ", ".join(f"{t:.2f}" for t in times)
+        runs = ", ".join(f"{seconds:.2f}" for seconds in times)
         print(
             f"{name}: best {best[name]:.2f} s of {REPEATS} runs ({runs} s); p = {p_values[name]:.4f}"
         )

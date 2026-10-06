@@ -58,8 +58,8 @@ FIGURES = ANALYSIS / "figures"
 # experiment configuration (the "truth" the analysis tries to recover)
 # lives in config.toml next to the committed report; the report's final
 # section scores the analysis against exactly these values
-with open(ANALYSIS / "config.toml", "rb") as _fh:
-    _CFG = tomllib.load(_fh)
+with open(ANALYSIS / "config.toml", "rb") as _config_file:
+    _CFG = tomllib.load(_config_file)
 _TRUTH = _CFG["truth"]
 
 N_USERS = int(_TRUTH["n_users"])
@@ -100,9 +100,9 @@ if N_DAYS != 14:
 _SMALL_NUMBERS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
 
 
-def spell(n: int) -> str:
+def spell(number: int) -> str:
     """Small counts spelled out, so interpolated prose still reads as prose."""
-    return _SMALL_NUMBERS[n] if n < len(_SMALL_NUMBERS) else f"{n:,}"
+    return _SMALL_NUMBERS[number] if number < len(_SMALL_NUMBERS) else f"{number:,}"
 
 
 def style_axis(ax: Axes, *, grid_axis: str = "y") -> None:
@@ -117,12 +117,12 @@ def rate_test(data: ExperimentData) -> RateComparison:
     )
 
 
-def lift_se(r: RateComparison) -> float:
+def lift_se(comparison: RateComparison) -> float:
     """Unpooled standard error of the absolute lift in a rate comparison."""
     return float(
         np.sqrt(
-            r.rate_control * (1.0 - r.rate_control) / r.n_control
-            + r.rate_treatment * (1.0 - r.rate_treatment) / r.n_treatment
+            comparison.rate_control * (1.0 - comparison.rate_control) / comparison.n_control
+            + comparison.rate_treatment * (1.0 - comparison.rate_treatment) / comparison.n_treatment
         )
     )
 
@@ -130,13 +130,13 @@ def lift_se(r: RateComparison) -> float:
 def fig_daily_rates(data: ExperimentData) -> None:
     days = np.arange(N_DAYS)
     control_rates, treatment_rates, lifts, errs = [], [], [], []
-    for d in days:
-        sub = data.subset(data.day == d)
+    for day in days:
+        sub = data.subset(data.day == day)
         control_rates.append(sub.control.mean() * 100)
         treatment_rates.append(sub.treatment.mean() * 100)
-        r = rate_test(sub)
-        lifts.append(r.absolute_lift * 100)
-        errs.append((r.ci_high - r.ci_low) / 2 * 100)
+        comparison = rate_test(sub)
+        lifts.append(comparison.absolute_lift * 100)
+        errs.append((comparison.ci_high - comparison.ci_low) / 2 * 100)
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6.4), sharex=True)
     ax1.plot(days, control_rates, color=COLOR_CONTROL, linewidth=2, label="Control")
@@ -238,13 +238,25 @@ def fig_sequential(
 
 def fig_secondary(naive: NDArray[np.float64], adjusted: NDArray[np.float64]) -> None:
     fig, ax = plt.subplots(figsize=(8, 4.0))
-    y = np.arange(len(SECONDARY_METRICS))
-    ax.scatter(naive, y, s=55, color=COLOR_CONTROL, label="Unadjusted p", zorder=3)
+    positions = np.arange(len(SECONDARY_METRICS))
+    ax.scatter(naive, positions, s=55, color=COLOR_CONTROL, label="Unadjusted p", zorder=3)
     ax.scatter(
-        adjusted, y, s=55, color=COLOR_TREATMENT, marker="s", label="Holm-adjusted p", zorder=3
+        adjusted,
+        positions,
+        s=55,
+        color=COLOR_TREATMENT,
+        marker="s",
+        label="Holm-adjusted p",
+        zorder=3,
     )
-    for yi in y:
-        ax.plot([naive[yi], adjusted[yi]], [yi, yi], color=COLOR_REFERENCE, linewidth=1, zorder=2)
+    for position in positions:
+        ax.plot(
+            [naive[position], adjusted[position]],
+            [position, position],
+            color=COLOR_REFERENCE,
+            linewidth=1,
+            zorder=2,
+        )
     ax.axvline(0.05, color=COLOR_REFERENCE, linewidth=1.5, linestyle="--")
     ax.text(
         0.05,
@@ -255,7 +267,7 @@ def fig_secondary(naive: NDArray[np.float64], adjusted: NDArray[np.float64]) -> 
         color=COLOR_INK,
         va="top",
     )
-    ax.set_yticks(y, SECONDARY_METRICS)
+    ax.set_yticks(positions, SECONDARY_METRICS)
     ax.set_xscale("log")
     ax.set_xlabel("p-value (log scale)")
     ax.set_title(
@@ -315,9 +327,9 @@ def fig_revenue(
         ("Welch 95% CI", welch.difference, welch.ci_low, welch.ci_high),
         ("Bootstrap 95% CI", boot.estimate, boot.ci_low, boot.ci_high),
     ]
-    for yi, (_, center, lo, hi) in enumerate(intervals):
-        ax2.plot([lo, hi], [yi, yi], color=COLOR_CONTROL, linewidth=2)
-        ax2.plot(center, yi, "o", color=COLOR_INK, markersize=7)
+    for position, (_, center, ci_low, ci_high) in enumerate(intervals):
+        ax2.plot([ci_low, ci_high], [position, position], color=COLOR_CONTROL, linewidth=2)
+        ax2.plot(center, position, "o", color=COLOR_INK, markersize=7)
     ax2.plot(trimmed, len(intervals), "D", color=COLOR_TREATMENT, markersize=7)
     labels = [label for label, *_ in intervals] + ["Trimmed diff (1%)\ndifferent estimand"]
     ax2.set_yticks(np.arange(len(labels)), labels)
@@ -512,20 +524,26 @@ to measure the effect after habituation.""",
 
     # -------------------------------------------------- sequential replay
     look_days = np.arange(N_DAYS)
-    nc = np.array([np.sum((data.assignment == 0) & (data.day <= d)) for d in look_days])
-    nt = np.array([np.sum((data.assignment == 1) & (data.day <= d)) for d in look_days])
-    xc = np.array(
-        [np.sum(data.outcome[(data.assignment == 0) & (data.day <= d)]) for d in look_days]
+    control_counts = np.array(
+        [np.sum((data.assignment == 0) & (data.day <= day)) for day in look_days]
     )
-    xt = np.array(
-        [np.sum(data.outcome[(data.assignment == 1) & (data.day <= d)]) for d in look_days]
+    treatment_counts = np.array(
+        [np.sum((data.assignment == 1) & (data.day <= day)) for day in look_days]
+    )
+    control_conversions = np.array(
+        [np.sum(data.outcome[(data.assignment == 0) & (data.day <= day)]) for day in look_days]
+    )
+    treatment_conversions = np.array(
+        [np.sum(data.outcome[(data.assignment == 1) & (data.day <= day)]) for day in look_days]
     )
     # count-share information fractions: exactly right when the arm ratio
     # is constant across looks, which section 2's SRM check validates for
     # this 50/50 design (the library's aggregate path uses the harmonic
     # form because archives arrive with no such guarantee)
-    fractions = (nc + nt) / (nc[-1] + nt[-1])
-    z_path = z_from_cumulative_counts(xc, nc, xt, nt)
+    fractions = (control_counts + treatment_counts) / (control_counts[-1] + treatment_counts[-1])
+    z_path = z_from_cumulative_counts(
+        control_conversions, control_counts, treatment_conversions, treatment_counts
+    )
     seq = design(fractions.tolist(), alpha=ALPHA, spending="obrien-fleming")
     outcome = monitor(z_path.tolist(), seq)
     naive_crossings = np.nonzero(np.abs(z_path) >= Z_NAIVE)[0]
@@ -545,7 +563,8 @@ to measure the effect after habituation.""",
             f"design ({first_naive} vs {outcome.stopped_at_look}); rewrite it"
         )
     naive_lift = (
-        xt[first_naive - 1] / nt[first_naive - 1] - xc[first_naive - 1] / nc[first_naive - 1]
+        treatment_conversions[first_naive - 1] / treatment_counts[first_naive - 1]
+        - control_conversions[first_naive - 1] / control_counts[first_naive - 1]
     )
     fig_sequential(look_days, z_path, np.array(seq.boundaries))
 
@@ -608,9 +627,9 @@ novelty effect at that point in the run.""",
     for i in range(len(SECONDARY_METRICS)):
         rng_i = np.random.default_rng(SEED_SECONDARY_BASE + i)
         metric_data = generate_binary(N_USERS, 0.20, 0.0, rng=rng_i)
-        r = rate_test(metric_data)
-        naive_ps.append(r.p_value)
-        lifts.append(r.absolute_lift)
+        comparison = rate_test(metric_data)
+        naive_ps.append(comparison.p_value)
+        lifts.append(comparison.absolute_lift)
     naive_arr = np.array(naive_ps)
     holm_ps = holm(naive_arr)
     bh_ps = benjamini_hochberg(naive_arr)

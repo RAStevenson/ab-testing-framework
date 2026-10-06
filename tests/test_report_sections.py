@@ -40,9 +40,9 @@ def _user_experiment(tmp_path: Path, extra_metric: bool = False, truth: bool = F
         text += '\n[[metrics]]\nname = "converted_again"\ncolumn = "converted"\nkind = "binary"\n'
     if truth:
         text += "\n[truth]\nbase_rate = 0.27\ntrue_lift = 0.13\n"
-    p = tmp_path / "config.toml"
-    p.write_text(text, encoding="utf-8")
-    cfg = load_config(p)
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(text, encoding="utf-8")
+    cfg = load_config(config_path)
     return load_user_rows(cfg, FIXTURES / "user_rows_ok.csv")
 
 
@@ -50,7 +50,7 @@ class TestUserRowsReport:
     def test_section_set_and_render(self, tmp_path: Path) -> None:
         exp = _user_experiment(tmp_path, extra_metric=True)
         sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
-        keys = [s.key for s in sections]
+        keys = [section.key for section in sections]
         assert keys == [
             "validation",
             "design_power",
@@ -69,7 +69,7 @@ class TestUserRowsReport:
         # control 4/15 vs treatment 6/15 -> absolute lift 13.33 pp
         exp = _user_experiment(tmp_path)
         sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
-        primary = next(s for s in sections if s.key == "primary")
+        primary = next(section for section in sections if section.key == "primary")
         assert "13.33 pp" in primary.body
 
     def test_figures_written_and_cited(self, tmp_path: Path) -> None:
@@ -84,7 +84,7 @@ class TestUserRowsReport:
     def test_truth_section_renders_only_with_truth(self, tmp_path: Path) -> None:
         exp = _user_experiment(tmp_path, truth=True)
         sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
-        truth = next(s for s in sections if s.key == "truth")
+        truth = next(section for section in sections if section.key == "truth")
         assert "base_rate" in truth.body
         assert "0.27" in truth.body
 
@@ -92,7 +92,7 @@ class TestUserRowsReport:
         # two metrics, two arms -> one non-primary comparison -> no family
         exp = _user_experiment(tmp_path, extra_metric=False)
         sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
-        assert "corrections" not in [s.key for s in sections]
+        assert "corrections" not in [section.key for section in sections]
 
 
 class TestAggregatesReport:
@@ -104,7 +104,7 @@ class TestAggregatesReport:
 
     def test_section_set(self, sections_and_exp) -> None:
         sections, _ = sections_and_exp
-        keys = [s.key for s in sections]
+        keys = [section.key for section in sections]
         # no user rows: heavy_tail absent; no intended split: design_power
         # requires a control rate, which exists, so it renders on the binary
         # primary; srm renders in its ratio-stability form
@@ -114,7 +114,7 @@ class TestAggregatesReport:
 
     def test_srm_uses_ratio_stability_form(self, sections_and_exp) -> None:
         sections, _ = sections_and_exp
-        srm = next(s for s in sections if s.key == "srm")
+        srm = next(section for section in sections if section.key == "srm")
         assert "RATIO STABILITY" in srm.body
         assert "not on record" in srm.body
 
@@ -125,7 +125,7 @@ class TestAggregatesReport:
 
     def test_sequential_narrates_first_contrast(self, sections_and_exp) -> None:
         sections, _ = sections_and_exp
-        seq = next(s for s in sections if s.key == "sequential")
+        seq = next(section for section in sections if section.key == "sequential")
         assert "variant_2 vs control" in seq.body
 
 
@@ -136,10 +136,10 @@ class TestConsistentPrefix:
         rng = np.random.default_rng(3)
         observations = rng.lognormal(1.0, 0.6, size=300)
         splits = [100, 200, 300]
-        n = np.array([float(k) for k in splits])
-        mean = np.array([observations[:k].mean() for k in splits])
-        var = np.array([observations[:k].var(ddof=1) for k in splits])
-        assert _consistent_prefix(n, mean, var) == 3
+        count = np.array([float(end) for end in splits])
+        mean = np.array([observations[:end].mean() for end in splits])
+        var = np.array([observations[:end].var(ddof=1) for end in splits])
+        assert _consistent_prefix(count, mean, var) == 3
 
     def test_corrupt_final_checkpoint_is_cut(self) -> None:
         # final checkpoint's mean drops while n barely grows, the settled-
@@ -147,10 +147,10 @@ class TestConsistentPrefix:
         # increment variance goes hugely negative and the prefix stops
         from abkit.report_sections import _consistent_prefix
 
-        n = np.array([1000.0, 2000.0, 2010.0])
+        count = np.array([1000.0, 2000.0, 2010.0])
         mean = np.array([0.10, 0.11, 0.05])
-        var = mean * (1 - mean) * n / (n - 1)
-        assert _consistent_prefix(n, mean, var) == 2
+        var = mean * (1 - mean) * count / (count - 1)
+        assert _consistent_prefix(count, mean, var) == 2
 
 
 class TestArchiveSweep:
@@ -204,9 +204,9 @@ class TestHillstromShapedFixture:
             '[[metrics]]\nname = "conversion"\nkind = "binary"\n\n'
             '[[metrics]]\nname = "spend"\nkind = "continuous"\nnonnegative = true\n'
         )
-        p = tmp_path / "config.toml"
-        p.write_text(text, encoding="utf-8")
-        cfg = load_config(p)
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(text, encoding="utf-8")
+        cfg = load_config(config_path)
         return load_user_rows(cfg, FIXTURES / "hillstrom_shaped.csv")
 
     def test_three_arms_and_no_time_axis(self, tmp_path: Path) -> None:
@@ -218,7 +218,7 @@ class TestHillstromShapedFixture:
 
     def test_alias_normalization_fires_on_the_misspelling(self, tmp_path: Path) -> None:
         exp = self._experiment(tmp_path)
-        by_rule = {e.rule: e.count for e in exp.validation}
+        by_rule = {event.rule: event.count for event in exp.validation}
         assert by_rule["alias_normalized"] == 7
         assert np.sum(exp.rows["zip_code"] == "Surburban") == 0
         assert np.sum(exp.rows["zip_code"] == "Suburban") == 7
@@ -226,7 +226,7 @@ class TestHillstromShapedFixture:
     def test_sections_render_without_time_axis(self, tmp_path: Path) -> None:
         exp = self._experiment(tmp_path)
         sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
-        keys = [s.key for s in sections]
+        keys = [section.key for section in sections]
         assert "sequential" not in keys
         assert "novelty" not in keys
         assert "corrections" in keys  # 2 non-primary metrics x 2 contrasts
