@@ -62,8 +62,8 @@ class SectionSpec:
 def render_report(
     header: str,
     sections: Sequence[SectionSpec],
-    caps: frozenset[str],
-    figure_dir_rel: str,
+    data_capabilities: frozenset[str],
+    figure_dir_relative: str,
 ) -> str:
     """Render the sections the capability set supports, in order.
 
@@ -73,10 +73,10 @@ def render_report(
     """
     keys = [section.key for section in sections]
     if len(set(keys)) != len(keys):
-        dupes = sorted({key for key in keys if keys.count(key) > 1})
-        raise ReportBuildError(f"duplicate section keys: {dupes}")
+        duplicates = sorted({key for key in keys if keys.count(key) > 1})
+        raise ReportBuildError(f"duplicate section keys: {duplicates}")
 
-    rendered = [section for section in sections if section.requires <= caps]
+    rendered = [section for section in sections if section.requires <= data_capabilities]
     section_number = {section.key: i + 1 for i, section in enumerate(rendered)}
 
     figure_keys: list[str] = []
@@ -116,7 +116,7 @@ def render_report(
                 )
             return str(section_number[key])
         if key not in figure_number:
-            supplied = {figure.key for sec in sections for figure in sec.figures}
+            supplied = {figure.key for section in sections for figure in section.figures}
             raise ReportBuildError(
                 f"{where} references figure {key!r} which "
                 + (
@@ -128,23 +128,23 @@ def render_report(
             )
         return f"Figure {figure_number[key]}"
 
-    out: list[str] = [header.rstrip() + "\n"]
+    report_lines: list[str] = [header.rstrip() + "\n"]
     emitted: set[str] = set()
     for section in rendered:
-        out.append(f"\n## {section_number[section.key]}. {section.title}\n")
+        report_lines.append(f"\n## {section_number[section.key]}. {section.title}\n")
         for paragraph in section.body.split("\n\n"):
             where = f"section {section.key!r}"
             resolved = _TOKEN.sub(
                 lambda match, location=where: resolve(match, where=location), paragraph
             ).rstrip()
             if resolved:
-                out.append("\n" + resolved + "\n")
+                report_lines.append("\n" + resolved + "\n")
             for kind, key in _TOKEN.findall(paragraph):
                 if kind == "fig" and key in figure_by_key and key not in emitted:
                     emitted.add(key)
                     fig = figure_by_key[key]
-                    out.append(
+                    report_lines.append(
                         f"\n![Figure {figure_number[key]}: {fig.caption}]"
-                        f"({figure_dir_rel}/{fig.filename})\n"
+                        f"({figure_dir_relative}/{fig.filename})\n"
                     )
-    return "".join(out)
+    return "".join(report_lines)

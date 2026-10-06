@@ -30,29 +30,33 @@ def _sections() -> list[SectionSpec]:
 
 class TestPresenceKeying:
     def test_full_caps_render_all(self) -> None:
-        doc = render_report(
+        report_text = render_report(
             "# T",
             _sections(),
             frozenset({"time_axis", "user_rows", "continuous_metric"}),
             "figures",
         )
-        assert "## 1. Always" in doc
-        assert "## 2. Timed" in doc
-        assert "## 3. Tailed" in doc
+        assert "## 1. Always" in report_text
+        assert "## 2. Timed" in report_text
+        assert "## 3. Tailed" in report_text
 
     def test_missing_caps_drop_sections_and_keep_numbering_contiguous(self) -> None:
-        doc = render_report("# T", _sections(), frozenset({"user_rows", "continuous_metric"}), "f")
-        assert "Timed" not in doc
-        assert "## 2. Tailed" in doc  # not 3: numbering is contiguous
+        report_text = render_report(
+            "# T", _sections(), frozenset({"user_rows", "continuous_metric"}), "f"
+        )
+        assert "Timed" not in report_text
+        assert "## 2. Tailed" in report_text  # not 3: numbering is contiguous
 
     def test_tokens_resolve_to_assigned_numbers(self) -> None:
-        doc = render_report("# T", _sections(), frozenset({"time_axis"}), "figures")
-        assert "see section 1 and Figure 1." in doc
-        assert "![Figure 1: Daily decay](figures/decay.png)" in doc
+        report_text = render_report("# T", _sections(), frozenset({"time_axis"}), "figures")
+        assert "see section 1 and Figure 1." in report_text
+        assert "![Figure 1: Daily decay](figures/decay.png)" in report_text
 
     def test_figure_lands_after_first_citing_paragraph(self) -> None:
-        doc = render_report("# T", _sections(), frozenset({"time_axis"}), "figures")
-        assert doc.index("see section 1") < doc.index("![Figure 1") < len(doc)
+        report_text = render_report("# T", _sections(), frozenset({"time_axis"}), "figures")
+        assert (
+            report_text.index("see section 1") < report_text.index("![Figure 1") < len(report_text)
+        )
 
 
 class TestFailures:
@@ -143,7 +147,7 @@ class TestNumberingUnderOmission:
                 figures=(FigureSpec("late", "l.png", "Late"),),
             ),
         ]
-        doc = render_report("# T", sections, frozenset(), "f")
+        report_text = render_report("# T", sections, frozenset(), "f")
         # "late" is cited first, so it is Figure 1 wherever its file lives
-        assert "![Figure 1: Late](f/l.png)" in doc
-        assert "![Figure 2: Early](f/e.png)" in doc
+        assert "![Figure 1: Late](f/l.png)" in report_text
+        assert "![Figure 2: Early](f/e.png)" in report_text

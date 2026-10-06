@@ -36,15 +36,15 @@ _MIN_INCREMENT = 1e-10
 
 def obrien_fleming_spending(information_fraction: ArrayLike, alpha: float) -> NDArray[np.float64]:
     """Lan-DeMets O'Brien-Fleming-like spending: stingy early, most alpha late."""
-    t_arr = np.asarray(information_fraction, dtype=np.float64)
+    fractions = np.asarray(information_fraction, dtype=np.float64)
     z_critical = stats.norm.isf(alpha / 2.0)
-    return np.asarray(2.0 * stats.norm.sf(z_critical / np.sqrt(t_arr)))
+    return np.asarray(2.0 * stats.norm.sf(z_critical / np.sqrt(fractions)))
 
 
 def pocock_spending(information_fraction: ArrayLike, alpha: float) -> NDArray[np.float64]:
     """Lan-DeMets Pocock-like spending: spends alpha nearly linearly."""
-    t_arr = np.asarray(information_fraction, dtype=np.float64)
-    return np.asarray(alpha * np.log1p((np.e - 1.0) * t_arr))
+    fractions = np.asarray(information_fraction, dtype=np.float64)
+    return np.asarray(alpha * np.log1p((np.e - 1.0) * fractions))
 
 
 _SPENDING = {
@@ -199,7 +199,7 @@ def _propagate(
     return new_grid, kernel @ weights
 
 
-def monitor(z_values: Sequence[float], seq_design: SequentialDesign) -> SequentialOutcome:
+def monitor(z_values: Sequence[float], sequential_design: SequentialDesign) -> SequentialOutcome:
     """Compare observed z-statistics to the design's boundaries, in order.
 
     ``z_values`` may be shorter than the design (experiment still in
@@ -208,18 +208,18 @@ def monitor(z_values: Sequence[float], seq_design: SequentialDesign) -> Sequenti
     interpretation under the design.
     """
     z_scores = tuple(float(z_score) for z_score in z_values)
-    if len(z_scores) > len(seq_design.boundaries):
+    if len(z_scores) > len(sequential_design.boundaries):
         raise ValueError(
-            f"got {len(z_scores)} looks but the design has only {len(seq_design.boundaries)}"
+            f"got {len(z_scores)} looks but the design has only {len(sequential_design.boundaries)}"
         )
     # a NaN z compares False against every boundary, so without this it would
     # read as "this look did not cross" rather than "this look is unusable"
     if not all(np.isfinite(z_score) for z_score in z_scores):
         raise ValueError(f"z_values must all be finite, got {z_scores}")
-    boundaries = seq_design.boundaries[: len(z_scores)]
+    boundaries = sequential_design.boundaries[: len(z_scores)]
     stopped = None
-    for i, (z_k, bound) in enumerate(zip(z_scores, boundaries, strict=True)):
-        if abs(z_k) >= bound:
+    for i, (look_z, bound) in enumerate(zip(z_scores, boundaries, strict=True)):
+        if abs(look_z) >= bound:
             stopped = i + 1
             break
     return SequentialOutcome(stopped_at_look=stopped, z_values=z_scores, boundaries=boundaries)
@@ -284,10 +284,10 @@ def z_from_cumulative_counts(
 def z_from_cumulative_stats(
     n_control: ArrayLike,
     mean_control: ArrayLike,
-    var_control: ArrayLike,
+    variance_control: ArrayLike,
     n_treatment: ArrayLike,
     mean_treatment: ArrayLike,
-    var_treatment: ArrayLike,
+    variance_treatment: ArrayLike,
 ) -> NDArray[np.float64]:
     """Two-sample z-statistic at each look from cumulative summary stats.
 
@@ -305,13 +305,13 @@ def z_from_cumulative_stats(
     """
     control_counts = np.asarray(n_control, dtype=np.float64)
     control_means = np.asarray(mean_control, dtype=np.float64)
-    control_variances = np.asarray(var_control, dtype=np.float64)
+    control_variances = np.asarray(variance_control, dtype=np.float64)
     treatment_counts = np.asarray(n_treatment, dtype=np.float64)
     treatment_means = np.asarray(mean_treatment, dtype=np.float64)
-    treatment_variances = np.asarray(var_treatment, dtype=np.float64)
+    treatment_variances = np.asarray(variance_treatment, dtype=np.float64)
     shapes = {
-        arr.shape
-        for arr in (
+        values.shape
+        for values in (
             control_counts,
             control_means,
             control_variances,
@@ -326,11 +326,11 @@ def z_from_cumulative_stats(
         raise ValueError("arm sizes must be at least 2 at every look")
     if np.any(np.diff(control_counts) < 0.0) or np.any(np.diff(treatment_counts) < 0.0):
         raise ValueError("counts must be cumulative (non-decreasing)")
-    for name, arr in (
+    for name, values in (
         ("means", np.concatenate([control_means, treatment_means])),
         ("variances", np.concatenate([control_variances, treatment_variances])),
     ):
-        if not np.all(np.isfinite(arr)):
+        if not np.all(np.isfinite(values)):
             raise ValueError(f"{name} must all be finite")
     if np.any(control_variances < 0.0) or np.any(treatment_variances < 0.0):
         raise ValueError("variances must be non-negative")

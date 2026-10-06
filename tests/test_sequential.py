@@ -86,14 +86,14 @@ def test_two_look_design_against_bivariate_normal():
     # exact bivariate normal rectangle probability, independent of our grid
     sequential_design = design([0.5, 1.0], alpha=0.05, spending="pocock")
     first_boundary, second_boundary = sequential_design.boundaries
-    rho = np.sqrt(0.5)
-    cov = [[1.0, rho], [rho, 1.0]]
-    mvn = stats.multivariate_normal(mean=[0.0, 0.0], cov=cov)
+    correlation = np.sqrt(0.5)
+    covariance = [[1.0, correlation], [correlation, 1.0]]
+    normal_distribution = stats.multivariate_normal(mean=[0.0, 0.0], cov=covariance)
     non_crossing = (
-        mvn.cdf([first_boundary, second_boundary])
-        - mvn.cdf([-first_boundary, second_boundary])
-        - mvn.cdf([first_boundary, -second_boundary])
-        + mvn.cdf([-first_boundary, -second_boundary])
+        normal_distribution.cdf([first_boundary, second_boundary])
+        - normal_distribution.cdf([-first_boundary, second_boundary])
+        - normal_distribution.cdf([first_boundary, -second_boundary])
+        + normal_distribution.cdf([-first_boundary, -second_boundary])
     )
     assert non_crossing == pytest.approx(0.95, abs=5e-4)
 
@@ -101,23 +101,27 @@ def test_two_look_design_against_bivariate_normal():
 def test_three_look_design_against_trivariate_normal():
     sequential_design = design([1 / 3, 2 / 3, 1.0], alpha=0.05)
     fractions = np.array(sequential_design.information_fractions)
-    cov = np.sqrt(np.minimum.outer(fractions, fractions) / np.maximum.outer(fractions, fractions))
+    covariance = np.sqrt(
+        np.minimum.outer(fractions, fractions) / np.maximum.outer(fractions, fractions)
+    )
     boundaries = np.array(sequential_design.boundaries)
     # inclusion-exclusion over the 2^3 orthant corners of the rectangle
     non_crossing = 0.0
-    mvn = stats.multivariate_normal(mean=np.zeros(3), cov=cov)
+    normal_distribution = stats.multivariate_normal(mean=np.zeros(3), cov=covariance)
     for signs in np.ndindex(2, 2, 2):
-        sign_vec = np.where(np.array(signs) == 0, 1.0, -1.0)
-        non_crossing += np.prod(sign_vec) * mvn.cdf(sign_vec * boundaries)
+        sign_multipliers = np.where(np.array(signs) == 0, 1.0, -1.0)
+        non_crossing += np.prod(sign_multipliers) * normal_distribution.cdf(
+            sign_multipliers * boundaries
+        )
     assert non_crossing == pytest.approx(0.95, abs=1e-3)
 
 
 def test_five_look_type_i_error_by_simulation():
     sequential_design = design([0.2, 0.4, 0.6, 0.8, 1.0], alpha=0.05)
-    rng = np.random.default_rng(41)
+    random_generator = np.random.default_rng(41)
     n_sims = 200_000
     fractions = np.array(sequential_design.information_fractions)
-    increments = rng.normal(size=(n_sims, fractions.size)) * np.sqrt(
+    increments = random_generator.normal(size=(n_sims, fractions.size)) * np.sqrt(
         np.diff(fractions, prepend=0.0)
     )
     z_paths = np.cumsum(increments, axis=1) / np.sqrt(fractions)
@@ -129,10 +133,12 @@ def test_five_look_type_i_error_by_simulation():
 def test_naive_daily_peeking_inflates_type_i_error():
     # the motivating failure: 14 looks at a fixed z=1.96 reject on about 22%
     # of null runs, roughly four times the nominal 5%
-    rng = np.random.default_rng(42)
+    random_generator = np.random.default_rng(42)
     n_sims = 50_000
     fractions = np.linspace(1 / 14, 1.0, 14)
-    increments = rng.normal(size=(n_sims, 14)) * np.sqrt(np.diff(fractions, prepend=0.0))
+    increments = random_generator.normal(size=(n_sims, 14)) * np.sqrt(
+        np.diff(fractions, prepend=0.0)
+    )
     z_paths = np.cumsum(increments, axis=1) / np.sqrt(fractions)
     naive = np.any(np.abs(z_paths) >= 1.96, axis=1).mean()
     assert naive > 0.15

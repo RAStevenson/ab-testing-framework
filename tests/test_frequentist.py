@@ -28,8 +28,11 @@ def test_ztest_estimates_and_ci():
     assert result.relative_lift == pytest.approx(0.20)
     assert result.ci_low < 0.01 < result.ci_high
     # Agresti-Caffo half-width, checked against a hand computation
-    ac_c, ac_t = 501 / 10_002, 601 / 10_002
-    standard_error = np.sqrt(ac_c * (1 - ac_c) / 10_002 + ac_t * (1 - ac_t) / 10_002)
+    adjusted_rate_control, adjusted_rate_treatment = 501 / 10_002, 601 / 10_002
+    standard_error = np.sqrt(
+        adjusted_rate_control * (1 - adjusted_rate_control) / 10_002
+        + adjusted_rate_treatment * (1 - adjusted_rate_treatment) / 10_002
+    )
     assert result.ci_high - result.ci_low == pytest.approx(2 * 1.959964 * standard_error, rel=1e-4)
     # and it stays within a fraction of a percent of the plain Wald interval
     # at this sample size, which is the whole reason the adjustment is free
@@ -40,41 +43,45 @@ def test_ztest_estimates_and_ci():
 def test_ci_stays_a_real_interval_at_boundary_rates():
     # plain Wald has zero standard error when both arms sit at 0% or 100%,
     # and would report a single point as a 95% interval
-    for conv_c, conv_t in ((0, 500), (500, 0), (0, 0), (500, 500)):
-        if conv_c == conv_t:
+    for conversions_control, conversions_treatment in ((0, 500), (500, 0), (0, 0), (500, 500)):
+        if conversions_control == conversions_treatment:
             with pytest.raises(ValueError):  # z is genuinely undefined here
-                two_proportion_ztest(conv_c, 500, conv_t, 500)
+                two_proportion_ztest(conversions_control, 500, conversions_treatment, 500)
             continue
-        comparison = two_proportion_ztest(conv_c, 500, conv_t, 500)
-        assert comparison.ci_high > comparison.ci_low, f"degenerate interval for {conv_c}/{conv_t}"
+        comparison = two_proportion_ztest(conversions_control, 500, conversions_treatment, 500)
+        assert comparison.ci_high > comparison.ci_low, (
+            f"degenerate interval for {conversions_control}/{conversions_treatment}"
+        )
         assert comparison.ci_low >= -1.0
         assert comparison.ci_high <= 1.0
 
 
 def test_ci_coverage_at_low_rates():
     # the regime where plain Wald undercovers; Agresti-Caffo should hold 95%
-    rng = np.random.default_rng(26)
-    rate_c, rate_t, n_per_arm = 0.010, 0.014, 800
-    truth = rate_t - rate_c
+    random_generator = np.random.default_rng(26)
+    rate_control, rate_treatment, n_per_arm = 0.010, 0.014, 800
+    truth = rate_treatment - rate_control
     covered = 0
     n_sims = 2000
     for _ in range(n_sims):
-        x_c = int(rng.binomial(n_per_arm, rate_c))
-        x_t = int(rng.binomial(n_per_arm, rate_t))
-        if x_c == 0 and x_t == 0:
+        conversions_control = int(random_generator.binomial(n_per_arm, rate_control))
+        conversions_treatment = int(random_generator.binomial(n_per_arm, rate_treatment))
+        if conversions_control == 0 and conversions_treatment == 0:
             continue  # z is undefined; excluded rather than counted either way
-        comparison = two_proportion_ztest(x_c, n_per_arm, x_t, n_per_arm)
+        comparison = two_proportion_ztest(
+            conversions_control, n_per_arm, conversions_treatment, n_per_arm
+        )
         covered += comparison.ci_low <= truth <= comparison.ci_high
     assert covered / n_sims == pytest.approx(0.95, abs=0.02)
 
 
 def test_ztest_type_i_error_calibrated():
-    rng = np.random.default_rng(21)
+    random_generator = np.random.default_rng(21)
     n_sims, n_per_arm = 4000, 2000
     rejections = 0
     for _ in range(n_sims):
-        control_conversions = rng.binomial(n_per_arm, 0.1)
-        treatment_conversions = rng.binomial(n_per_arm, 0.1)
+        control_conversions = random_generator.binomial(n_per_arm, 0.1)
+        treatment_conversions = random_generator.binomial(n_per_arm, 0.1)
         if control_conversions + treatment_conversions in (0, 2 * n_per_arm):
             continue
         if (
@@ -98,9 +105,9 @@ def test_ztest_rejects_degenerate_input():
 
 
 def test_welch_matches_scipy():
-    rng = np.random.default_rng(22)
-    control_values = rng.normal(0.0, 1.0, 400)
-    treatment_values = rng.normal(0.2, 2.0, 250)
+    random_generator = np.random.default_rng(22)
+    control_values = random_generator.normal(0.0, 1.0, 400)
+    treatment_values = random_generator.normal(0.2, 2.0, 250)
     result = welch_ttest(control_values, treatment_values)
     expected = stats.ttest_ind(treatment_values, control_values, equal_var=False)
     assert result.statistic == pytest.approx(expected.statistic, rel=1e-12)
@@ -109,13 +116,13 @@ def test_welch_matches_scipy():
 
 
 def test_welch_ci_coverage():
-    rng = np.random.default_rng(23)
+    random_generator = np.random.default_rng(23)
     true_diff = 0.5
     covered = 0
     n_sims = 400
     for _ in range(n_sims):
-        control_values = rng.normal(0.0, 1.0, 120)
-        treatment_values = rng.normal(true_diff, 1.5, 80)
+        control_values = random_generator.normal(0.0, 1.0, 120)
+        treatment_values = random_generator.normal(true_diff, 1.5, 80)
         comparison = welch_ttest(control_values, treatment_values)
         covered += comparison.ci_low <= true_diff <= comparison.ci_high
     assert covered / n_sims == pytest.approx(0.95, abs=0.035)
@@ -139,8 +146,11 @@ def test_welch_ci_uses_the_t_quantile_at_small_n():
 
 def test_confidence_level_widens_both_intervals():
     widths_rate, widths_mean = [], []
-    rng = np.random.default_rng(25)
-    control_values, treatment_values = rng.normal(0.0, 1.0, 300), rng.normal(0.3, 1.0, 300)
+    random_generator = np.random.default_rng(25)
+    control_values, treatment_values = (
+        random_generator.normal(0.0, 1.0, 300),
+        random_generator.normal(0.3, 1.0, 300),
+    )
     for confidence in (0.80, 0.95, 0.99):
         rate = two_proportion_ztest(500, 10_000, 600, 10_000, confidence=confidence)
         mean = welch_ttest(control_values, treatment_values, confidence=confidence)
@@ -199,15 +209,19 @@ def test_benjamini_hochberg_known_values():
 
 
 def test_adjustments_dominance_and_bounds():
-    rng = np.random.default_rng(24)
-    p_values = rng.random(50) ** 2
-    bonf, hol, bh_adjusted = bonferroni(p_values), holm(p_values), benjamini_hochberg(p_values)
-    for adjusted in (bonf, hol, bh_adjusted):
+    random_generator = np.random.default_rng(24)
+    p_values = random_generator.random(50) ** 2
+    bonferroni_adjusted, holm_adjusted, bh_adjusted = (
+        bonferroni(p_values),
+        holm(p_values),
+        benjamini_hochberg(p_values),
+    )
+    for adjusted in (bonferroni_adjusted, holm_adjusted, bh_adjusted):
         assert np.all(adjusted >= p_values - 1e-15)
         assert np.all(adjusted <= 1.0)
     # Holm is uniformly at least as powerful as Bonferroni, BH at least as Holm
-    assert np.all(hol <= bonf + 1e-15)
-    assert np.all(bh_adjusted <= hol + 1e-15)
+    assert np.all(holm_adjusted <= bonferroni_adjusted + 1e-15)
+    assert np.all(bh_adjusted <= holm_adjusted + 1e-15)
 
 
 def test_benjamini_hochberg_enforces_step_up_monotonicity():

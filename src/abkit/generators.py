@@ -73,7 +73,7 @@ def generate_binary(
     base_rate: float,
     absolute_lift: float,
     *,
-    rng: np.random.Generator,
+    random_generator: np.random.Generator,
     allocation: float = 0.5,
     n_days: int = 14,
     novelty_boost: float = 0.0,
@@ -114,17 +114,17 @@ def generate_binary(
     if novelty_half_life_days <= 0.0:
         raise ValueError(f"novelty_half_life_days must be positive, got {novelty_half_life_days}")
 
-    day = rng.integers(0, n_days, size=n_users)
-    assignment = (rng.random(n_users) < allocation).astype(np.int64)
+    day = random_generator.integers(0, n_days, size=n_users)
+    assignment = (random_generator.random(n_users) < allocation).astype(np.int64)
 
     rate = np.full(n_users, base_rate)
     decay = 0.5 ** (day / novelty_half_life_days)
     treated = assignment == 1
     rate[treated] = base_rate + absolute_lift + novelty_boost * decay[treated]
-    outcome = (rng.random(n_users) < rate).astype(np.float64)
+    outcome = (random_generator.random(n_users) < rate).astype(np.float64)
 
     if treatment_loss_rate > 0.0:
-        lost = treated & (outcome == 0.0) & (rng.random(n_users) < treatment_loss_rate)
+        lost = treated & (outcome == 0.0) & (random_generator.random(n_users) < treatment_loss_rate)
         keep = ~lost
         return ExperimentData(assignment[keep], outcome[keep], day[keep])
     return ExperimentData(assignment, outcome, day)
@@ -133,7 +133,7 @@ def generate_binary(
 def generate_continuous(
     n_users: int,
     *,
-    rng: np.random.Generator,
+    random_generator: np.random.Generator,
     allocation: float = 0.5,
     n_days: int = 14,
     spend_rate: float = 0.08,
@@ -175,19 +175,19 @@ def generate_continuous(
     if spend_uplift <= -1.0:
         raise ValueError(f"spend_uplift must exceed -1, got {spend_uplift}")
 
-    day = rng.integers(0, n_days, size=n_users)
-    assignment = (rng.random(n_users) < allocation).astype(np.int64)
+    day = random_generator.integers(0, n_days, size=n_users)
+    assignment = (random_generator.random(n_users) < allocation).astype(np.int64)
     treated = assignment == 1
 
-    p_spend = np.where(treated, spend_rate + spend_rate_lift, spend_rate)
-    spends = rng.random(n_users) < p_spend
+    spend_probability = np.where(treated, spend_rate + spend_rate_lift, spend_rate)
+    spends = random_generator.random(n_users) < spend_probability
 
     user_log_mean = np.where(treated, log_mean + np.log1p(spend_uplift), log_mean)
-    amount = rng.lognormal(mean=user_log_mean, sigma=log_sigma)
-    # rng.pareto samples the Lomax distribution; adding 1 gives Pareto I
+    amount = random_generator.lognormal(mean=user_log_mean, sigma=log_sigma)
+    # random_generator.pareto samples the Lomax distribution; adding 1 gives Pareto I
     # with minimum 1, scaled to whale_scale
-    whale_amount = whale_scale * (1.0 + rng.pareto(whale_shape, size=n_users))
-    is_whale = rng.random(n_users) < whale_rate
+    whale_amount = whale_scale * (1.0 + random_generator.pareto(whale_shape, size=n_users))
+    is_whale = random_generator.random(n_users) < whale_rate
     amount = np.where(is_whale, whale_amount, amount)
 
     outcome = np.where(spends, amount, 0.0)

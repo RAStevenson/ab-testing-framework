@@ -47,15 +47,15 @@ def two_proportion_ztest(
     if not 0.0 < confidence < 1.0:
         raise ValueError(f"confidence must be in (0, 1), got {confidence}")
 
-    rate_c = conversions_control / n_control
-    rate_t = conversions_treatment / n_treatment
-    diff = rate_t - rate_c
+    rate_control = conversions_control / n_control
+    rate_treatment = conversions_treatment / n_treatment
+    difference = rate_treatment - rate_control
 
     pooled = (conversions_control + conversions_treatment) / (n_control + n_treatment)
-    se_pooled = np.sqrt(pooled * (1.0 - pooled) * (1.0 / n_control + 1.0 / n_treatment))
-    if se_pooled == 0.0:
+    pooled_standard_error = np.sqrt(pooled * (1.0 - pooled) * (1.0 / n_control + 1.0 / n_treatment))
+    if pooled_standard_error == 0.0:
         raise ValueError("all outcomes identical in both arms; z-test is undefined")
-    z_statistic = diff / se_pooled
+    z_statistic = difference / pooled_standard_error
     p_value = 2.0 * stats.norm.sf(abs(z_statistic))
 
     # Agresti-Caffo: add one success and one failure to each arm, then form a
@@ -66,29 +66,32 @@ def two_proportion_ztest(
     # experiment sample sizes. The interval is therefore centered on the
     # adjusted difference, not on ``absolute_lift``, which stays unadjusted
     # because that is the estimate worth reporting.
-    ac_n_c = n_control + 2.0
-    ac_n_t = n_treatment + 2.0
-    ac_c = (conversions_control + 1.0) / ac_n_c
-    ac_t = (conversions_treatment + 1.0) / ac_n_t
-    ac_diff = ac_t - ac_c
-    se_ac = np.sqrt(ac_c * (1.0 - ac_c) / ac_n_c + ac_t * (1.0 - ac_t) / ac_n_t)
-    z_crit = stats.norm.ppf(0.5 + confidence / 2.0)
+    adjusted_n_control = n_control + 2.0
+    adjusted_n_treatment = n_treatment + 2.0
+    adjusted_rate_control = (conversions_control + 1.0) / adjusted_n_control
+    adjusted_rate_treatment = (conversions_treatment + 1.0) / adjusted_n_treatment
+    adjusted_difference = adjusted_rate_treatment - adjusted_rate_control
+    adjusted_standard_error = np.sqrt(
+        adjusted_rate_control * (1.0 - adjusted_rate_control) / adjusted_n_control
+        + adjusted_rate_treatment * (1.0 - adjusted_rate_treatment) / adjusted_n_treatment
+    )
+    z_critical = stats.norm.ppf(0.5 + confidence / 2.0)
     return RateComparison(
         n_control=n_control,
         n_treatment=n_treatment,
         conversions_control=conversions_control,
         conversions_treatment=conversions_treatment,
-        rate_control=rate_c,
-        rate_treatment=rate_t,
-        absolute_lift=diff,
-        relative_lift=diff / rate_c if rate_c > 0.0 else float("nan"),
+        rate_control=rate_control,
+        rate_treatment=rate_treatment,
+        absolute_lift=difference,
+        relative_lift=difference / rate_control if rate_control > 0.0 else float("nan"),
         statistic=float(z_statistic),
         p_value=float(p_value),
         # a difference of proportions lives in [-1, 1], and the adjustment can
         # push the interval a hair outside it at extreme rates; clipping to the
         # parameter space can only improve coverage
-        ci_low=float(max(-1.0, ac_diff - z_crit * se_ac)),
-        ci_high=float(min(1.0, ac_diff + z_crit * se_ac)),
+        ci_low=float(max(-1.0, adjusted_difference - z_critical * adjusted_standard_error)),
+        ci_high=float(min(1.0, adjusted_difference + z_critical * adjusted_standard_error)),
         confidence=confidence,
     )
 
@@ -120,31 +123,33 @@ def welch_ttest(
     if not 0.0 < confidence < 1.0:
         raise ValueError(f"confidence must be in (0, 1), got {confidence}")
 
-    var_x = control_values.var(ddof=1)
-    var_y = treatment_values.var(ddof=1)
-    se_sq = var_x / control_values.size + var_y / treatment_values.size
-    if se_sq == 0.0:
-        raise ValueError("both arms are constant; t-test is undefined")
-    degrees_of_freedom = se_sq**2 / (
-        (var_x / control_values.size) ** 2 / (control_values.size - 1)
-        + (var_y / treatment_values.size) ** 2 / (treatment_values.size - 1)
+    control_variance = control_values.var(ddof=1)
+    treatment_variance = treatment_values.var(ddof=1)
+    standard_error_squared = (
+        control_variance / control_values.size + treatment_variance / treatment_values.size
     )
-    diff = treatment_values.mean() - control_values.mean()
-    t_statistic = diff / np.sqrt(se_sq)
+    if standard_error_squared == 0.0:
+        raise ValueError("both arms are constant; t-test is undefined")
+    degrees_of_freedom = standard_error_squared**2 / (
+        (control_variance / control_values.size) ** 2 / (control_values.size - 1)
+        + (treatment_variance / treatment_values.size) ** 2 / (treatment_values.size - 1)
+    )
+    difference = treatment_values.mean() - control_values.mean()
+    t_statistic = difference / np.sqrt(standard_error_squared)
     p_value = 2.0 * stats.t.sf(abs(t_statistic), degrees_of_freedom)
-    t_crit = stats.t.ppf(0.5 + confidence / 2.0, degrees_of_freedom)
-    half_width = t_crit * np.sqrt(se_sq)
+    t_critical = stats.t.ppf(0.5 + confidence / 2.0, degrees_of_freedom)
+    half_width = t_critical * np.sqrt(standard_error_squared)
     return MeanComparison(
         n_control=int(control_values.size),
         n_treatment=int(treatment_values.size),
         mean_control=float(control_values.mean()),
         mean_treatment=float(treatment_values.mean()),
-        difference=float(diff),
+        difference=float(difference),
         statistic=float(t_statistic),
         df=float(degrees_of_freedom),
         p_value=float(p_value),
-        ci_low=float(diff - half_width),
-        ci_high=float(diff + half_width),
+        ci_low=float(difference - half_width),
+        ci_high=float(difference + half_width),
         confidence=confidence,
     )
 
@@ -152,10 +157,10 @@ def welch_ttest(
 def welch_ttest_from_stats(
     n_control: int,
     mean_control: float,
-    var_control: float,
+    variance_control: float,
     n_treatment: int,
     mean_treatment: float,
-    var_treatment: float,
+    variance_treatment: float,
     *,
     confidence: float = 0.95,
 ) -> MeanComparison:
@@ -171,40 +176,42 @@ def welch_ttest_from_stats(
             raise ValueError(f"need at least 2 observations per arm, got {name}={count}")
     for name, value in (
         ("mean_control", mean_control),
-        ("var_control", var_control),
+        ("variance_control", variance_control),
         ("mean_treatment", mean_treatment),
-        ("var_treatment", var_treatment),
+        ("variance_treatment", variance_treatment),
     ):
         if not np.isfinite(value):
             raise ValueError(f"{name} must be finite, got {value}")
-    if var_control < 0.0 or var_treatment < 0.0:
-        raise ValueError(f"variances must be non-negative, got {var_control}, {var_treatment}")
+    if variance_control < 0.0 or variance_treatment < 0.0:
+        raise ValueError(
+            f"variances must be non-negative, got {variance_control}, {variance_treatment}"
+        )
     if not 0.0 < confidence < 1.0:
         raise ValueError(f"confidence must be in (0, 1), got {confidence}")
 
-    se_sq = var_control / n_control + var_treatment / n_treatment
-    if se_sq == 0.0:
+    standard_error_squared = variance_control / n_control + variance_treatment / n_treatment
+    if standard_error_squared == 0.0:
         raise ValueError("both arms are constant; t-test is undefined")
-    degrees_of_freedom = se_sq**2 / (
-        (var_control / n_control) ** 2 / (n_control - 1)
-        + (var_treatment / n_treatment) ** 2 / (n_treatment - 1)
+    degrees_of_freedom = standard_error_squared**2 / (
+        (variance_control / n_control) ** 2 / (n_control - 1)
+        + (variance_treatment / n_treatment) ** 2 / (n_treatment - 1)
     )
-    diff = mean_treatment - mean_control
-    t_statistic = diff / np.sqrt(se_sq)
+    difference = mean_treatment - mean_control
+    t_statistic = difference / np.sqrt(standard_error_squared)
     p_value = 2.0 * stats.t.sf(abs(t_statistic), degrees_of_freedom)
-    t_crit = stats.t.ppf(0.5 + confidence / 2.0, degrees_of_freedom)
-    half_width = t_crit * np.sqrt(se_sq)
+    t_critical = stats.t.ppf(0.5 + confidence / 2.0, degrees_of_freedom)
+    half_width = t_critical * np.sqrt(standard_error_squared)
     return MeanComparison(
         n_control=int(n_control),
         n_treatment=int(n_treatment),
         mean_control=float(mean_control),
         mean_treatment=float(mean_treatment),
-        difference=float(diff),
+        difference=float(difference),
         statistic=float(t_statistic),
         df=float(degrees_of_freedom),
         p_value=float(p_value),
-        ci_low=float(diff - half_width),
-        ci_high=float(diff + half_width),
+        ci_low=float(difference - half_width),
+        ci_high=float(difference + half_width),
         confidence=confidence,
     )
 
@@ -228,11 +235,11 @@ def srm_check(
             f"expected_treatment_share must be in (0, 1), got {expected_treatment_share}"
         )
     total = n_control + n_treatment
-    expected_t = total * expected_treatment_share
-    expected_c = total - expected_t
-    statistic = (n_treatment - expected_t) ** 2 / expected_t + (
-        n_control - expected_c
-    ) ** 2 / expected_c
+    expected_treatment = total * expected_treatment_share
+    expected_control = total - expected_treatment
+    statistic = (n_treatment - expected_treatment) ** 2 / expected_treatment + (
+        n_control - expected_control
+    ) ** 2 / expected_control
     p_value = stats.chi2.sf(statistic, df=1)
     return SrmResult(
         n_control=n_control,

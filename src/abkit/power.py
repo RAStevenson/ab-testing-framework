@@ -45,19 +45,28 @@ def power_two_proportions(
     """
     _validate_rates(rate_control, rate_treatment)
     _validate_alpha_power(alpha)
-    n_c = n_per_arm
-    n_t = n_per_arm if n_treatment is None else n_treatment
-    if n_c < 2 or n_t < 2:
-        raise ValueError(f"each arm needs at least 2 users, got {n_c} and {n_t}")
+    control_size = n_per_arm
+    treatment_size = n_per_arm if n_treatment is None else n_treatment
+    if control_size < 2 or treatment_size < 2:
+        raise ValueError(
+            f"each arm needs at least 2 users, got {control_size} and {treatment_size}"
+        )
 
     delta = abs(rate_treatment - rate_control)
-    pooled = (n_c * rate_control + n_t * rate_treatment) / (n_c + n_t)
-    se_null = np.sqrt(pooled * (1.0 - pooled) * (1.0 / n_c + 1.0 / n_t))
-    se_alt = np.sqrt(
-        rate_control * (1.0 - rate_control) / n_c + rate_treatment * (1.0 - rate_treatment) / n_t
+    pooled = (control_size * rate_control + treatment_size * rate_treatment) / (
+        control_size + treatment_size
     )
-    z_crit = stats.norm.isf(alpha / 2.0)
-    return float(stats.norm.sf((z_crit * se_null - delta) / se_alt))
+    null_standard_error = np.sqrt(
+        pooled * (1.0 - pooled) * (1.0 / control_size + 1.0 / treatment_size)
+    )
+    alternative_standard_error = np.sqrt(
+        rate_control * (1.0 - rate_control) / control_size
+        + rate_treatment * (1.0 - rate_treatment) / treatment_size
+    )
+    z_critical = stats.norm.isf(alpha / 2.0)
+    return float(
+        stats.norm.sf((z_critical * null_standard_error - delta) / alternative_standard_error)
+    )
 
 
 def sample_size_two_proportions(
@@ -73,28 +82,28 @@ def sample_size_two_proportions(
 
     delta = abs(rate_treatment - rate_control)
     pooled = (rate_control + rate_treatment) / 2.0
-    z_crit = stats.norm.isf(alpha / 2.0)
+    z_critical = stats.norm.isf(alpha / 2.0)
     z_power = stats.norm.isf(1.0 - power)
     n_exact = (
         (
-            z_crit * np.sqrt(2.0 * pooled * (1.0 - pooled))
+            z_critical * np.sqrt(2.0 * pooled * (1.0 - pooled))
             + z_power
             * np.sqrt(rate_control * (1.0 - rate_control) + rate_treatment * (1.0 - rate_treatment))
         )
         / delta
     ) ** 2
-    n_int = max(2, int(np.ceil(n_exact)))
+    n_rounded = max(2, int(np.ceil(n_exact)))
     # the closed form is the algebraic inverse of power_two_proportions, so
     # these walks normally take zero steps; they exist to absorb the case
     # where floating-point error puts ceil() on the wrong side of the integer
-    while power_two_proportions(rate_control, rate_treatment, n_int, alpha=alpha) < power:
-        n_int += 1
+    while power_two_proportions(rate_control, rate_treatment, n_rounded, alpha=alpha) < power:
+        n_rounded += 1
     while (
-        n_int > 2
-        and power_two_proportions(rate_control, rate_treatment, n_int - 1, alpha=alpha) >= power
+        n_rounded > 2
+        and power_two_proportions(rate_control, rate_treatment, n_rounded - 1, alpha=alpha) >= power
     ):
-        n_int -= 1
-    return n_int
+        n_rounded -= 1
+    return n_rounded
 
 
 def mde_two_proportions(
@@ -172,8 +181,8 @@ def power_two_means(
     if n_per_arm < 2:
         raise ValueError(f"n_per_arm must be at least 2, got {n_per_arm}")
     standard_error = standard_deviation * np.sqrt(2.0 / n_per_arm)
-    z_crit = stats.norm.isf(alpha / 2.0)
-    return float(stats.norm.sf(z_crit - abs(difference) / standard_error))
+    z_critical = stats.norm.isf(alpha / 2.0)
+    return float(stats.norm.sf(z_critical - abs(difference) / standard_error))
 
 
 def sample_size_two_means(
@@ -189,27 +198,27 @@ def sample_size_two_means(
         raise ValueError(f"standard_deviation must be positive, got {standard_deviation}")
     if difference == 0.0:
         raise ValueError("difference is zero; no finite n reaches any power")
-    z_crit = stats.norm.isf(alpha / 2.0)
+    z_critical = stats.norm.isf(alpha / 2.0)
     z_power = stats.norm.isf(1.0 - power)
-    n_exact = 2.0 * ((z_crit + z_power) * standard_deviation / abs(difference)) ** 2
-    n_int = max(2, int(np.ceil(n_exact)))
+    n_exact = 2.0 * ((z_critical + z_power) * standard_deviation / abs(difference)) ** 2
+    n_rounded = max(2, int(np.ceil(n_exact)))
     # both directions, for the same reason as sample_size_two_proportions:
     # when n* lands exactly on an integer, floating-point error can push
     # ceil() one past it, and walking up alone would never come back
-    while power_two_means(difference, standard_deviation, n_int, alpha=alpha) < power:
-        n_int += 1
+    while power_two_means(difference, standard_deviation, n_rounded, alpha=alpha) < power:
+        n_rounded += 1
     while (
-        n_int > 2
-        and power_two_means(difference, standard_deviation, n_int - 1, alpha=alpha) >= power
+        n_rounded > 2
+        and power_two_means(difference, standard_deviation, n_rounded - 1, alpha=alpha) >= power
     ):
-        n_int -= 1
-    return n_int
+        n_rounded -= 1
+    return n_rounded
 
 
 def simulate_power(
     draw_p_value: Callable[[np.random.Generator], float],
     *,
-    rng: np.random.Generator,
+    random_generator: np.random.Generator,
     n_sims: int = 1000,
     alpha: float = 0.05,
 ) -> float:
@@ -228,5 +237,5 @@ def simulate_power(
     _validate_alpha_power(alpha)
     if n_sims < 1:
         raise ValueError(f"n_sims must be positive, got {n_sims}")
-    rejections = sum(draw_p_value(rng) <= alpha for _ in range(n_sims))
+    rejections = sum(draw_p_value(random_generator) <= alpha for _ in range(n_sims))
     return rejections / n_sims

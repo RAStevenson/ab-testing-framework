@@ -48,7 +48,7 @@ def bootstrap_mean_diff(
     control: ArrayLike,
     treatment: ArrayLike,
     *,
-    rng: np.random.Generator,
+    random_generator: np.random.Generator,
     n_resamples: int = 10_000,
     confidence: float = 0.95,
 ) -> BootstrapResult:
@@ -65,19 +65,23 @@ def bootstrap_mean_diff(
     if not 0.0 < confidence < 1.0:
         raise ValueError(f"confidence must be in (0, 1), got {confidence}")
 
-    diffs = np.empty(n_resamples)
+    differences = np.empty(n_resamples)
     done = 0
     while done < n_resamples:
         size = min(_CHUNK, n_resamples - done)
-        idx_x = rng.integers(0, control_values.size, size=(size, control_values.size))
-        idx_y = rng.integers(0, treatment_values.size, size=(size, treatment_values.size))
-        diffs[done : done + size] = treatment_values[idx_y].mean(axis=1) - control_values[
-            idx_x
-        ].mean(axis=1)
+        control_resample_indices = random_generator.integers(
+            0, control_values.size, size=(size, control_values.size)
+        )
+        treatment_resample_indices = random_generator.integers(
+            0, treatment_values.size, size=(size, treatment_values.size)
+        )
+        differences[done : done + size] = treatment_values[treatment_resample_indices].mean(
+            axis=1
+        ) - control_values[control_resample_indices].mean(axis=1)
         done += size
 
     tail = (1.0 - confidence) / 2.0
-    low, high = np.quantile(diffs, [tail, 1.0 - tail])
+    low, high = np.quantile(differences, [tail, 1.0 - tail])
     return BootstrapResult(
         estimate=float(treatment_values.mean() - control_values.mean()),
         ci_low=float(low),
@@ -91,7 +95,7 @@ def permutation_test_mean_diff(
     control: ArrayLike,
     treatment: ArrayLike,
     *,
-    rng: np.random.Generator,
+    random_generator: np.random.Generator,
     n_permutations: int = 10_000,
 ) -> PermutationResult:
     """Two-sided permutation test for a difference in means.
@@ -108,8 +112,8 @@ def permutation_test_mean_diff(
         raise ValueError(f"n_permutations must be at least 100, got {n_permutations}")
 
     pooled = np.concatenate([control_values, treatment_values])
-    n_t = treatment_values.size
-    n_c = control_values.size
+    n_treatment = treatment_values.size
+    n_control = control_values.size
     total = pooled.sum()
     observed = treatment_values.mean() - control_values.mean()
 
@@ -126,11 +130,13 @@ def permutation_test_mean_diff(
         # keys at n = 100k, and ties break by position rather than at random,
         # which biases the draw far below the Monte Carlo error of the
         # p-value itself.
-        keys = rng.random((size, pooled.size), dtype=np.float32)
-        take = np.argpartition(keys, n_t - 1, axis=1)[:, :n_t]
-        sums_t = pooled[take].sum(axis=1)
-        perm_diffs = sums_t / n_t - (total - sums_t) / n_c
-        hits += int(np.sum(np.abs(perm_diffs) >= abs(observed)))
+        keys = random_generator.random((size, pooled.size), dtype=np.float32)
+        take = np.argpartition(keys, n_treatment - 1, axis=1)[:, :n_treatment]
+        treatment_sums = pooled[take].sum(axis=1)
+        permutation_differences = (
+            treatment_sums / n_treatment - (total - treatment_sums) / n_control
+        )
+        hits += int(np.sum(np.abs(permutation_differences) >= abs(observed)))
         done += size
 
     return PermutationResult(

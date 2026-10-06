@@ -49,15 +49,18 @@ def main() -> int:
         print(f"cached file has sha256 {digest}, expected {EXPECTED_SHA256}; refetching")
 
     DEST.parent.mkdir(parents=True, exist_ok=True)
-    tmp = DEST.with_suffix(".tmp")
+    partial_download = DEST.with_suffix(".tmp")
     print(f"downloading {URL}")
     try:
-        with urllib.request.urlopen(URL, timeout=60) as response, open(tmp, "wb") as out:
+        with (
+            urllib.request.urlopen(URL, timeout=60) as response,
+            open(partial_download, "wb") as out,
+        ):
             while chunk := response.read(1 << 16):
                 out.write(chunk)
     except OSError:
         traceback.print_exc()
-        tmp.unlink(missing_ok=True)
+        partial_download.unlink(missing_ok=True)
         print(
             f"error: the download failed, so nothing was written to {DEST.parent}. "
             "Rerun this script once the site is reachable.",
@@ -66,10 +69,10 @@ def main() -> int:
         return 2
 
     try:
-        digest = hashlib.sha256(tmp.read_bytes()).hexdigest()
+        digest = hashlib.sha256(partial_download.read_bytes()).hexdigest()
         if digest != EXPECTED_SHA256:
             rejected = DEST.with_suffix(".rejected")
-            tmp.replace(rejected)
+            partial_download.replace(rejected)
             print(
                 f"error: downloaded file has sha256 {digest}, but this repo pins "
                 f"{EXPECTED_SHA256}. The bytes are kept at {rejected} for "
@@ -79,12 +82,12 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        tmp.replace(DEST)
+        partial_download.replace(DEST)
     except OSError:
         traceback.print_exc()
         print(
             f"error: the download finished but could not be moved into place, so "
-            f"{DEST} was not updated (a partial copy may remain at {tmp}). "
+            f"{DEST} was not updated (a partial copy may remain at {partial_download}). "
             "Rerun this script.",
             file=sys.stderr,
         )

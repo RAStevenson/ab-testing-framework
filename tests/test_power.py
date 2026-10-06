@@ -24,37 +24,47 @@ def test_sample_size_proportions_near_textbook_value():
 def test_power_proportions_matches_simulation():
     analytic = power_two_proportions(0.10, 0.12, 1500)
 
-    def one_experiment(rng: np.random.Generator) -> float:
-        control_conversions = rng.binomial(1500, 0.10)
-        treatment_conversions = rng.binomial(1500, 0.12)
+    def one_experiment(random_generator: np.random.Generator) -> float:
+        control_conversions = random_generator.binomial(1500, 0.10)
+        treatment_conversions = random_generator.binomial(1500, 0.12)
         return two_proportion_ztest(control_conversions, 1500, treatment_conversions, 1500).p_value
 
     simulated = simulate_power(
-        one_experiment, rng=np.random.default_rng(51), n_sims=3000, alpha=0.05
+        one_experiment, random_generator=np.random.default_rng(51), n_sims=3000, alpha=0.05
     )
     assert simulated == pytest.approx(analytic, abs=0.025)
 
 
-def _exact_power_two_proportions(rate_c, rate_t, n_per_arm, alpha=0.05, n_t=None):
+def _exact_power_two_proportions(
+    rate_control, rate_treatment, n_per_arm, alpha=0.05, n_treatment=None
+):
     """Rejection probability of the pooled z-test, summed over the binomial grid.
 
     No Monte Carlo error and no shared code with power.py, so this pins the
     specific variance placement the module documents (pooled under the null,
     unpooled under the alternative) rather than merely the right ballpark.
     """
-    n_c = n_per_arm
-    n_t = n_per_arm if n_t is None else n_t
-    k_c = np.arange(n_c + 1)
-    k_t = np.arange(n_t + 1)
-    joint = np.outer(stats.binom.pmf(k_c, n_c, rate_c), stats.binom.pmf(k_t, n_t, rate_t))
-    pooled = (k_c[:, None] + k_t[None, :]) / (n_c + n_t)
-    standard_error = np.sqrt(pooled * (1.0 - pooled) * (1 / n_c + 1 / n_t))
+    n_control = n_per_arm
+    n_treatment = n_per_arm if n_treatment is None else n_treatment
+    control_success_counts = np.arange(n_control + 1)
+    treatment_success_counts = np.arange(n_treatment + 1)
+    joint = np.outer(
+        stats.binom.pmf(control_success_counts, n_control, rate_control),
+        stats.binom.pmf(treatment_success_counts, n_treatment, rate_treatment),
+    )
+    pooled = (control_success_counts[:, None] + treatment_success_counts[None, :]) / (
+        n_control + n_treatment
+    )
+    standard_error = np.sqrt(pooled * (1.0 - pooled) * (1 / n_control + 1 / n_treatment))
     # se is zero only where both arms are all-failure or all-success, which
     # makes the difference zero too: 0/0 is NaN, NaN >= threshold is False,
     # and that corner correctly counts as no rejection. A recorded run with
     # this block removed (2026-10-05) raised only this invalid-divide warning.
     with np.errstate(invalid="ignore"):
-        z_statistics = (k_t[None, :] / n_t - k_c[:, None] / n_c) / standard_error
+        z_statistics = (
+            treatment_success_counts[None, :] / n_treatment
+            - control_success_counts[:, None] / n_control
+        ) / standard_error
     return float(np.sum(joint * (np.abs(z_statistics) >= stats.norm.isf(alpha / 2))))
 
 
@@ -72,9 +82,9 @@ def test_power_proportions_unequal_arms_matches_exact_binomial_calculation():
     # 2.7e-3 of exact; an unweighted pooled rate misses by 7.7e-3 or more and
     # unpooled variance in both places by 2e-2 or more, so 3e-3 discriminates
     # the weighting as well as the placement.
-    for n_c, n_t in ((100, 300), (300, 100)):
-        analytic = power_two_proportions(0.30, 0.45, n_c, n_treatment=n_t)
-        exact = _exact_power_two_proportions(0.30, 0.45, n_c, n_t=n_t)
+    for n_control, n_treatment in ((100, 300), (300, 100)):
+        analytic = power_two_proportions(0.30, 0.45, n_control, n_treatment=n_treatment)
+        exact = _exact_power_two_proportions(0.30, 0.45, n_control, n_treatment=n_treatment)
         assert analytic == pytest.approx(exact, abs=3e-3)
 
 
@@ -119,9 +129,9 @@ def test_sample_size_means_is_minimal_on_knife_edge_designs():
     # when the closed form lands exactly on an integer, floating-point error
     # can push ceil() one past it; walking up alone would never come back
     for target_n in (10, 50, 97, 1000):
-        z_crit = stats.norm.isf(0.025)
+        z_critical = stats.norm.isf(0.025)
         z_power = stats.norm.isf(1.0 - 0.8)
-        difference = (z_crit + z_power) * np.sqrt(2.0 / target_n)
+        difference = (z_critical + z_power) * np.sqrt(2.0 / target_n)
         n_per_arm = sample_size_two_means(difference, 1.0)
         assert n_per_arm == target_n
         assert power_two_means(difference, 1.0, n_per_arm) >= 0.8
@@ -146,10 +156,10 @@ def test_sample_size_means_matches_the_closed_form_exactly():
         (0.5, 2.0, 0.9),
         (2.0, 3.5, 0.95),
     ):
-        z_crit = stats.norm.isf(0.025)
+        z_critical = stats.norm.isf(0.025)
         z_power = stats.norm.isf(1.0 - power)
         expected = int(
-            np.ceil(2.0 * ((z_crit + z_power) * standard_deviation / abs(difference)) ** 2)
+            np.ceil(2.0 * ((z_critical + z_power) * standard_deviation / abs(difference)) ** 2)
         )
         assert sample_size_two_means(difference, standard_deviation, power=power) == expected
 
@@ -157,13 +167,13 @@ def test_sample_size_means_matches_the_closed_form_exactly():
 def test_power_means_matches_simulation():
     analytic = power_two_means(0.15, 1.0, 800)
 
-    def one_experiment(rng: np.random.Generator) -> float:
-        control_values = rng.normal(0.0, 1.0, 800)
-        treatment_values = rng.normal(0.15, 1.0, 800)
+    def one_experiment(random_generator: np.random.Generator) -> float:
+        control_values = random_generator.normal(0.0, 1.0, 800)
+        treatment_values = random_generator.normal(0.15, 1.0, 800)
         return welch_ttest(control_values, treatment_values).p_value
 
     simulated = simulate_power(
-        one_experiment, rng=np.random.default_rng(52), n_sims=2000, alpha=0.05
+        one_experiment, random_generator=np.random.default_rng(52), n_sims=2000, alpha=0.05
     )
     assert simulated == pytest.approx(analytic, abs=0.03)
 
@@ -171,9 +181,17 @@ def test_power_means_matches_simulation():
 def test_simulate_power_counts_the_boundary_as_a_rejection():
     # a level-alpha test rejects at p == alpha. Discrete p-values can land
     # there exactly, so a strict comparison would silently understate power.
-    rng = np.random.default_rng(53)
-    assert simulate_power(lambda _: 0.05, rng=rng, n_sims=10, alpha=0.05) == 1.0
-    assert simulate_power(lambda _: 0.0500001, rng=rng, n_sims=10, alpha=0.05) == 0.0
+    random_generator = np.random.default_rng(53)
+    assert (
+        simulate_power(lambda _: 0.05, random_generator=random_generator, n_sims=10, alpha=0.05)
+        == 1.0
+    )
+    assert (
+        simulate_power(
+            lambda _: 0.0500001, random_generator=random_generator, n_sims=10, alpha=0.05
+        )
+        == 0.0
+    )
 
 
 def test_validation_errors():
@@ -188,4 +206,6 @@ def test_validation_errors():
     with pytest.raises(ValueError):
         sample_size_two_means(0.1, -1.0)
     with pytest.raises(ValueError):
-        simulate_power(lambda rng: 0.5, rng=np.random.default_rng(0), n_sims=0)
+        simulate_power(
+            lambda random_generator: 0.5, random_generator=np.random.default_rng(0), n_sims=0
+        )

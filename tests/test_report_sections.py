@@ -42,14 +42,14 @@ def _user_experiment(tmp_path: Path, extra_metric: bool = False, truth: bool = F
         text += "\n[truth]\nbase_rate = 0.27\ntrue_lift = 0.13\n"
     config_path = tmp_path / "config.toml"
     config_path.write_text(text, encoding="utf-8")
-    cfg = load_config(config_path)
-    return load_user_rows(cfg, FIXTURES / "user_rows_ok.csv")
+    config = load_config(config_path)
+    return load_user_rows(config, FIXTURES / "user_rows_ok.csv")
 
 
 class TestUserRowsReport:
     def test_section_set_and_render(self, tmp_path: Path) -> None:
-        exp = _user_experiment(tmp_path, extra_metric=True)
-        sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
+        experiment = _user_experiment(tmp_path, extra_metric=True)
+        sections = default_sections(experiment, np.random.default_rng(0), tmp_path / "figs")
         keys = [section.key for section in sections]
         assert keys == [
             "validation",
@@ -61,46 +61,46 @@ class TestUserRowsReport:
             "corrections",
             "heavy_tail",
         ]
-        doc = render_report("# Fixture", sections, capabilities(exp), "figs")
+        report_text = render_report("# Fixture", sections, capabilities(experiment), "figs")
         assert "truth" not in keys
-        assert "## 1. Data validation" in doc
+        assert "## 1. Data validation" in report_text
 
     def test_primary_number_pinned(self, tmp_path: Path) -> None:
         # control 4/15 vs treatment 6/15 -> absolute lift 13.33 pp
-        exp = _user_experiment(tmp_path)
-        sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
+        experiment = _user_experiment(tmp_path)
+        sections = default_sections(experiment, np.random.default_rng(0), tmp_path / "figs")
         primary = next(section for section in sections if section.key == "primary")
         assert "13.33 pp" in primary.body
 
     def test_figures_written_and_cited(self, tmp_path: Path) -> None:
-        exp = _user_experiment(tmp_path, extra_metric=True)
-        figdir = tmp_path / "figs"
-        sections = default_sections(exp, np.random.default_rng(0), figdir)
-        doc = render_report("# Fixture", sections, capabilities(exp), "figs")
+        experiment = _user_experiment(tmp_path, extra_metric=True)
+        figure_dir = tmp_path / "figs"
+        sections = default_sections(experiment, np.random.default_rng(0), figure_dir)
+        report_text = render_report("# Fixture", sections, capabilities(experiment), "figs")
         for name in ("novelty.png", "sequential.png", "corrections.png", "heavy_tail.png"):
-            assert (figdir / name).exists()
-            assert f"figs/{name}" in doc
+            assert (figure_dir / name).exists()
+            assert f"figs/{name}" in report_text
 
     def test_truth_section_renders_only_with_truth(self, tmp_path: Path) -> None:
-        exp = _user_experiment(tmp_path, truth=True)
-        sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
+        experiment = _user_experiment(tmp_path, truth=True)
+        sections = default_sections(experiment, np.random.default_rng(0), tmp_path / "figs")
         truth = next(section for section in sections if section.key == "truth")
         assert "base_rate" in truth.body
         assert "0.27" in truth.body
 
     def test_corrections_family_of_one_is_omitted(self, tmp_path: Path) -> None:
         # two metrics, two arms -> one non-primary comparison -> no family
-        exp = _user_experiment(tmp_path, extra_metric=False)
-        sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
+        experiment = _user_experiment(tmp_path, extra_metric=False)
+        sections = default_sections(experiment, np.random.default_rng(0), tmp_path / "figs")
         assert "corrections" not in [section.key for section in sections]
 
 
 class TestAggregatesReport:
     @pytest.fixture()
     def sections_and_exp(self, tmp_path: Path):
-        cfg = load_config(FIXTURES / "aggregates_config.toml")
-        exp = load_aggregates(cfg, FIXTURES / "aggregates_ok.csv")
-        return default_sections(exp, np.random.default_rng(0), tmp_path / "figs"), exp
+        config = load_config(FIXTURES / "aggregates_config.toml")
+        experiment = load_aggregates(config, FIXTURES / "aggregates_ok.csv")
+        return default_sections(experiment, np.random.default_rng(0), tmp_path / "figs"), experiment
 
     def test_section_set(self, sections_and_exp) -> None:
         sections, _ = sections_and_exp
@@ -119,27 +119,27 @@ class TestAggregatesReport:
         assert "not on record" in srm.body
 
     def test_render_passes_citation_check(self, sections_and_exp) -> None:
-        sections, exp = sections_and_exp
-        doc = render_report("# Agg", sections, capabilities(exp), "figs")
-        assert "## 1." in doc
+        sections, experiment = sections_and_exp
+        report_text = render_report("# Agg", sections, capabilities(experiment), "figs")
+        assert "## 1." in report_text
 
     def test_sequential_narrates_first_contrast(self, sections_and_exp) -> None:
         sections, _ = sections_and_exp
-        seq = next(section for section in sections if section.key == "sequential")
-        assert "variant_2 vs control" in seq.body
+        sequential_section = next(section for section in sections if section.key == "sequential")
+        assert "variant_2 vs control" in sequential_section.body
 
 
 class TestConsistentPrefix:
     def test_clean_series_keeps_everything(self) -> None:
         from abkit.report_sections import _consistent_prefix
 
-        rng = np.random.default_rng(3)
-        observations = rng.lognormal(1.0, 0.6, size=300)
+        random_generator = np.random.default_rng(3)
+        observations = random_generator.lognormal(1.0, 0.6, size=300)
         splits = [100, 200, 300]
         count = np.array([float(end) for end in splits])
         mean = np.array([observations[:end].mean() for end in splits])
-        var = np.array([observations[:end].var(ddof=1) for end in splits])
-        assert _consistent_prefix(count, mean, var) == 3
+        variance = np.array([observations[:end].var(ddof=1) for end in splits])
+        assert _consistent_prefix(count, mean, variance) == 3
 
     def test_corrupt_final_checkpoint_is_cut(self) -> None:
         # final checkpoint's mean drops while n barely grows, the settled-
@@ -149,16 +149,16 @@ class TestConsistentPrefix:
 
         count = np.array([1000.0, 2000.0, 2010.0])
         mean = np.array([0.10, 0.11, 0.05])
-        var = mean * (1 - mean) * count / (count - 1)
-        assert _consistent_prefix(count, mean, var) == 2
+        variance = mean * (1 - mean) * count / (count - 1)
+        assert _consistent_prefix(count, mean, variance) == 2
 
 
 class TestArchiveSweep:
     def test_sweep_counts_and_accounting_on_fixture(self) -> None:
         from abkit.report_sections import sweep_aggregate_archive
 
-        cfg = load_config(FIXTURES / "aggregates_config.toml")
-        section = sweep_aggregate_archive(cfg, FIXTURES / "aggregates_ok.csv")
+        config = load_config(FIXTURES / "aggregates_config.toml")
+        section = sweep_aggregate_archive(config, FIXTURES / "aggregates_ok.csv")
         # fixture holds expA (3 checkpoints, testable) and expB (1
         # checkpoint, must be counted as untestable, never hidden)
         assert "(2 total)" in section.body
@@ -206,26 +206,26 @@ class TestHillstromShapedFixture:
         )
         config_path = tmp_path / "config.toml"
         config_path.write_text(text, encoding="utf-8")
-        cfg = load_config(config_path)
-        return load_user_rows(cfg, FIXTURES / "hillstrom_shaped.csv")
+        config = load_config(config_path)
+        return load_user_rows(config, FIXTURES / "hillstrom_shaped.csv")
 
     def test_three_arms_and_no_time_axis(self, tmp_path: Path) -> None:
-        exp = self._experiment(tmp_path)
-        assert exp.arms == ("No E-Mail", "Mens E-Mail", "Womens E-Mail")
-        assert capabilities(exp) == frozenset(
+        experiment = self._experiment(tmp_path)
+        assert experiment.arms == ("No E-Mail", "Mens E-Mail", "Womens E-Mail")
+        assert capabilities(experiment) == frozenset(
             {"user_rows", "multi_metric", "continuous_metric", "intended_split"}
         )
 
     def test_alias_normalization_fires_on_the_misspelling(self, tmp_path: Path) -> None:
-        exp = self._experiment(tmp_path)
-        by_rule = {event.rule: event.count for event in exp.validation}
+        experiment = self._experiment(tmp_path)
+        by_rule = {event.rule: event.count for event in experiment.validation}
         assert by_rule["alias_normalized"] == 7
-        assert np.sum(exp.rows["zip_code"] == "Surburban") == 0
-        assert np.sum(exp.rows["zip_code"] == "Suburban") == 7
+        assert np.sum(experiment.rows["zip_code"] == "Surburban") == 0
+        assert np.sum(experiment.rows["zip_code"] == "Suburban") == 7
 
     def test_sections_render_without_time_axis(self, tmp_path: Path) -> None:
-        exp = self._experiment(tmp_path)
-        sections = default_sections(exp, np.random.default_rng(0), tmp_path / "figs")
+        experiment = self._experiment(tmp_path)
+        sections = default_sections(experiment, np.random.default_rng(0), tmp_path / "figs")
         keys = [section.key for section in sections]
         assert "sequential" not in keys
         assert "novelty" not in keys
@@ -258,8 +258,8 @@ class TestOmittedSections:
     def test_missing_series_omits_both_time_sections_and_says_so(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        cfg = load_config(FIXTURES / "aggregates_config.toml")
-        experiment = load_aggregates(cfg, FIXTURES / "aggregates_ok.csv")
+        config = load_config(FIXTURES / "aggregates_config.toml")
+        experiment = load_aggregates(config, FIXTURES / "aggregates_ok.csv")
         treatment_arm = experiment.arms[1]
         # keep the end-of-run cells, drop that arm's per-checkpoint cells
         damaged = dataclasses.replace(

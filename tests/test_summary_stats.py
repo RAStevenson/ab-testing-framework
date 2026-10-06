@@ -28,17 +28,21 @@ FIELDS = (
 class TestWelchFromStats:
     @pytest.mark.parametrize("seed", range(50))
     def test_agrees_with_array_twin(self, seed: int) -> None:
-        rng = np.random.default_rng(seed)
-        n_c = int(rng.integers(5, 400))
-        n_t = int(rng.integers(5, 400))
-        control = rng.lognormal(1.0, rng.uniform(0.2, 1.5), size=n_c)
-        treatment = rng.lognormal(1.1, rng.uniform(0.2, 1.5), size=n_t)
+        random_generator = np.random.default_rng(seed)
+        n_control = int(random_generator.integers(5, 400))
+        n_treatment = int(random_generator.integers(5, 400))
+        control = random_generator.lognormal(
+            1.0, random_generator.uniform(0.2, 1.5), size=n_control
+        )
+        treatment = random_generator.lognormal(
+            1.1, random_generator.uniform(0.2, 1.5), size=n_treatment
+        )
         from_arrays = welch_ttest(control, treatment)
         from_stats = welch_ttest_from_stats(
-            n_c,
+            n_control,
             float(control.mean()),
             float(control.var(ddof=1)),
-            n_t,
+            n_treatment,
             float(treatment.mean()),
             float(treatment.var(ddof=1)),
         )
@@ -68,39 +72,48 @@ class TestZFromCumulativeStats:
         measured over these exact seeds on 2026-08-10: ratio deviation up
         to 8.1% at early few-hundred-user looks where observed rates are
         noisy, and 1.02% at the final look. The pins are 0.10 and 0.02."""
-        rng = np.random.default_rng(seed)
+        random_generator = np.random.default_rng(seed)
         n_looks = 6
-        per_look_c = rng.integers(400, 900, size=n_looks)
-        per_look_t = rng.integers(400, 900, size=n_looks)
-        outcomes_c = rng.random(int(per_look_c.sum())) < 0.06
-        outcomes_t = rng.random(int(per_look_t.sum())) < 0.066
-        control_counts = np.cumsum(per_look_c).astype(np.float64)
-        treatment_counts = np.cumsum(per_look_t).astype(np.float64)
+        per_look_control = random_generator.integers(400, 900, size=n_looks)
+        per_look_treatment = random_generator.integers(400, 900, size=n_looks)
+        outcomes_control = random_generator.random(int(per_look_control.sum())) < 0.06
+        outcomes_treatment = random_generator.random(int(per_look_treatment.sum())) < 0.066
+        control_counts = np.cumsum(per_look_control).astype(np.float64)
+        treatment_counts = np.cumsum(per_look_treatment).astype(np.float64)
         control_conversions = np.array(
-            [outcomes_c[: int(count)].sum() for count in control_counts], dtype=np.float64
+            [outcomes_control[: int(count)].sum() for count in control_counts], dtype=np.float64
         )
         treatment_conversions = np.array(
-            [outcomes_t[: int(count)].sum() for count in treatment_counts], dtype=np.float64
+            [outcomes_treatment[: int(count)].sum() for count in treatment_counts], dtype=np.float64
         )
-        rate_c, rate_t = (
+        rate_control, rate_treatment = (
             control_conversions / control_counts,
             treatment_conversions / treatment_counts,
         )
         # ddof=1 sample variance of a 0/1 array with mean p is n*p*(1-p)/(n-1)
-        var_c = control_counts * rate_c * (1.0 - rate_c) / (control_counts - 1.0)
-        var_t = treatment_counts * rate_t * (1.0 - rate_t) / (treatment_counts - 1.0)
+        control_variances = (
+            control_counts * rate_control * (1.0 - rate_control) / (control_counts - 1.0)
+        )
+        treatment_variances = (
+            treatment_counts * rate_treatment * (1.0 - rate_treatment) / (treatment_counts - 1.0)
+        )
 
         z_stats = z_from_cumulative_stats(
-            control_counts, rate_c, var_c, treatment_counts, rate_t, var_t
+            control_counts,
+            rate_control,
+            control_variances,
+            treatment_counts,
+            rate_treatment,
+            treatment_variances,
         )
         z_counts = z_from_cumulative_counts(
             control_conversions, control_counts, treatment_conversions, treatment_counts
         )
         # same numerator, so z_stats / z_counts is exactly the SE ratio and
         # a ratio bound is the fair comparison even where z is near zero
-        ratio_dev = np.abs(z_stats / z_counts - 1.0)
-        assert float(ratio_dev.max()) <= 0.10
-        assert float(ratio_dev[-1]) <= 0.02
+        ratio_deviation = np.abs(z_stats / z_counts - 1.0)
+        assert float(ratio_deviation.max()) <= 0.10
+        assert float(ratio_deviation[-1]) <= 0.02
 
     def test_rejects_shape_mismatch(self) -> None:
         with pytest.raises(ValueError, match="same length"):

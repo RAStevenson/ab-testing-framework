@@ -48,39 +48,41 @@ ChunkSums = Callable[[np.random.Generator, NDArray[np.float64], int, int], NDArr
 
 
 def argsort_sums(
-    rng: np.random.Generator, pooled: NDArray[np.float64], size: int, n_t: int
+    random_generator: np.random.Generator, pooled: NDArray[np.float64], size: int, n_treatment: int
 ) -> NDArray[np.float64]:
-    keys = rng.random((size, pooled.size), dtype=np.float32)
-    take = np.argsort(keys, axis=1)[:, :n_t]
+    keys = random_generator.random((size, pooled.size), dtype=np.float32)
+    take = np.argsort(keys, axis=1)[:, :n_treatment]
     return pooled[take].sum(axis=1)
 
 
 def shuffle_sums(
-    rng: np.random.Generator, pooled: NDArray[np.float64], size: int, n_t: int
+    random_generator: np.random.Generator, pooled: NDArray[np.float64], size: int, n_treatment: int
 ) -> NDArray[np.float64]:
     block = np.tile(pooled, (size, 1))
-    rng.permuted(block, axis=1, out=block)
-    return block[:, :n_t].sum(axis=1)
+    random_generator.permuted(block, axis=1, out=block)
+    return block[:, :n_treatment].sum(axis=1)
 
 
 def time_variant(
     control: NDArray[np.float64], treatment: NDArray[np.float64], chunk_sums: ChunkSums
 ) -> tuple[float, float]:
     """Run one full permutation test with the given draw and return (seconds, p)."""
-    rng = np.random.default_rng(SEED_DRAW)
+    random_generator = np.random.default_rng(SEED_DRAW)
     start = time.perf_counter()
     pooled = np.concatenate([control, treatment])
-    n_t = treatment.size
-    n_c = control.size
+    n_treatment = treatment.size
+    n_control = control.size
     total = pooled.sum()
     observed = treatment.mean() - control.mean()
     hits = 0
     done = 0
     while done < N_PERMUTATIONS:
         size = min(CHUNK, N_PERMUTATIONS - done)
-        sums_t = chunk_sums(rng, pooled, size, n_t)
-        perm_diffs = sums_t / n_t - (total - sums_t) / n_c
-        hits += int(np.sum(np.abs(perm_diffs) >= abs(observed)))
+        treatment_sums = chunk_sums(random_generator, pooled, size, n_treatment)
+        permutation_differences = (
+            treatment_sums / n_treatment - (total - treatment_sums) / n_control
+        )
+        hits += int(np.sum(np.abs(permutation_differences) >= abs(observed)))
         done += size
     elapsed = time.perf_counter() - start
     return elapsed, (1 + hits) / (N_PERMUTATIONS + 1)
@@ -89,16 +91,18 @@ def time_variant(
 def time_shipped(
     control: NDArray[np.float64], treatment: NDArray[np.float64]
 ) -> tuple[float, float]:
-    rng = np.random.default_rng(SEED_DRAW)
+    random_generator = np.random.default_rng(SEED_DRAW)
     start = time.perf_counter()
-    result = permutation_test_mean_diff(control, treatment, rng=rng, n_permutations=N_PERMUTATIONS)
-    return time.perf_counter() - start, result.p_value
+    permutation = permutation_test_mean_diff(
+        control, treatment, random_generator=random_generator, n_permutations=N_PERMUTATIONS
+    )
+    return time.perf_counter() - start, permutation.p_value
 
 
 def main() -> None:
-    rng = np.random.default_rng(SEED_DATA)
-    control = rng.standard_normal(N_PER_ARM)
-    treatment = rng.standard_normal(N_PER_ARM)
+    random_generator = np.random.default_rng(SEED_DATA)
+    control = random_generator.standard_normal(N_PER_ARM)
+    treatment = random_generator.standard_normal(N_PER_ARM)
 
     variants: list[tuple[str, Callable[[], tuple[float, float]]]] = [
         ("argpartition (shipped)", lambda: time_shipped(control, treatment)),
@@ -136,10 +140,10 @@ def main() -> None:
             "loop in this script has drifted from permutation_test_mean_diff"
         )
 
-    ref = best["argpartition (shipped)"]
+    reference = best["argpartition (shipped)"]
     print()
-    print(f"argsort / argpartition: {best['argsort'] / ref:.2f}x")
-    print(f"Fisher-Yates shuffle / argpartition: {best['Fisher-Yates shuffle'] / ref:.2f}x")
+    print(f"argsort / argpartition: {best['argsort'] / reference:.2f}x")
+    print(f"Fisher-Yates shuffle / argpartition: {best['Fisher-Yates shuffle'] / reference:.2f}x")
 
 
 if __name__ == "__main__":

@@ -82,7 +82,7 @@ def fmt_p(p_value: float) -> str:
     return f"{p_value:.4f}" if p_value < 0.001 else f"{p_value:.3f}"
 
 
-def fmt_perm_p(perm: PermutationResult) -> str:
+def fmt_perm_p(permutation: PermutationResult) -> str:
     """Permutation p-value as report text, flagged when it sits at the estimator's floor.
 
     The add-one estimator's smallest possible value is 1 / (n_permutations + 1),
@@ -90,12 +90,12 @@ def fmt_perm_p(perm: PermutationResult) -> str:
     value is still a valid, conservative p-value, but printed bare it reads as
     a measurement rather than as the resolution limit of the relabeling count.
     """
-    if perm.p_value <= 1.0 / (perm.n_permutations + 1):
+    if permutation.p_value <= 1.0 / (permutation.n_permutations + 1):
         return (
-            f"p = {fmt_p(perm.p_value)}, the smallest value "
-            f"{perm.n_permutations:,} relabelings can give"
+            f"p = {fmt_p(permutation.p_value)}, the smallest value "
+            f"{permutation.n_permutations:,} relabelings can give"
         )
-    return f"p = {fmt_p(perm.p_value)}"
+    return f"p = {fmt_p(permutation.p_value)}"
 
 
 def _style_axis(ax: Axes, *, grid_axis: str = "y") -> None:
@@ -121,28 +121,28 @@ def _report_skipped_section(title: str) -> None:
     )
 
 
-def _primary(exp: Experiment) -> MetricSpec:
-    return next(metric for metric in exp.metrics if metric.primary)
+def _primary(experiment: Experiment) -> MetricSpec:
+    return next(metric for metric in experiment.metrics if metric.primary)
 
 
-def _contrasts(exp: Experiment) -> list[tuple[str, str]]:
-    return [(exp.arms[0], arm) for arm in exp.arms[1:]]
+def _contrasts(experiment: Experiment) -> list[tuple[str, str]]:
+    return [(experiment.arms[0], arm) for arm in experiment.arms[1:]]
 
 
-def _agg(exp: Experiment, arm: str, metric: str, checkpoint: float | None) -> ArmAggregate:
-    for cell in exp.aggregates:
+def _agg(experiment: Experiment, arm: str, metric: str, checkpoint: float | None) -> ArmAggregate:
+    for cell in experiment.aggregates:
         if cell.arm == arm and cell.metric == metric and cell.checkpoint == checkpoint:
             return cell
     raise ValueError(f"no aggregate for ({arm}, {metric}, {checkpoint})")
 
 
-def _series(exp: Experiment, arm: str, metric: str) -> tuple[NDArray, NDArray, NDArray]:
+def _series(experiment: Experiment, arm: str, metric: str) -> tuple[NDArray, NDArray, NDArray]:
     """Cumulative (n, mean, variance) arrays for one arm and metric, in
     checkpoint order. Raises if the experiment has no time axis."""
     cells = sorted(
         (
             cell
-            for cell in exp.aggregates
+            for cell in experiment.aggregates
             if cell.arm == arm and cell.metric == metric and cell.checkpoint is not None
         ),
         key=lambda cell: cell.checkpoint,
@@ -163,21 +163,25 @@ def _window(
     via the same sum-of-squares identity as interval_from_cumulative."""
     sums = count * mean
     squares = (count - 1.0) * variance + count * mean**2
-    lo_n = 0.0 if start == 0 else count[start - 1]
-    lo_s = 0.0 if start == 0 else sums[start - 1]
-    lo_q = 0.0 if start == 0 else squares[start - 1]
-    w_n = count[end - 1] - lo_n
-    if w_n < 2:
+    count_before = 0.0 if start == 0 else count[start - 1]
+    sums_before = 0.0 if start == 0 else sums[start - 1]
+    squares_before = 0.0 if start == 0 else squares[start - 1]
+    window_count = count[end - 1] - count_before
+    if window_count < 2:
         raise ValueError(f"window {start}:{end} has fewer than 2 observations")
-    w_mean = (sums[end - 1] - lo_s) / w_n
-    w_var = max(((squares[end - 1] - lo_q) - w_n * w_mean**2) / (w_n - 1.0), 0.0)
-    if not (np.isfinite(w_mean) and np.isfinite(w_var)):
+    window_mean = (sums[end - 1] - sums_before) / window_count
+    window_variance = max(
+        ((squares[end - 1] - squares_before) - window_count * window_mean**2)
+        / (window_count - 1.0),
+        0.0,
+    )
+    if not (np.isfinite(window_mean) and np.isfinite(window_variance)):
         raise ValueError(f"window {start}:{end} has non-finite statistics")
-    return int(w_n), float(w_mean), float(w_var)
+    return int(window_count), float(window_mean), float(window_variance)
 
 
-def _successes(agg: ArmAggregate) -> int:
-    return int(round(agg.mean * agg.n))
+def _successes(aggregate_columns: ArmAggregate) -> int:
+    return int(round(aggregate_columns.mean * aggregate_columns.n))
 
 
 def _ratio_stability(
@@ -199,12 +203,12 @@ def _ratio_stability(
         # one arm never gained a user; a split test has nothing to test
         return float("nan"), 0, float("nan"), int(control_increments.size)
     share = treatment_increments.sum() / (control_increments.sum() + treatment_increments.sum())
-    expected_t = (control_increments + treatment_increments) * share
-    expected_c = (control_increments + treatment_increments) * (1.0 - share)
+    expected_treatment = (control_increments + treatment_increments) * share
+    expected_control = (control_increments + treatment_increments) * (1.0 - share)
     statistic = float(
         np.sum(
-            (treatment_increments - expected_t) ** 2 / expected_t
-            + (control_increments - expected_c) ** 2 / expected_c
+            (treatment_increments - expected_treatment) ** 2 / expected_treatment
+            + (control_increments - expected_control) ** 2 / expected_control
         )
     )
     degrees_of_freedom = int(control_increments.size - 1)
@@ -230,56 +234,69 @@ def _consistent_prefix(count: NDArray, mean: NDArray, variance: NDArray) -> int:
     """
     sums = count * mean
     squares = (count - 1.0) * variance + count * mean**2
-    int_n = np.diff(count, prepend=0.0)
-    int_s = np.diff(sums, prepend=0.0)
-    int_q = np.diff(squares, prepend=0.0)
-    int_mean = np.divide(int_s, int_n, out=np.full_like(int_n, np.nan), where=int_n != 0)
-    int_var = np.divide(
-        int_q - int_n * int_mean**2,
-        int_n - 1.0,
-        out=np.full_like(int_n, np.nan),
-        where=int_n != 1.0,
+    interval_counts = np.diff(count, prepend=0.0)
+    interval_sums = np.diff(sums, prepend=0.0)
+    interval_squares = np.diff(squares, prepend=0.0)
+    interval_means = np.divide(
+        interval_sums,
+        interval_counts,
+        out=np.full_like(interval_counts, np.nan),
+        where=interval_counts != 0,
     )
-    bad = np.nonzero(np.isfinite(int_var) & (int_var < -1e-6 * np.maximum(variance, 1.0)))[0]
+    interval_variances = np.divide(
+        interval_squares - interval_counts * interval_means**2,
+        interval_counts - 1.0,
+        out=np.full_like(interval_counts, np.nan),
+        where=interval_counts != 1.0,
+    )
+    bad = np.nonzero(
+        np.isfinite(interval_variances) & (interval_variances < -1e-6 * np.maximum(variance, 1.0))
+    )[0]
     return int(bad[0]) if bad.size else int(count.size)
 
 
 def _cell_test(
-    exp: Experiment, treatment_arm: str, metric: MetricSpec
+    experiment: Experiment, treatment_arm: str, metric: MetricSpec
 ) -> RateComparison | MeanComparison:
     """The appropriate two-sample test for one (contrast, metric) cell,
     chosen by metric kind and data shape."""
-    control = _agg(exp, exp.arms[0], metric.name, None)
-    treatment = _agg(exp, treatment_arm, metric.name, None)
+    control = _agg(experiment, experiment.arms[0], metric.name, None)
+    treatment = _agg(experiment, treatment_arm, metric.name, None)
     if metric.kind == "binary":
         return two_proportion_ztest(
             _successes(control), control.n, _successes(treatment), treatment.n
         )
-    if exp.rows is not None:
-        mask_c = exp.rows["arm"] == exp.arms[0]
-        mask_t = exp.rows["arm"] == treatment_arm
-        return welch_ttest(exp.rows[metric.name][mask_c], exp.rows[metric.name][mask_t])
+    if experiment.rows is not None:
+        control_mask = experiment.rows["arm"] == experiment.arms[0]
+        treatment_mask = experiment.rows["arm"] == treatment_arm
+        return welch_ttest(
+            experiment.rows[metric.name][control_mask], experiment.rows[metric.name][treatment_mask]
+        )
     return welch_ttest_from_stats(
         control.n, control.mean, control.variance, treatment.n, treatment.mean, treatment.variance
     )
 
 
-def _effect_and_p(result: RateComparison | MeanComparison) -> tuple[str, float]:
-    if isinstance(result, RateComparison):
-        return pp_signed(result.absolute_lift), result.p_value
-    return f"{result.difference:+.3f}", result.p_value
+def _effect_and_p(comparison: RateComparison | MeanComparison) -> tuple[str, float]:
+    if isinstance(comparison, RateComparison):
+        return pp_signed(comparison.absolute_lift), comparison.p_value
+    return f"{comparison.difference:+.3f}", comparison.p_value
 
 
-def _contrast_label(exp: Experiment, treatment_arm: str) -> str:
-    return f"{treatment_arm} vs {exp.arms[0]}"
+def _contrast_label(experiment: Experiment, treatment_arm: str) -> str:
+    return f"{treatment_arm} vs {experiment.arms[0]}"
 
 
-def sec_validation(exp: Experiment) -> SectionSpec:
+def sec_validation(experiment: Experiment) -> SectionSpec:
     """Always renders: what the intake did to the data before any statistic."""
-    sizes = ", ".join(f"{arm} {_agg(exp, arm, _primary(exp).name, None).n:,}" for arm in exp.arms)
-    if exp.validation:
+    sizes = ", ".join(
+        f"{arm} {_agg(experiment, arm, _primary(experiment).name, None).n:,}"
+        for arm in experiment.arms
+    )
+    if experiment.validation:
         rows = "\n".join(
-            f"| {event.rule} | {event.count:,} | {event.detail} |" for event in exp.validation
+            f"| {event.rule} | {event.count:,} | {event.detail} |"
+            for event in experiment.validation
         )
         body = (
             f"Arm sizes after validation: {sizes} (denominators are the primary "
@@ -297,21 +314,23 @@ def sec_validation(exp: Experiment) -> SectionSpec:
     return SectionSpec(key="validation", title="Data validation", body=body)
 
 
-def sec_design_power(exp: Experiment) -> SectionSpec | None:
+def sec_design_power(experiment: Experiment) -> SectionSpec | None:
     """Sensitivity at the realized sample size, for a binary primary metric."""
-    metric = _primary(exp)
+    metric = _primary(experiment)
     if metric.kind != "binary":
         return None
-    control = _agg(exp, exp.arms[0], metric.name, None)
-    treatment = _agg(exp, exp.arms[1], metric.name, None)
+    control = _agg(experiment, experiment.arms[0], metric.name, None)
+    treatment = _agg(experiment, experiment.arms[1], metric.name, None)
     if not 0.0 < control.mean < 1.0:
         return None
-    mde = mde_two_proportions(control.mean, control.n, alpha=exp.alpha, n_treatment=treatment.n)
+    mde = mde_two_proportions(
+        control.mean, control.n, alpha=experiment.alpha, n_treatment=treatment.n
+    )
     body = (
         f"At the realized sample sizes of the first contrast ({control.n:,} "
         f"control and {treatment.n:,} treatment users) and the control rate of "
         f"{pct(control.mean, 1)}, the smallest absolute lift that contrast could "
-        f"detect with 80% power at alpha {exp.alpha} is {100 * mde:.2f} "
+        f"detect with 80% power at alpha {experiment.alpha} is {100 * mde:.2f} "
         "percentage points (pp). This is the minimum detectable effect (MDE). "
         "Effects smaller than that could be real and still "
         "produce an "
@@ -321,31 +340,34 @@ def sec_design_power(exp: Experiment) -> SectionSpec | None:
     return SectionSpec(key="design_power", title="Sensitivity at this sample size", body=body)
 
 
-def sec_srm(exp: Experiment) -> SectionSpec:
+def sec_srm(experiment: Experiment) -> SectionSpec:
     """Assignment validation: intended-split chi-square when the split is
     declared, ratio-stability over time when it is not but a time axis
     exists, and a stated non-test otherwise."""
-    metric = _primary(exp)
-    caps = capabilities(exp)
-    if "intended_split" in caps:
+    metric = _primary(experiment)
+    data_capabilities = capabilities(experiment)
+    if "intended_split" in data_capabilities:
         lines = ["| Contrast | Control n | Treatment n | Chi-square | p |", "|---|---|---|---|---|"]
-        worst_p = 1.0
-        for control_arm, treatment_arm in _contrasts(exp):
-            i_c = exp.arms.index(control_arm)
-            i_t = exp.arms.index(treatment_arm)
-            share = exp.intended_split[i_t] / (exp.intended_split[i_c] + exp.intended_split[i_t])
-            n_c = _agg(exp, control_arm, metric.name, None).n
-            n_t = _agg(exp, treatment_arm, metric.name, None).n
-            srm = srm_check(n_c, n_t, expected_treatment_share=share)
-            worst_p = min(worst_p, srm.p_value)
+        worst_p_value = 1.0
+        for control_arm, treatment_arm in _contrasts(experiment):
+            control_index = experiment.arms.index(control_arm)
+            treatment_index = experiment.arms.index(treatment_arm)
+            share = experiment.intended_split[treatment_index] / (
+                experiment.intended_split[control_index]
+                + experiment.intended_split[treatment_index]
+            )
+            n_control = _agg(experiment, control_arm, metric.name, None).n
+            n_treatment = _agg(experiment, treatment_arm, metric.name, None).n
+            srm = srm_check(n_control, n_treatment, expected_treatment_share=share)
+            worst_p_value = min(worst_p_value, srm.p_value)
             lines.append(
-                f"| {_contrast_label(exp, treatment_arm)} | {n_c:,} | {n_t:,} "
+                f"| {_contrast_label(experiment, treatment_arm)} | {n_control:,} | {n_treatment:,} "
                 f"| {srm.statistic:.2f} | {fmt_p(srm.p_value)} |"
             )
         srm_conclusion = (
             "No contrast fails the check (conventional alarm threshold p < 1e-3), "
             "so the realized split is consistent with the declared one."
-            if worst_p >= 1e-3
+            if worst_p_value >= 1e-3
             else "At least one contrast FAILS the check: users went missing or were "
             "assigned asymmetrically, and no downstream statistic can repair that. "
             "The results below describe the data as collected, with that caveat."
@@ -359,17 +381,17 @@ def sec_srm(exp: Experiment) -> SectionSpec:
             + "\n\n"
             + srm_conclusion
         )
-    elif "time_axis" in caps:
+    elif "time_axis" in data_capabilities:
         lines = ["| Contrast | Checkpoints | Chi-square | df | p |", "|---|---|---|---|---|"]
-        worst_p = 1.0
-        for control_arm, treatment_arm in _contrasts(exp):
-            control_counts = _series(exp, control_arm, metric.name)[0]
-            treatment_counts = _series(exp, treatment_arm, metric.name)[0]
+        worst_p_value = 1.0
+        for control_arm, treatment_arm in _contrasts(experiment):
+            control_counts = _series(experiment, control_arm, metric.name)[0]
+            treatment_counts = _series(experiment, treatment_arm, metric.name)[0]
             if np.any(np.diff(control_counts) < 0) or np.any(np.diff(treatment_counts) < 0):
                 # a decreasing cumulative count would feed negative
                 # interval counts into the chi-square; say so instead
                 lines.append(
-                    f"| {_contrast_label(exp, treatment_arm)} | - | not testable "
+                    f"| {_contrast_label(experiment, treatment_arm)} | - | not testable "
                     "(cumulative counts decrease) | - | - |"
                 )
                 continue
@@ -378,20 +400,20 @@ def sec_srm(exp: Experiment) -> SectionSpec:
             )
             if not np.isfinite(p_value):
                 lines.append(
-                    f"| {_contrast_label(exp, treatment_arm)} | {n_intervals} | "
+                    f"| {_contrast_label(experiment, treatment_arm)} | {n_intervals} | "
                     "not testable (degenerate split) | - | - |"
                 )
                 continue
-            worst_p = min(worst_p, p_value)
+            worst_p_value = min(worst_p_value, p_value)
             lines.append(
-                f"| {_contrast_label(exp, treatment_arm)} | {n_intervals} | {statistic:.2f} "
+                f"| {_contrast_label(experiment, treatment_arm)} | {n_intervals} | {statistic:.2f} "
                 f"| {degrees_of_freedom} | {fmt_p(p_value)} |"
             )
         srm_conclusion = (
             "The arm ratio is stable across checkpoints in every contrast "
             "(alarm threshold p < 1e-3), which is what can still be checked "
             "without a declared split."
-            if worst_p >= 1e-3
+            if worst_p_value >= 1e-3
             else "The arm ratio SHIFTS over time in at least one contrast (p < 1e-3). "
             "A ratio that drifts mid-experiment is sample-ratio-mismatch evidence "
             "regardless of what split was intended, and the checkpoint where it "
@@ -410,7 +432,9 @@ def sec_srm(exp: Experiment) -> SectionSpec:
             + srm_conclusion
         )
     else:
-        sizes = ", ".join(f"{arm} {_agg(exp, arm, metric.name, None).n:,}" for arm in exp.arms)
+        sizes = ", ".join(
+            f"{arm} {_agg(experiment, arm, metric.name, None).n:,}" for arm in experiment.arms
+        )
         body = (
             f"Observed arm sizes: {sizes}. The intended allocation is not on "
             "record and the data has no time axis, so neither a direct "
@@ -421,12 +445,12 @@ def sec_srm(exp: Experiment) -> SectionSpec:
     return SectionSpec(key="srm", title="Assignment validation", body=body)
 
 
-def sec_primary(exp: Experiment) -> SectionSpec:
+def sec_primary(experiment: Experiment) -> SectionSpec:
     """The primary metric, per contrast."""
-    metric = _primary(exp)
+    metric = _primary(experiment)
     lines = ["| Contrast | Effect | 95% CI | p |", "|---|---|---|---|"]
-    for _, treatment_arm in _contrasts(exp):
-        comparison = _cell_test(exp, treatment_arm, metric)
+    for _, treatment_arm in _contrasts(experiment):
+        comparison = _cell_test(experiment, treatment_arm, metric)
         if isinstance(comparison, RateComparison):
             effect = pp_signed(comparison.absolute_lift)
             interval_text = f"{pp_signed(comparison.ci_low)} to {pp_signed(comparison.ci_high)}"
@@ -434,7 +458,7 @@ def sec_primary(exp: Experiment) -> SectionSpec:
             effect = f"{comparison.difference:+.3f}"
             interval_text = f"{comparison.ci_low:+.3f} to {comparison.ci_high:+.3f}"
         lines.append(
-            f"| {_contrast_label(exp, treatment_arm)} | {effect} | {interval_text} "
+            f"| {_contrast_label(experiment, treatment_arm)} | {effect} | {interval_text} "
             f"| {fmt_p(comparison.p_value)} |"
         )
     body = (
@@ -450,28 +474,30 @@ def sec_primary(exp: Experiment) -> SectionSpec:
     return SectionSpec(key="primary", title="Primary metric", body=body)
 
 
-def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
+def sec_novelty(experiment: Experiment, figure_dir: Path) -> SectionSpec | None:
     """Early-versus-late effect comparison over the time axis."""
-    metric = _primary(exp)
-    control_arm = exp.arms[0]
+    metric = _primary(experiment)
+    control_arm = experiment.arms[0]
     try:
-        series_c = _series(exp, control_arm, metric.name)
-        all_series = [series_c] + [_series(exp, arm, metric.name) for _, arm in _contrasts(exp)]
+        control_series = _series(experiment, control_arm, metric.name)
+        all_series = [control_series] + [
+            _series(experiment, arm, metric.name) for _, arm in _contrasts(experiment)
+        ]
     except ValueError:
         _report_skipped_section("Effect stability over time")
         return None
-    k_full = len(exp.checkpoints)
-    n_usable = min(_consistent_prefix(*ser) for ser in all_series)
+    n_checkpoints = len(experiment.checkpoints)
+    n_usable = min(_consistent_prefix(*series) for series in all_series)
     if n_usable < 3:
         return None
     trim_note = (
         ""
-        if n_usable == k_full
+        if n_usable == n_checkpoints
         else "\n\n"
         + (
             "The final checkpoint is EXCLUDED from this section"
-            if k_full - n_usable == 1
-            else f"The final {k_full - n_usable} checkpoints are EXCLUDED from this section"
+            if n_checkpoints - n_usable == 1
+            else f"The final {n_checkpoints - n_usable} checkpoints are EXCLUDED from this section"
         )
         + ". Each increment's variance can be recovered from consecutive "
         "cumulative counts, means, and variances. For the first excluded "
@@ -487,32 +513,36 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
     window_size = max(1, n_usable // 3)
 
     lines = ["| Contrast | Early effect | Late effect | Decay z | p |", "|---|---|---|---|---|"]
-    for _, treatment_arm in _contrasts(exp):
-        series_t = _series(exp, treatment_arm, metric.name)
+    for _, treatment_arm in _contrasts(experiment):
+        treatment_series = _series(experiment, treatment_arm, metric.name)
         try:
-            e_c = _window(*series_c, 0, window_size)
-            l_c = _window(*series_c, n_usable - window_size, n_usable)
-            e_t = _window(*series_t, 0, window_size)
-            l_t = _window(*series_t, n_usable - window_size, n_usable)
+            early_control = _window(*control_series, 0, window_size)
+            late_control = _window(*control_series, n_usable - window_size, n_usable)
+            early_treatment = _window(*treatment_series, 0, window_size)
+            late_treatment = _window(*treatment_series, n_usable - window_size, n_usable)
         except ValueError:
             _report_skipped_section("Effect stability over time")
             return None
-        early = e_t[1] - e_c[1]
-        late = l_t[1] - l_c[1]
-        se_early = np.sqrt(e_c[2] / e_c[0] + e_t[2] / e_t[0])
-        se_late = np.sqrt(l_c[2] / l_c[0] + l_t[2] / l_t[0])
-        if se_early == 0.0 or se_late == 0.0:
+        early = early_treatment[1] - early_control[1]
+        late = late_treatment[1] - late_control[1]
+        early_standard_error = np.sqrt(
+            early_control[2] / early_control[0] + early_treatment[2] / early_treatment[0]
+        )
+        late_standard_error = np.sqrt(
+            late_control[2] / late_control[0] + late_treatment[2] / late_treatment[0]
+        )
+        if early_standard_error == 0.0 or late_standard_error == 0.0:
             return None
-        decay_z = float((early - late) / np.hypot(se_early, se_late))
-        decay_p = float(2.0 * stats.norm.sf(abs(decay_z)))
-        early_s = pp_signed(early) if metric.kind == "binary" else f"{early:+.3f}"
-        late_s = pp_signed(late) if metric.kind == "binary" else f"{late:+.3f}"
+        decay_z_score = float((early - late) / np.hypot(early_standard_error, late_standard_error))
+        decay_p_value = float(2.0 * stats.norm.sf(abs(decay_z_score)))
+        early_text = pp_signed(early) if metric.kind == "binary" else f"{early:+.3f}"
+        late_text = pp_signed(late) if metric.kind == "binary" else f"{late:+.3f}"
         lines.append(
-            f"| {_contrast_label(exp, treatment_arm)} | {early_s} | {late_s} "
-            f"| {decay_z:.2f} | {fmt_p(decay_p)} |"
+            f"| {_contrast_label(experiment, treatment_arm)} | {early_text} | {late_text} "
+            f"| {decay_z_score:.2f} | {fmt_p(decay_p_value)} |"
         )
 
-    _fig_novelty(exp, metric, figdir, n_usable)
+    _fig_novelty(experiment, metric, figure_dir, n_usable)
     body = (
         "A treatment effect that fades within the run is the signature of a "
         "novelty effect, where users react to the change itself and the "
@@ -533,7 +563,7 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "the late window is the number to quote."
         + (
             ""
-            if exp.rows is not None
+            if experiment.rows is not None
             else "\n\nOne assumption matters for aggregate archives. "
             "Differencing cumulative statistics treats each increment as new "
             "users only. An archive that recomputes its metrics over all "
@@ -551,26 +581,30 @@ def sec_novelty(exp: Experiment, figdir: Path) -> SectionSpec | None:
     )
 
 
-def _fig_novelty(exp: Experiment, metric: MetricSpec, figdir: Path, k_use: int) -> None:
+def _fig_novelty(
+    experiment: Experiment, metric: MetricSpec, figure_dir: Path, n_usable: int
+) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(8, 4.2))
-    for i, arm in enumerate(exp.arms):
-        count, mean, var = _series(exp, arm, metric.name)
-        count, mean, var = count[:k_use], mean[:k_use], var[:k_use]
+    for i, arm in enumerate(experiment.arms):
+        count, mean, variance = _series(experiment, arm, metric.name)
+        count, mean, variance = count[:n_usable], mean[:n_usable], variance[:n_usable]
         # computed directly rather than via interval_from_cumulative so a
         # checkpoint where this arm gained no users plots as a gap instead
         # of raising; means are exact, and the figure needs no variances
-        int_n = np.diff(count, prepend=0.0)
-        int_sums = np.diff(count * mean, prepend=0.0)
-        int_mean = np.where(int_n > 0, int_sums / np.maximum(int_n, 1.0), np.nan)
-        checkpoints = np.asarray(exp.checkpoints[:k_use], dtype=np.float64)
+        interval_counts = np.diff(count, prepend=0.0)
+        interval_sums = np.diff(count * mean, prepend=0.0)
+        interval_means = np.where(
+            interval_counts > 0, interval_sums / np.maximum(interval_counts, 1.0), np.nan
+        )
+        checkpoints = np.asarray(experiment.checkpoints[:n_usable], dtype=np.float64)
         ax.plot(
             checkpoints,
-            int_mean,
+            interval_means,
             color=_arm_color(i),
             linewidth=2,
             marker="o",
@@ -583,61 +617,78 @@ def _fig_novelty(exp: Experiment, metric: MetricSpec, figdir: Path, k_use: int) 
     ax.legend(frameon=False, fontsize=9)
     _style_axis(ax)
     fig.tight_layout()
-    figdir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figdir / "novelty.png", dpi=150)
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(figure_dir / "novelty.png", dpi=150)
     plt.close(fig)
 
 
-def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
+def sec_sequential(experiment: Experiment, figure_dir: Path) -> SectionSpec | None:
     """Replay of the run as sequential looks under an alpha-spending design,
     against the naive fixed-threshold rule. First contrast only: a
     monitoring design guards one comparison."""
-    metric = _primary(exp)
-    control_arm, treatment_arm = _contrasts(exp)[0]
+    metric = _primary(experiment)
+    control_arm, treatment_arm = _contrasts(experiment)[0]
     try:
-        control_counts, mean_c, var_c = _series(exp, control_arm, metric.name)
-        treatment_counts, mean_t, var_t = _series(exp, treatment_arm, metric.name)
+        control_counts, control_means, control_variances = _series(
+            experiment, control_arm, metric.name
+        )
+        treatment_counts, treatment_means, treatment_variances = _series(
+            experiment, treatment_arm, metric.name
+        )
     except ValueError:
         _report_skipped_section("What sequential monitoring would have decided")
         return None
-    k_full = int(control_counts.size)
-    k_use = min(
-        _consistent_prefix(control_counts, mean_c, var_c),
-        _consistent_prefix(treatment_counts, mean_t, var_t),
+    n_checkpoints = int(control_counts.size)
+    n_usable = min(
+        _consistent_prefix(control_counts, control_means, control_variances),
+        _consistent_prefix(treatment_counts, treatment_means, treatment_variances),
     )
-    if k_use < 3:
+    if n_usable < 3:
         return None
-    control_counts, mean_c, var_c = control_counts[:k_use], mean_c[:k_use], var_c[:k_use]
-    treatment_counts, mean_t, var_t = treatment_counts[:k_use], mean_t[:k_use], var_t[:k_use]
+    control_counts, control_means, control_variances = (
+        control_counts[:n_usable],
+        control_means[:n_usable],
+        control_variances[:n_usable],
+    )
+    treatment_counts, treatment_means, treatment_variances = (
+        treatment_counts[:n_usable],
+        treatment_means[:n_usable],
+        treatment_variances[:n_usable],
+    )
     trim_note = (
         ""
-        if k_use == k_full
+        if n_usable == n_checkpoints
         else "\n\nAs in the effect-stability analysis, "
         + (
             "the final checkpoint is excluded"
-            if k_full - k_use == 1
-            else f"the final {k_full - k_use} checkpoints are excluded"
+            if n_checkpoints - n_usable == 1
+            else f"the final {n_checkpoints - n_usable} checkpoints are excluded"
         )
         + " because the cumulative statistics there are internally "
-        f"inconsistent. The replay covers the {k_use} consistent looks."
+        f"inconsistent. The replay covers the {n_usable} consistent looks."
     )
     # statistical information for a two-sample z is the inverse summed
     # variance scale 1/(1/control_counts + 1/treatment_counts), which equals a share of the total
     # count only when the arm ratio is constant across looks
-    info = 1.0 / (1.0 / control_counts + 1.0 / treatment_counts)
-    if info[-1] <= 0 or np.any(np.diff(info) <= 0):
+    information = 1.0 / (1.0 / control_counts + 1.0 / treatment_counts)
+    if information[-1] <= 0 or np.any(np.diff(information) <= 0):
         return None
-    fractions = info / info[-1]
+    fractions = information / information[-1]
     if metric.kind == "binary":
-        control_conversions = np.round(mean_c * control_counts)
-        treatment_conversions = np.round(mean_t * treatment_counts)
+        control_conversions = np.round(control_means * control_counts)
+        treatment_conversions = np.round(treatment_means * treatment_counts)
         if np.any(np.diff(control_conversions) < 0) or np.any(np.diff(treatment_conversions) < 0):
             # published means at limited precision can reconstruct a
             # count series that dips by one; the stats-based z needs no
             # reconstruction and its divergence from the pooled form is
             # documented on z_from_cumulative_stats
             z_path = z_from_cumulative_stats(
-                control_counts, mean_c, var_c, treatment_counts, mean_t, var_t
+                control_counts,
+                control_means,
+                control_variances,
+                treatment_counts,
+                treatment_means,
+                treatment_variances,
             )
         else:
             z_path = z_from_cumulative_counts(
@@ -645,17 +696,24 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
             )
     else:
         z_path = z_from_cumulative_stats(
-            control_counts, mean_c, var_c, treatment_counts, mean_t, var_t
+            control_counts,
+            control_means,
+            control_variances,
+            treatment_counts,
+            treatment_means,
+            treatment_variances,
         )
-    seq = design(fractions.tolist(), alpha=exp.alpha, spending="obrien-fleming")
-    outcome = monitor(z_path.tolist(), seq)
+    sequential_section = design(
+        fractions.tolist(), alpha=experiment.alpha, spending="obrien-fleming"
+    )
+    outcome = monitor(z_path.tolist(), sequential_section)
     # the naive rule is the conventional dashboard threshold, quoted and
     # applied at two decimals as practitioners actually use it
-    z_naive = float(np.round(stats.norm.isf(exp.alpha / 2.0), 2))
+    z_naive = float(np.round(stats.norm.isf(experiment.alpha / 2.0), 2))
     naive_crossings = np.nonzero(np.abs(z_path) >= z_naive)[0]
     naive_look = int(naive_crossings[0]) + 1 if naive_crossings.size else None
 
-    _fig_sequential(z_path, np.array(seq.boundaries), z_naive, figdir)
+    _fig_sequential(z_path, np.array(sequential_section.boundaries), z_naive, figure_dir)
 
     if outcome.stopped_at_look is not None:
         spend_sentence = (
@@ -688,7 +746,7 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "realized look schedule and computing a boundary for each look "
         "(O'Brien-Fleming spending, stingy early and generous late). "
         "{{fig:sequential}} shows the observed |z| path against both rules "
-        f"for the first contrast ({_contrast_label(exp, treatment_arm)}). A "
+        f"for the first contrast ({_contrast_label(experiment, treatment_arm)}). A "
         "monitoring design guards one pre-declared comparison, and this "
         "replay takes the first.\n\n"
         + spend_sentence
@@ -722,7 +780,7 @@ def sec_sequential(exp: Experiment, figdir: Path) -> SectionSpec | None:
     )
 
 
-def _fig_sequential(z_path: NDArray, boundaries: NDArray, z_naive: float, figdir: Path) -> None:
+def _fig_sequential(z_path: NDArray, boundaries: NDArray, z_naive: float, figure_dir: Path) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -757,52 +815,52 @@ def _fig_sequential(z_path: NDArray, boundaries: NDArray, z_naive: float, figdir
     )
     ax.set_xlabel("Look")
     ax.set_ylabel("|z|")
-    top_vals = [float(np.abs(z_path).max()), z_naive]
+    top_values = [float(np.abs(z_path).max()), z_naive]
     if finite.any():
-        top_vals.append(float(boundaries[finite].max()))
-    ax.set_ylim(top=1.2 * max(top_vals))
+        top_values.append(float(boundaries[finite].max()))
+    ax.set_ylim(top=1.2 * max(top_values))
     ax.set_title("Sequential monitoring replay", loc="left", color=COLOR_INK)
     ax.legend(frameon=False, loc="upper right", fontsize=9)
     _style_axis(ax)
     fig.tight_layout()
-    figdir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figdir / "sequential.png", dpi=150)
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(figure_dir / "sequential.png", dpi=150)
     plt.close(fig)
 
 
-def sec_corrections(exp: Experiment, figdir: Path) -> SectionSpec | None:
+def sec_corrections(experiment: Experiment, figure_dir: Path) -> SectionSpec | None:
     """Multiple-comparison corrections over the non-primary family."""
-    metric_primary = _primary(exp)
+    metric_primary = _primary(experiment)
     family: list[tuple[MetricSpec, str]] = [
         (metric, treatment_arm)
-        for metric in exp.metrics
+        for metric in experiment.metrics
         if not metric.primary
-        for _, treatment_arm in _contrasts(exp)
+        for _, treatment_arm in _contrasts(experiment)
     ]
     if not family:
-        family = [(metric_primary, treatment_arm) for _, treatment_arm in _contrasts(exp)]
+        family = [(metric_primary, treatment_arm) for _, treatment_arm in _contrasts(experiment)]
     if len(family) < 2:
         return None
-    results = [_cell_test(exp, arm, metric) for metric, arm in family]
-    naive = np.array([comparison.p_value for comparison in results])
-    holm_ps = holm(naive)
-    bh_ps = benjamini_hochberg(naive)
+    comparisons = [_cell_test(experiment, arm, metric) for metric, arm in family]
+    naive = np.array([comparison.p_value for comparison in comparisons])
+    holm_p_values = holm(naive)
+    bh_q_values = benjamini_hochberg(naive)
 
     lines = [
         "| Metric | Contrast | Effect | Unadjusted p | Holm p | BH q |",
         "|---|---|---|---|---|---|",
     ]
     for (metric, arm), comparison, holm_p, bh_q in zip(
-        family, results, holm_ps, bh_ps, strict=True
+        family, comparisons, holm_p_values, bh_q_values, strict=True
     ):
         effect, p_value = _effect_and_p(comparison)
         lines.append(
-            f"| {metric.name} | {_contrast_label(exp, arm)} | {effect} | {fmt_p(p_value)} "
+            f"| {metric.name} | {_contrast_label(experiment, arm)} | {effect} | {fmt_p(p_value)} "
             f"| {fmt_p(float(holm_p))} | {fmt_p(float(bh_q))} |"
         )
-    n_naive = int(np.sum(naive < exp.alpha))
-    n_holm = int(np.sum(holm_ps < exp.alpha))
-    family_error = 1.0 - (1.0 - exp.alpha) ** len(family)
+    n_naive = int(np.sum(naive < experiment.alpha))
+    n_holm = int(np.sum(holm_p_values < experiment.alpha))
+    family_error = 1.0 - (1.0 - experiment.alpha) ** len(family)
     body = (
         (
             f"This experiment has {len(family)} comparisons beyond the primary metric. "
@@ -811,7 +869,7 @@ def sec_corrections(exp: Experiment, figdir: Path) -> SectionSpec | None:
             f"metric's {len(family)} contrasts. "
         )
         + "Testing each at alpha "
-        f"{exp.alpha} without adjustment gives roughly a "
+        f"{experiment.alpha} without adjustment gives roughly a "
         f"{family_error:.0%} chance of at least one false alarm even if nothing "
         "moved (treating the comparisons as independent, which shared arms "
         "make approximate). The family is therefore adjusted two ways: Holm, which controls the "
@@ -830,7 +888,11 @@ def sec_corrections(exp: Experiment, figdir: Path) -> SectionSpec | None:
         "p-value before and after adjustment."
     )
     _fig_corrections(
-        [f"{metric.name}, {arm}" for metric, arm in family], naive, holm_ps, exp.alpha, figdir
+        [f"{metric.name}, {arm}" for metric, arm in family],
+        naive,
+        holm_p_values,
+        experiment.alpha,
+        figure_dir,
     )
     return SectionSpec(
         key="corrections",
@@ -846,7 +908,7 @@ def sec_corrections(exp: Experiment, figdir: Path) -> SectionSpec | None:
 
 
 def _fig_corrections(
-    labels: list[str], naive: NDArray, adjusted: NDArray, alpha: float, figdir: Path
+    labels: list[str], naive: NDArray, adjusted: NDArray, alpha: float, figure_dir: Path
 ) -> None:
     import matplotlib
 
@@ -876,23 +938,25 @@ def _fig_corrections(
     ax.invert_yaxis()
     _style_axis(ax, grid_axis="x")
     fig.tight_layout()
-    figdir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figdir / "corrections.png", dpi=150)
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(figure_dir / "corrections.png", dpi=150)
     plt.close(fig)
 
 
-def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> SectionSpec | None:
+def sec_heavy_tail(
+    experiment: Experiment, random_generator: np.random.Generator, figure_dir: Path
+) -> SectionSpec | None:
     """Resampling-based analysis of a heavy-tailed continuous metric."""
     metric = (
-        _primary(exp)
-        if _primary(exp).kind == "continuous"
-        else next((metric for metric in exp.metrics if metric.kind == "continuous"), None)
+        _primary(experiment)
+        if _primary(experiment).kind == "continuous"
+        else next((metric for metric in experiment.metrics if metric.kind == "continuous"), None)
     )
     if metric is None:
         return None
-    control_arm, treatment_arm = _contrasts(exp)[0]
-    control_values = exp.rows[metric.name][exp.rows["arm"] == control_arm]
-    treatment_values = exp.rows[metric.name][exp.rows["arm"] == treatment_arm]
+    control_arm, treatment_arm = _contrasts(experiment)[0]
+    control_values = experiment.rows[metric.name][experiment.rows["arm"] == control_arm]
+    treatment_values = experiment.rows[metric.name][experiment.rows["arm"] == treatment_arm]
     if (
         control_values.size < 2
         or treatment_values.size < 2
@@ -900,9 +964,11 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
     ):
         return None
     welch = welch_ttest(control_values, treatment_values)
-    boot = bootstrap_mean_diff(control_values, treatment_values, rng=rng, n_resamples=10_000)
-    perm = permutation_test_mean_diff(
-        control_values, treatment_values, rng=rng, n_permutations=10_000
+    bootstrap = bootstrap_mean_diff(
+        control_values, treatment_values, random_generator=random_generator, n_resamples=10_000
+    )
+    permutation = permutation_test_mean_diff(
+        control_values, treatment_values, random_generator=random_generator, n_permutations=10_000
     )
     trimmed = trimmed_mean_diff(control_values, treatment_values, trim=0.01)
     zero_share = float(np.mean(np.concatenate([control_values, treatment_values]) == 0.0))
@@ -912,12 +978,14 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
         (control_values > 0).sum()
     ) or 2 * int(0.01 * treatment_values.size) >= int((treatment_values > 0).sum())
 
-    _fig_heavy_tail(control_values, treatment_values, welch, boot, trimmed, metric.name, figdir)
-    boot_excludes_zero = (boot.ci_low > 0.0) == (boot.ci_high > 0.0)
-    welch_significant = welch.p_value < exp.alpha
+    _fig_heavy_tail(
+        control_values, treatment_values, welch, bootstrap, trimmed, metric.name, figure_dir
+    )
+    boot_excludes_zero = (bootstrap.ci_low > 0.0) == (bootstrap.ci_high > 0.0)
+    welch_significant = welch.p_value < experiment.alpha
     agreement = (
         "The three same-estimand methods agree here, which is what a well-behaved tail looks like."
-        if welch_significant == (perm.p_value < exp.alpha)
+        if welch_significant == (permutation.p_value < experiment.alpha)
         and boot_excludes_zero == welch_significant
         else "The methods DISAGREE at the alpha line. That disagreement is the "
         "finding. It says the estimate rests on the tail, and the right move "
@@ -939,7 +1007,7 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
             if zero_share > 0.5
             else ""
         )
-        + f". The first contrast ({_contrast_label(exp, treatment_arm)}) is "
+        + f". The first contrast ({_contrast_label(experiment, treatment_arm)}) is "
         "analyzed four ways, each stressing the tail differently: a Welch t-test (relies "
         "on the normal approximation of the mean), a percentile bootstrap "
         "(resamples the observed tail), a permutation test (no normal "
@@ -953,9 +1021,9 @@ def sec_heavy_tail(exp: Experiment, rng: np.random.Generator, figdir: Path) -> S
         f"| Method | Estimate | Interval / p |\n|---|---|---|\n"
         f"| Welch t-test | {welch.difference:+.3f} | 95% CI {welch.ci_low:+.3f} "
         f"to {welch.ci_high:+.3f}, p = {fmt_p(welch.p_value)} |\n"
-        f"| Percentile bootstrap | {boot.estimate:+.3f} | 95% CI {boot.ci_low:+.3f} "
-        f"to {boot.ci_high:+.3f} |\n"
-        f"| Permutation test | {perm.observed:+.3f} | {fmt_perm_p(perm)} |\n"
+        f"| Percentile bootstrap | {bootstrap.estimate:+.3f} | 95% CI {bootstrap.ci_low:+.3f} "
+        f"to {bootstrap.ci_high:+.3f} |\n"
+        f"| Permutation test | {permutation.observed:+.3f} | {fmt_perm_p(permutation)} |\n"
         f"| Trimmed mean diff (1%) | {trimmed:+.3f} | different estimand |\n\n"
         f"{{{{fig:heavy_tail}}}} shows the distributions and the interval "
         "comparison. " + agreement + trim_note
@@ -975,59 +1043,76 @@ def _fig_heavy_tail(
     control_values: NDArray,
     treatment_values: NDArray,
     welch: MeanComparison,
-    boot: BootstrapResult,
+    bootstrap: BootstrapResult,
     trimmed: float,
     metric_name: str,
-    figdir: Path,
+    figure_dir: Path,
 ) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.2))
-    pos_x, pos_y = control_values[control_values > 0], treatment_values[treatment_values > 0]
-    if pos_x.size and pos_y.size:
-        top = float(max(pos_x.max(), pos_y.max()))
-        bins = np.geomspace(max(min(pos_x.min(), pos_y.min()), 1e-9), top, 40)
-        ax1.hist(
-            pos_x, bins=bins, histtype="step", linewidth=2, color=COLOR_CONTROL, label="control"
+    fig, (histogram_ax, interval_ax) = plt.subplots(1, 2, figsize=(10, 4.2))
+    control_spenders, treatment_spenders = (
+        control_values[control_values > 0],
+        treatment_values[treatment_values > 0],
+    )
+    if control_spenders.size and treatment_spenders.size:
+        top = float(max(control_spenders.max(), treatment_spenders.max()))
+        bins = np.geomspace(
+            max(min(control_spenders.min(), treatment_spenders.min()), 1e-9), top, 40
         )
-        ax1.hist(
-            pos_y, bins=bins, histtype="step", linewidth=2, color=COLOR_TREATMENT, label="treatment"
+        histogram_ax.hist(
+            control_spenders,
+            bins=bins,
+            histtype="step",
+            linewidth=2,
+            color=COLOR_CONTROL,
+            label="control",
         )
-        ax1.set_xscale("log")
-        ax1.set_yscale("log")
-    ax1.set_xlabel(f"{metric_name} per user, positive values (log scale)")
-    ax1.set_ylabel("Users (log scale)")
-    ax1.set_title("Positive-value distribution by arm", loc="left", color=COLOR_INK, fontsize=10)
-    ax1.legend(frameon=False, fontsize=9)
-    _style_axis(ax1)
+        histogram_ax.hist(
+            treatment_spenders,
+            bins=bins,
+            histtype="step",
+            linewidth=2,
+            color=COLOR_TREATMENT,
+            label="treatment",
+        )
+        histogram_ax.set_xscale("log")
+        histogram_ax.set_yscale("log")
+    histogram_ax.set_xlabel(f"{metric_name} per user, positive values (log scale)")
+    histogram_ax.set_ylabel("Users (log scale)")
+    histogram_ax.set_title(
+        "Positive-value distribution by arm", loc="left", color=COLOR_INK, fontsize=10
+    )
+    histogram_ax.legend(frameon=False, fontsize=9)
+    _style_axis(histogram_ax)
 
-    ax2.axvline(0, color=COLOR_REFERENCE, linewidth=1.5, linestyle="--")
+    interval_ax.axvline(0, color=COLOR_REFERENCE, linewidth=1.5, linestyle="--")
     intervals = [
         ("Welch 95% CI", welch.difference, welch.ci_low, welch.ci_high),
-        ("Bootstrap 95% CI", boot.estimate, boot.ci_low, boot.ci_high),
+        ("Bootstrap 95% CI", bootstrap.estimate, bootstrap.ci_low, bootstrap.ci_high),
     ]
     for position, (_, center, ci_low, ci_high) in enumerate(intervals):
-        ax2.plot([ci_low, ci_high], [position, position], color=COLOR_CONTROL, linewidth=2)
-        ax2.plot(center, position, "o", color=COLOR_INK, markersize=7)
-    ax2.plot(trimmed, len(intervals), "D", color=COLOR_TREATMENT, markersize=7)
+        interval_ax.plot([ci_low, ci_high], [position, position], color=COLOR_CONTROL, linewidth=2)
+        interval_ax.plot(center, position, "o", color=COLOR_INK, markersize=7)
+    interval_ax.plot(trimmed, len(intervals), "D", color=COLOR_TREATMENT, markersize=7)
     labels = [label for label, *_ in intervals] + ["Trimmed diff (1%)\ndifferent estimand"]
-    ax2.set_yticks(np.arange(len(labels)), labels)
-    ax2.set_xlabel(f"{metric_name} difference (treatment - control)")
-    ax2.set_title("Interval comparison", loc="left", color=COLOR_INK, fontsize=10)
-    ax2.invert_yaxis()
-    _style_axis(ax2, grid_axis="x")
+    interval_ax.set_yticks(np.arange(len(labels)), labels)
+    interval_ax.set_xlabel(f"{metric_name} difference (treatment - control)")
+    interval_ax.set_title("Interval comparison", loc="left", color=COLOR_INK, fontsize=10)
+    interval_ax.invert_yaxis()
+    _style_axis(interval_ax, grid_axis="x")
     fig.tight_layout()
-    figdir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(figdir / "heavy_tail.png", dpi=150)
+    figure_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(figure_dir / "heavy_tail.png", dpi=150)
     plt.close(fig)
 
 
-def sec_truth(exp: Experiment) -> SectionSpec:
+def sec_truth(experiment: Experiment) -> SectionSpec:
     """For synthetic data only: the parameters the generator actually used."""
-    rows = "\n".join(f"| {name} | {value} |" for name, value in sorted(exp.truth.items()))
+    rows = "\n".join(f"| {name} | {value} |" for name, value in sorted(experiment.truth.items()))
     body = (
         "This data is SYNTHETIC, and that is disclosed here rather than in a "
         "footnote. The generator's parameters below are the true values the "
@@ -1044,19 +1129,23 @@ def sec_truth(exp: Experiment) -> SectionSpec:
     )
 
 
-def default_sections(exp: Experiment, rng: np.random.Generator, figdir: Path) -> list[SectionSpec]:
+def default_sections(
+    experiment: Experiment, random_generator: np.random.Generator, figure_dir: Path
+) -> list[SectionSpec]:
     """The standard report, in order, with impossible sections omitted."""
-    caps = capabilities(exp)
+    data_capabilities = capabilities(experiment)
     candidates = [
-        sec_validation(exp),
-        sec_design_power(exp),
-        sec_srm(exp),
-        sec_primary(exp),
-        sec_novelty(exp, figdir) if "time_axis" in caps else None,
-        sec_sequential(exp, figdir) if "time_axis" in caps else None,
-        sec_corrections(exp, figdir) if "multi_metric" in caps else None,
-        sec_heavy_tail(exp, rng, figdir) if {"user_rows", "continuous_metric"} <= caps else None,
-        sec_truth(exp) if "truth" in caps else None,
+        sec_validation(experiment),
+        sec_design_power(experiment),
+        sec_srm(experiment),
+        sec_primary(experiment),
+        sec_novelty(experiment, figure_dir) if "time_axis" in data_capabilities else None,
+        sec_sequential(experiment, figure_dir) if "time_axis" in data_capabilities else None,
+        sec_corrections(experiment, figure_dir) if "multi_metric" in data_capabilities else None,
+        sec_heavy_tail(experiment, random_generator, figure_dir)
+        if {"user_rows", "continuous_metric"} <= data_capabilities
+        else None,
+        sec_truth(experiment) if "truth" in data_capabilities else None,
     ]
     return [section for section in candidates if section is not None]
 
@@ -1074,17 +1163,17 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
     """
     import csv
 
-    agg = config["aggregates"]
+    aggregate_columns = config["aggregates"]
     metrics = _metric_specs(config)
     metric_by_column = {metric.column: metric for metric in metrics}
-    primary_col = next(metric.column for metric in metrics if metric.primary)
+    primary_column = next(metric.column for metric in metrics if metric.primary)
     alpha = config["experiment"]["alpha"]
 
     experiments: dict[str, list[dict]] = {}
     with open(data_path, newline="", encoding="utf-8") as data_file:
         for row in csv.DictReader(data_file):
             experiments.setdefault(
-                row[agg.get("experiment_id_column", "experiment_id")], []
+                row[aggregate_columns.get("experiment_id_column", "experiment_id")], []
             ).append(row)
 
     unstable: list[str] = []
@@ -1096,25 +1185,30 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
     skip_few = "fewer than two usable checkpoints exist"
     skip_degenerate = "the split is degenerate"
     skip_reasons = {skip_decreasing: 0, skip_few: 0, skip_degenerate: 0}
-    for exp_id, rows in sorted(experiments.items()):
+    for experiment_id, rows in sorted(experiments.items()):
         # cumulative primary-metric counts per variant, checkpoint-ordered
-        variants = sorted({row[agg["variant"]] for row in rows})
-        worst_p = float("nan")
+        variants = sorted({row[aggregate_columns["variant"]] for row in rows})
+        worst_p_value = float("nan")
         reasons_hit: set[str] = set()
         for variant in variants:
             series = sorted(
                 (
                     row
                     for row in rows
-                    if row[agg["variant"]] == variant and row[agg["metric"]] == primary_col
+                    if row[aggregate_columns["variant"]] == variant
+                    and row[aggregate_columns["metric"]] == primary_column
                 ),
-                key=lambda row: float(row[agg["checkpoint"]]),
+                key=lambda row: float(row[aggregate_columns["checkpoint"]]),
             )
             if len(series) < 2:
                 reasons_hit.add(skip_few)
                 continue
-            control_counts = np.array([float(row[agg["count_control"]]) for row in series])
-            treatment_counts = np.array([float(row[agg["count_treatment"]]) for row in series])
+            control_counts = np.array(
+                [float(row[aggregate_columns["count_control"]]) for row in series]
+            )
+            treatment_counts = np.array(
+                [float(row[aggregate_columns["count_treatment"]]) for row in series]
+            )
             if np.any(np.diff(control_counts) < 0) or np.any(np.diff(treatment_counts) < 0):
                 reasons_hit.add(skip_decreasing)
                 continue
@@ -1122,67 +1216,83 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
             if degrees_of_freedom == 0 or np.isnan(p_value):
                 reasons_hit.add(skip_degenerate)
                 continue
-            if np.isnan(worst_p) or p_value < worst_p:
-                worst_p = p_value
-        if np.isnan(worst_p):
+            if np.isnan(worst_p_value) or p_value < worst_p_value:
+                worst_p_value = p_value
+        if np.isnan(worst_p_value):
             stability_skipped += 1
             for reason in reasons_hit:
                 skip_reasons[reason] += 1
         else:
             analyzed += 1
-            if worst_p < 1e-3:
-                unstable.append(exp_id)
+            if worst_p_value < 1e-3:
+                unstable.append(experiment_id)
 
         # end-of-run multiplicity across the full (metric, variant) family
         p_values: list[float] = []
         for variant in variants:
-            for metric_col, metric in metric_by_column.items():
+            for metric_column, metric in metric_by_column.items():
                 series = sorted(
                     (
                         row
                         for row in rows
-                        if row[agg["variant"]] == variant and row[agg["metric"]] == metric_col
+                        if row[aggregate_columns["variant"]] == variant
+                        and row[aggregate_columns["metric"]] == metric_column
                     ),
-                    key=lambda row: float(row[agg["checkpoint"]]),
+                    key=lambda row: float(row[aggregate_columns["checkpoint"]]),
                 )
                 if not series:
                     cells_skipped += 1
                     continue
                 last = series[-1]
                 try:
-                    n_c = int(float(last[agg["count_control"]]))
-                    n_t = int(float(last[agg["count_treatment"]]))
-                    mean_c = float(last[agg["mean_control"]])
-                    mean_t = float(last[agg["mean_treatment"]])
-                    var_c = float(last[agg["variance_control"]])
-                    var_t = float(last[agg["variance_treatment"]])
+                    n_control = int(float(last[aggregate_columns["count_control"]]))
+                    n_treatment = int(float(last[aggregate_columns["count_treatment"]]))
+                    control_means = float(last[aggregate_columns["mean_control"]])
+                    treatment_means = float(last[aggregate_columns["mean_treatment"]])
+                    control_variances = float(last[aggregate_columns["variance_control"]])
+                    treatment_variances = float(last[aggregate_columns["variance_treatment"]])
                 except ValueError:
                     cells_skipped += 1
                     continue
-                if n_c < 2 or n_t < 2 or not np.isfinite(mean_c) or not np.isfinite(mean_t):
+                if (
+                    n_control < 2
+                    or n_treatment < 2
+                    or not np.isfinite(control_means)
+                    or not np.isfinite(treatment_means)
+                ):
                     cells_skipped += 1
                     continue
                 if metric.kind == "binary":
                     # a proportion test needs valid rates, not variances
-                    if not (0.0 <= mean_c <= 1.0 and 0.0 <= mean_t <= 1.0):
+                    if not (0.0 <= control_means <= 1.0 and 0.0 <= treatment_means <= 1.0):
                         cells_skipped += 1
                         continue
-                    result = two_proportion_ztest(
-                        int(round(mean_c * n_c)), n_c, int(round(mean_t * n_t)), n_t
+                    comparison = two_proportion_ztest(
+                        int(round(control_means * n_control)),
+                        n_control,
+                        int(round(treatment_means * n_treatment)),
+                        n_treatment,
                     )
-                    p_values.append(result.p_value)
+                    p_values.append(comparison.p_value)
                 else:
                     if (
-                        not np.isfinite(var_c)
-                        or not np.isfinite(var_t)
-                        or var_c < 0.0
-                        or var_t < 0.0
-                        or var_c / n_c + var_t / n_t == 0.0
+                        not np.isfinite(control_variances)
+                        or not np.isfinite(treatment_variances)
+                        or control_variances < 0.0
+                        or treatment_variances < 0.0
+                        or control_variances / n_control + treatment_variances / n_treatment == 0.0
                     ):
                         cells_skipped += 1
                         continue
                     p_values.append(
-                        welch_ttest_from_stats(n_c, mean_c, var_c, n_t, mean_t, var_t).p_value
+                        welch_ttest_from_stats(
+                            n_control,
+                            control_means,
+                            control_variances,
+                            n_treatment,
+                            treatment_means,
+                            treatment_variances,
+                        ).p_value
                     )
         if p_values:
             naive_any += int(any(p_value < alpha for p_value in p_values))

@@ -47,15 +47,15 @@ def _write_config(tmp_path: Path, text: str) -> Path:
 
 @pytest.fixture()
 def ok_experiment() -> Experiment:
-    cfg = load_config(FIXTURES / "experiment_ok.toml")
-    return load_user_rows(cfg, FIXTURES / "user_rows_ok.csv")
+    config = load_config(FIXTURES / "experiment_ok.toml")
+    return load_user_rows(config, FIXTURES / "user_rows_ok.csv")
 
 
 class TestConfig:
     def test_ok_fixture_parses(self) -> None:
-        cfg = load_config(FIXTURES / "experiment_ok.toml")
-        assert cfg["experiment"]["name"] == "fixture-experiment"
-        assert [metric["name"] for metric in cfg["metrics"]] == ["converted", "spend"]
+        config = load_config(FIXTURES / "experiment_ok.toml")
+        assert config["experiment"]["name"] == "fixture-experiment"
+        assert [metric["name"] for metric in config["metrics"]] == ["converted", "spend"]
 
     def test_two_primaries_rejected(self, tmp_path: Path) -> None:
         text = _config_text(
@@ -104,14 +104,16 @@ class TestCleanLoad:
 
     def test_end_of_run_aggregates_match_hand_computed(self, ok_experiment: Experiment) -> None:
         # treatment/converted: 6 ones, 9 zeros -> mean 0.4, ddof=1 var 3.6/14
-        agg = {(cell.arm, cell.metric, cell.checkpoint): cell for cell in ok_experiment.aggregates}
-        conv_t = agg[("treatment", "converted", None)]
-        assert conv_t.n == 15
-        assert conv_t.mean == pytest.approx(0.4)
-        assert conv_t.variance == pytest.approx(3.6 / 14)
+        cells_by_key = {
+            (cell.arm, cell.metric, cell.checkpoint): cell for cell in ok_experiment.aggregates
+        }
+        conversions_treatment = cells_by_key[("treatment", "converted", None)]
+        assert conversions_treatment.n == 15
+        assert conversions_treatment.mean == pytest.approx(0.4)
+        assert conversions_treatment.variance == pytest.approx(3.6 / 14)
         # control/spend: values 10,20,30,40 among 15 rows -> mean 100/15
-        spend_c = agg[("control", "spend", None)]
-        assert spend_c.mean == pytest.approx(100 / 15)
+        spend_control_cell = cells_by_key[("control", "spend", None)]
+        assert spend_control_cell.mean == pytest.approx(100 / 15)
 
     def test_cumulative_aggregates_grow_with_checkpoints(self, ok_experiment: Experiment) -> None:
         counts = [
@@ -122,11 +124,11 @@ class TestCleanLoad:
         assert counts == [3, 6, 9, 12, 15]
 
     def test_missing_declared_column_rejected(self, tmp_path: Path) -> None:
-        cfg = load_config(FIXTURES / "experiment_ok.toml")
+        config = load_config(FIXTURES / "experiment_ok.toml")
         bad = tmp_path / "bad.csv"
         bad.write_text("user_id,group,day,converted\nu1,control,0,1\n", encoding="utf-8")
         with pytest.raises(ValueError, match="missing declared columns"):
-            load_user_rows(cfg, bad)
+            load_user_rows(config, bad)
 
 
 class TestValidatorRules:
@@ -140,11 +142,11 @@ class TestValidatorRules:
                 '[columns.aliases.group]\n"treatmnet" = "treatment"\n'
             )
         )
-        cfg = load_config(_write_config(tmp_path, text))
-        return load_user_rows(cfg, FIXTURES / "user_rows_dirty.csv")
+        config = load_config(_write_config(tmp_path, text))
+        return load_user_rows(config, FIXTURES / "user_rows_dirty.csv")
 
-    def _count(self, exp: Experiment, rule: str) -> int:
-        return sum(event.count for event in exp.validation if event.rule == rule)
+    def _count(self, experiment: Experiment, rule: str) -> int:
+        return sum(event.count for event in experiment.validation if event.rule == rule)
 
     def test_alias_normalized_fires(self, dirty: Experiment) -> None:
         assert self._count(dirty, "alias_normalized") == 1
@@ -170,9 +172,9 @@ class TestValidatorRules:
         assert set(dirty.rows) == {"arm", "day", "user_id", "converted", "spend"}
 
     def test_unmapped_arm_raises(self, tmp_path: Path) -> None:
-        cfg = load_config(_write_config(tmp_path, _config_text()))  # no alias table
+        config = load_config(_write_config(tmp_path, _config_text()))  # no alias table
         with pytest.raises(ValueError, match="unmapped_arm_error"):
-            load_user_rows(cfg, FIXTURES / "user_rows_dirty.csv")
+            load_user_rows(config, FIXTURES / "user_rows_dirty.csv")
 
     def test_events_carry_example_row(self, dirty: Experiment) -> None:
         by_rule = {event.rule: event.detail for event in dirty.validation}
@@ -182,8 +184,8 @@ class TestValidatorRules:
 class TestAggregates:
     @pytest.fixture()
     def agg_experiment(self) -> Experiment:
-        cfg = load_config(FIXTURES / "aggregates_config.toml")
-        return load_aggregates(cfg, FIXTURES / "aggregates_ok.csv")
+        config = load_config(FIXTURES / "aggregates_config.toml")
+        return load_aggregates(config, FIXTURES / "aggregates_ok.csv")
 
     def test_arms_derived_from_data(self, agg_experiment: Experiment) -> None:
         assert agg_experiment.arms == ("control", "variant_2")
@@ -222,29 +224,29 @@ class TestAggregates:
         source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
         bad = tmp_path / "bad.csv"
         bad.write_text(source + bad_row + "\n", encoding="utf-8")
-        cfg = load_config(FIXTURES / "aggregates_config.toml")
+        config = load_config(FIXTURES / "aggregates_config.toml")
         with pytest.raises(ValueError, match=match):
-            load_aggregates(cfg, bad)
+            load_aggregates(config, bad)
 
 
 class TestIntervalFromCumulative:
     def test_recovery_is_exact_under_ddof1(self) -> None:
-        rng = np.random.default_rng(7)
-        observations = rng.lognormal(1.0, 0.8, size=200)
+        random_generator = np.random.default_rng(7)
+        observations = random_generator.lognormal(1.0, 0.8, size=200)
         splits = [60, 140, 200]
-        cum_n, cum_mean, cum_var = [], [], []
+        cumulative_counts, cumulative_means, cumulative_variances = [], [], []
         for end in splits:
             chunk = observations[:end]
-            cum_n.append(chunk.size)
-            cum_mean.append(chunk.mean())
-            cum_var.append(chunk.var(ddof=1))
-        int_n, int_mean, int_var = interval_from_cumulative(
-            np.array(cum_n), np.array(cum_mean), np.array(cum_var)
+            cumulative_counts.append(chunk.size)
+            cumulative_means.append(chunk.mean())
+            cumulative_variances.append(chunk.var(ddof=1))
+        interval_counts, interval_means, interval_variances = interval_from_cumulative(
+            np.array(cumulative_counts), np.array(cumulative_means), np.array(cumulative_variances)
         )
         expected = [observations[:60], observations[60:140], observations[140:200]]
-        assert np.allclose(int_n, [60, 80, 60])
-        assert np.allclose(int_mean, [chunk.mean() for chunk in expected], rtol=1e-10)
-        assert np.allclose(int_var, [chunk.var(ddof=1) for chunk in expected], rtol=1e-8)
+        assert np.allclose(interval_counts, [60, 80, 60])
+        assert np.allclose(interval_means, [chunk.mean() for chunk in expected], rtol=1e-10)
+        assert np.allclose(interval_variances, [chunk.var(ddof=1) for chunk in expected], rtol=1e-8)
 
     def test_repeated_checkpoint_rejected(self) -> None:
         with pytest.raises(ValueError, match="zero observations"):
@@ -293,71 +295,82 @@ class TestBatteryRegressions:
             load_config(_write_config(tmp_path, text))
 
     def test_blank_user_ids_do_not_deduplicate_each_other(self, tmp_path: Path) -> None:
-        cfg = load_config(_write_config(tmp_path, _config_text()))
-        data = tmp_path / "blank_ids.csv"
-        data.write_text(
+        config = load_config(_write_config(tmp_path, _config_text()))
+        data_path = tmp_path / "blank_ids.csv"
+        data_path.write_text(
             "user_id,group,day,converted,spend\n"
             ",control,0,1,5\n,control,0,0,0\n,treatment,1,1,7\n,treatment,1,0,0\n",
             encoding="utf-8",
         )
-        exp = load_user_rows(cfg, data)
-        assert exp.rows["arm"].size == 4
-        assert not any(event.rule == "duplicate_user_dropped" for event in exp.validation)
+        experiment = load_user_rows(config, data_path)
+        assert experiment.rows["arm"].size == 4
+        assert not any(event.rule == "duplicate_user_dropped" for event in experiment.validation)
 
     def test_nan_and_inf_metric_values_dropped(self, tmp_path: Path) -> None:
-        cfg = load_config(_write_config(tmp_path, _config_text()))
-        data = tmp_path / "nonfinite.csv"
-        data.write_text(
+        config = load_config(_write_config(tmp_path, _config_text()))
+        data_path = tmp_path / "nonfinite.csv"
+        data_path.write_text(
             "user_id,group,day,converted,spend\n"
             "u1,control,0,1,nan\nu2,control,0,0,inf\nu3,treatment,0,1,5\nu4,treatment,0,0,0\n"
             "u5,control,1,0,0\nu6,treatment,1,1,2\n",
             encoding="utf-8",
         )
-        exp = load_user_rows(cfg, data)
+        experiment = load_user_rows(config, data_path)
         assert (
-            sum(event.count for event in exp.validation if event.rule == "uncoercible_dropped") == 2
+            sum(
+                event.count
+                for event in experiment.validation
+                if event.rule == "uncoercible_dropped"
+            )
+            == 2
         )
-        assert np.all(np.isfinite(exp.rows["spend"]))
+        assert np.all(np.isfinite(experiment.rows["spend"]))
 
     def test_nonbinary_value_in_binary_metric_dropped(self, tmp_path: Path) -> None:
-        cfg = load_config(_write_config(tmp_path, _config_text()))
-        data = tmp_path / "nonbinary.csv"
-        data.write_text(
+        config = load_config(_write_config(tmp_path, _config_text()))
+        data_path = tmp_path / "nonbinary.csv"
+        data_path.write_text(
             "user_id,group,day,converted,spend\n"
             "u1,control,0,3.7,0\nu2,control,0,0,0\nu3,treatment,0,1,5\nu4,treatment,1,0,0\n",
             encoding="utf-8",
         )
-        exp = load_user_rows(cfg, data)
+        experiment = load_user_rows(config, data_path)
         assert (
-            sum(event.count for event in exp.validation if event.rule == "nonbinary_dropped") == 1
+            sum(event.count for event in experiment.validation if event.rule == "nonbinary_dropped")
+            == 1
         )
 
     def test_garbage_day_dropped_not_crashed(self, tmp_path: Path) -> None:
-        cfg = load_config(_write_config(tmp_path, _config_text()))
-        data = tmp_path / "bad_day.csv"
-        data.write_text(
+        config = load_config(_write_config(tmp_path, _config_text()))
+        data_path = tmp_path / "bad_day.csv"
+        data_path.write_text(
             "user_id,group,day,converted,spend\n"
             "u1,control,N/A,1,0\nu2,control,0,0,0\nu3,treatment,,1,5\nu4,treatment,1,0,0\n",
             encoding="utf-8",
         )
-        exp = load_user_rows(cfg, data)
-        assert exp.rows["arm"].size == 2
+        experiment = load_user_rows(config, data_path)
+        assert experiment.rows["arm"].size == 2
         assert (
-            sum(event.count for event in exp.validation if event.rule == "uncoercible_dropped") == 2
+            sum(
+                event.count
+                for event in experiment.validation
+                if event.rule == "uncoercible_dropped"
+            )
+            == 2
         )
 
     def test_bom_header_accepted(self, tmp_path: Path) -> None:
-        cfg = load_config(_write_config(tmp_path, _config_text()))
-        data = tmp_path / "bom.csv"
-        data.write_bytes(
+        config = load_config(_write_config(tmp_path, _config_text()))
+        data_path = tmp_path / "bom.csv"
+        data_path.write_bytes(
             b"\xef\xbb\xbfuser_id,group,day,converted,spend\nu1,control,0,1,0\nu2,treatment,0,0,0\n"
         )
-        exp = load_user_rows(cfg, data)
-        assert exp.rows["arm"].size == 2
+        experiment = load_user_rows(config, data_path)
+        assert experiment.rows["arm"].size == 2
 
     def test_aggregates_missing_declared_metric_rejected(self, tmp_path: Path) -> None:
-        cfg = load_config(FIXTURES / "aggregates_config.toml")
-        cfg["metrics"].append(
+        config = load_config(FIXTURES / "aggregates_config.toml")
+        config["metrics"].append(
             {
                 "name": "metric_9",
                 "column": "9",
@@ -367,7 +380,7 @@ class TestBatteryRegressions:
             }
         )
         with pytest.raises(ValueError, match="has no data for arm"):
-            load_aggregates(cfg, FIXTURES / "aggregates_ok.csv")
+            load_aggregates(config, FIXTURES / "aggregates_ok.csv")
 
     def test_aggregates_misaligned_checkpoints_rejected(self, tmp_path: Path) -> None:
         source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
@@ -381,25 +394,25 @@ class TestBatteryRegressions:
         )
         bad = tmp_path / "misaligned.csv"
         bad.write_text(source + extra, encoding="utf-8")
-        cfg = load_config(FIXTURES / "aggregates_config.toml")
+        config = load_config(FIXTURES / "aggregates_config.toml")
         with pytest.raises(ValueError, match="checkpoint grids differ across arms"):
-            load_aggregates(cfg, bad)
+            load_aggregates(config, bad)
 
     def test_aggregates_nan_statistic_rejected(self, tmp_path: Path) -> None:
         source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
         bad = tmp_path / "nanstat.csv"
         bad.write_text(source + "expA,2,1,4.0,400,NaN,0.09,400,0.12,0.11\n", encoding="utf-8")
-        cfg = load_config(FIXTURES / "aggregates_config.toml")
+        config = load_config(FIXTURES / "aggregates_config.toml")
         with pytest.raises(ValueError, match="non-finite statistics at data row"):
-            load_aggregates(cfg, bad)
+            load_aggregates(config, bad)
 
     def test_aggregates_noninteger_count_rejected(self, tmp_path: Path) -> None:
         source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
         bad = tmp_path / "fraccount.csv"
         bad.write_text(source + "expA,2,1,4.0,400.9,0.1,0.09,400,0.12,0.11\n", encoding="utf-8")
-        cfg = load_config(FIXTURES / "aggregates_config.toml")
+        config = load_config(FIXTURES / "aggregates_config.toml")
         with pytest.raises(ValueError, match="non-integer count"):
-            load_aggregates(cfg, bad)
+            load_aggregates(config, bad)
 
     def test_aggregates_filter_keys_must_pair(self, tmp_path: Path) -> None:
         text = (FIXTURES / "aggregates_config.toml").read_text(encoding="utf-8")
@@ -414,28 +427,32 @@ class TestBatteryRegressions:
             load_config(_write_config(tmp_path, text))
 
     def test_arm_case_normalization_is_counted(self, tmp_path: Path) -> None:
-        cfg = load_config(_write_config(tmp_path, _config_text()))
-        data = tmp_path / "cased.csv"
-        data.write_text(
+        config = load_config(_write_config(tmp_path, _config_text()))
+        data_path = tmp_path / "cased.csv"
+        data_path.write_text(
             "user_id,group,day,converted,spend\n"
             "u1,Control,0,1,0\nu2, treatment,0,0,0\nu3,control,1,0,0\nu4,treatment,1,1,5\n",
             encoding="utf-8",
         )
-        exp = load_user_rows(cfg, data)
+        experiment = load_user_rows(config, data_path)
         assert (
-            sum(event.count for event in exp.validation if event.rule == "arm_label_normalized")
+            sum(
+                event.count
+                for event in experiment.validation
+                if event.rule == "arm_label_normalized"
+            )
             == 2
         )
-        assert exp.rows["arm"].size == 4
+        assert experiment.rows["arm"].size == 4
 
 
 def test_unparseable_aggregate_keeps_the_parse_error(tmp_path: Path) -> None:
     source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
     bad = tmp_path / "bad.csv"
     bad.write_text(source + "expA,2,1,4.0,abc,0.1,0.09,400,0.12,0.11\n", encoding="utf-8")
-    cfg = load_config(FIXTURES / "aggregates_config.toml")
+    config = load_config(FIXTURES / "aggregates_config.toml")
     with pytest.raises(ValueError, match="unparseable") as raised:
-        load_aggregates(cfg, bad)
+        load_aggregates(config, bad)
     assert isinstance(raised.value.__cause__, ValueError)
 
 
@@ -448,8 +465,8 @@ def test_single_observation_interval_is_nan_without_any_warning() -> None:
     variances = np.array([observations[:end].var(ddof=1) for end in splits])
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
-        interval_n, _, interval_var = interval_from_cumulative(counts, means, variances)
-    assert interval_n[1] == 1.0
-    assert np.isnan(interval_var[1])
+        interval_counts, _, interval_variances = interval_from_cumulative(counts, means, variances)
+    assert interval_counts[1] == 1.0
+    assert np.isnan(interval_variances[1])
     expected = [observations[:20].var(ddof=1), observations[21:40].var(ddof=1)]
-    assert np.allclose(interval_var[[0, 2]], expected, rtol=1e-8)
+    assert np.allclose(interval_variances[[0, 2]], expected, rtol=1e-8)
