@@ -220,6 +220,7 @@ class TestHillstromShapedFixture:
         experiment = self._experiment(tmp_path)
         by_rule = {event.rule: event.count for event in experiment.validation}
         assert by_rule["alias_normalized"] == 7
+        assert experiment.rows is not None
         assert np.sum(experiment.rows["zip_code"] == "Surburban") == 0
         assert np.sum(experiment.rows["zip_code"] == "Suburban") == 7
 

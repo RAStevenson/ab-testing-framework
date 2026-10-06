@@ -25,6 +25,7 @@ what was done to the data before any statistic was computed.
 from __future__ import annotations
 
 import csv
+import itertools
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -612,14 +613,14 @@ def load_aggregates(config: dict, data_path: Path) -> Experiment:
     for (arm, metric_name), series in cells.items():
         series.sort(key=lambda item: item[0])
         counts = [count for _, count, _, _ in series]
-        if any(later < earlier for earlier, later in zip(counts, counts[1:], strict=False)):
+        if any(later < earlier for earlier, later in itertools.pairwise(counts)):
             raise ValueError(
                 f"cumulative_regression_error: counts for ({arm}, {metric_name}) "
                 f"decrease across checkpoints: {counts}"
             )
         for checkpoint, count, mean, variance in series:
             aggregates.append(ArmAggregate(arm, metric_name, checkpoint, count, mean, variance))
-        final_checkpoint, count, mean, variance = series[-1]
+        _, count, mean, variance = series[-1]
         aggregates.append(ArmAggregate(arm, metric_name, None, count, mean, variance))
 
     # every declared metric must actually be present for every arm, and every

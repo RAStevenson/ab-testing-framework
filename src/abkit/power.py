@@ -10,6 +10,7 @@ error.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import cast
 
 import numpy as np
 from scipy import optimize, stats
@@ -158,7 +159,10 @@ def mde_two_proportions(
             - power
         )
 
-    return float(optimize.brentq(gap, 1e-12, upper, xtol=1e-12))
+    # brentq returns a float unless full_output=True; scipy leaves it untyped,
+    # so the checker infers the tuple form too
+    root = cast(float, optimize.brentq(gap, 1e-12, upper, xtol=1e-12))
+    return float(root)
 
 
 def power_two_means(

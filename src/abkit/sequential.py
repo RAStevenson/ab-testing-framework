@@ -22,6 +22,7 @@ which share no code with this recursion.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -171,11 +172,15 @@ def _next_boundary(
     # crossing_probability is monotone decreasing in c; at c=0 it equals the
     # remaining un-crossed mass (> increment for any valid spending), and at
     # c=12 it is numerically zero, so the bracket always holds
-    return float(
+    # brentq returns a float unless full_output=True; scipy leaves it untyped,
+    # so the checker infers the tuple form too
+    root = cast(
+        float,
         optimize.brentq(
             lambda boundary: crossing_probability(boundary) - increment, 0.0, 12.0, xtol=1e-10
-        )
+        ),
     )
+    return float(root)
 
 
 def _propagate(

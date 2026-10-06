@@ -110,8 +110,9 @@ def test_welch_matches_scipy():
     treatment_values = random_generator.normal(0.2, 2.0, 250)
     result = welch_ttest(control_values, treatment_values)
     expected = stats.ttest_ind(treatment_values, control_values, equal_var=False)
-    assert result.statistic == pytest.approx(expected.statistic, rel=1e-12)
-    assert result.p_value == pytest.approx(expected.pvalue, rel=1e-12)
+    # scipy's stubs leave TtestResult's statistic and pvalue undeclared
+    assert result.statistic == pytest.approx(expected.statistic, rel=1e-12)  # pyright: ignore[reportAttributeAccessIssue]
+    assert result.p_value == pytest.approx(expected.pvalue, rel=1e-12)  # pyright: ignore[reportAttributeAccessIssue]
     assert result.ci_low < result.difference < result.ci_high
 
 

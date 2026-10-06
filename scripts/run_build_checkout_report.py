@@ -25,11 +25,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import tomllib
+from typing import Literal
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.transforms
 import numpy as np
 from matplotlib.axes import Axes
 from numpy.typing import NDArray
@@ -105,7 +107,7 @@ def spell(number: int) -> str:
     return _SMALL_NUMBERS[number] if number < len(_SMALL_NUMBERS) else f"{number:,}"
 
 
-def style_axis(ax: Axes, *, grid_axis: str = "y") -> None:
+def style_axis(ax: Axes, *, grid_axis: Literal["both", "x", "y"] = "y") -> None:
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(True, axis=grid_axis, alpha=0.25, linewidth=0.8)
     ax.set_axisbelow(True)

@@ -150,6 +150,7 @@ class TestValidatorRules:
 
     def test_alias_normalized_fires(self, dirty: Experiment) -> None:
         assert self._count(dirty, "alias_normalized") == 1
+        assert dirty.rows is not None
         assert np.sum(dirty.rows["arm"] == "treatment") == 4  # u03 kept as treatment
 
     def test_null_row_dropped_fires(self, dirty: Experiment) -> None:
@@ -166,9 +167,11 @@ class TestValidatorRules:
 
     def test_surviving_row_count(self, dirty: Experiment) -> None:
         # 13 data rows, 4 dropped (null arm, duplicate, negative, uncoercible)
+        assert dirty.rows is not None
         assert dirty.rows["arm"].size == 9
 
     def test_rows_use_canonical_keys(self, dirty: Experiment) -> None:
+        assert dirty.rows is not None
         assert set(dirty.rows) == {"arm", "day", "user_id", "converted", "spend"}
 
     def test_unmapped_arm_raises(self, tmp_path: Path) -> None:
@@ -303,6 +306,7 @@ class TestBatteryRegressions:
             encoding="utf-8",
         )
         experiment = load_user_rows(config, data_path)
+        assert experiment.rows is not None
         assert experiment.rows["arm"].size == 4
         assert not any(event.rule == "duplicate_user_dropped" for event in experiment.validation)
 
@@ -324,6 +328,7 @@ class TestBatteryRegressions:
             )
             == 2
         )
+        assert experiment.rows is not None
         assert np.all(np.isfinite(experiment.rows["spend"]))
 
     def test_nonbinary_value_in_binary_metric_dropped(self, tmp_path: Path) -> None:
@@ -349,6 +354,7 @@ class TestBatteryRegressions:
             encoding="utf-8",
         )
         experiment = load_user_rows(config, data_path)
+        assert experiment.rows is not None
         assert experiment.rows["arm"].size == 2
         assert (
             sum(
@@ -366,6 +372,7 @@ class TestBatteryRegressions:
             b"\xef\xbb\xbfuser_id,group,day,converted,spend\nu1,control,0,1,0\nu2,treatment,0,0,0\n"
         )
         experiment = load_user_rows(config, data_path)
+        assert experiment.rows is not None
         assert experiment.rows["arm"].size == 2
 
     def test_aggregates_missing_declared_metric_rejected(self, tmp_path: Path) -> None:
@@ -443,6 +450,7 @@ class TestBatteryRegressions:
             )
             == 2
         )
+        assert experiment.rows is not None
         assert experiment.rows["arm"].size == 4
 
 

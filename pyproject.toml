@@ -22,6 +22,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",
+    "pyright>=1.1.414",
     "matplotlib>=3.8",
 ]
 
@@ -30,6 +31,18 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 abkit = ["py.typed"]
+
+[tool.pyright]
+# Type checking at the level a reader's editor runs by default (Pylance in
+# VS Code reads this section too). A finding is fixed with explicit code; an
+# ignore comment is used only where a library's own typing is wrong, and
+# says so.
+include = ["src", "scripts", "tests"]
+extraPaths = ["src"]
+typeCheckingMode = "basic"
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -49,6 +62,8 @@ select = [
     "SIM",           # simplify
     "RET",           # return
     "ANN",           # type annotations
+    "C4",            # comprehensions
+    "RUF",           # ruff's own rules
 ]
 ignore = [
     "ANN401",  # Any in **kwargs is fine

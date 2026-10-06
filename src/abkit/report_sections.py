@@ -20,7 +20,7 @@ from __future__ import annotations
 import sys
 import traceback
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -98,7 +98,7 @@ def fmt_perm_p(permutation: PermutationResult) -> str:
     return f"p = {fmt_p(permutation.p_value)}"
 
 
-def _style_axis(ax: Axes, *, grid_axis: str = "y") -> None:
+def _style_axis(ax: Axes, *, grid_axis: Literal["both", "x", "y"] = "y") -> None:
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(True, axis=grid_axis, alpha=0.25, linewidth=0.8)
     ax.set_axisbelow(True)
@@ -119,6 +119,17 @@ def _report_skipped_section(title: str) -> None:
     print(
         f"note: the report omits the section '{title}' because of the error above.", file=sys.stderr
     )
+
+
+_Field = TypeVar("_Field")
+
+
+def _present(value: _Field | None, what: str) -> _Field:
+    """Return an optional Experiment field, raising if it is missing. Sections
+    call this only where capabilities() has already promised the field."""
+    if value is None:
+        raise ValueError(f"this section needs the experiment's {what}, which it does not have")
+    return value
 
 
 def _primary(experiment: Experiment) -> MetricSpec:
@@ -145,7 +156,7 @@ def _series(experiment: Experiment, arm: str, metric: str) -> tuple[NDArray, NDA
             for cell in experiment.aggregates
             if cell.arm == arm and cell.metric == metric and cell.checkpoint is not None
         ),
-        key=lambda cell: cell.checkpoint,
+        key=lambda cell: _present(cell.checkpoint, "checkpoint"),
     )
     if not cells:
         raise ValueError(f"no per-checkpoint aggregates for ({arm}, {metric})")
@@ -181,7 +192,7 @@ def _window(
 
 
 def _successes(aggregate_columns: ArmAggregate) -> int:
-    return int(round(aggregate_columns.mean * aggregate_columns.n))
+    return round(aggregate_columns.mean * aggregate_columns.n)
 
 
 def _ratio_stability(
@@ -349,12 +360,12 @@ def sec_srm(experiment: Experiment) -> SectionSpec:
     if "intended_split" in data_capabilities:
         lines = ["| Contrast | Control n | Treatment n | Chi-square | p |", "|---|---|---|---|---|"]
         worst_p_value = 1.0
+        intended_split = _present(experiment.intended_split, "intended split")
         for control_arm, treatment_arm in _contrasts(experiment):
             control_index = experiment.arms.index(control_arm)
             treatment_index = experiment.arms.index(treatment_arm)
-            share = experiment.intended_split[treatment_index] / (
-                experiment.intended_split[control_index]
-                + experiment.intended_split[treatment_index]
+            share = intended_split[treatment_index] / (
+                intended_split[control_index] + intended_split[treatment_index]
             )
             n_control = _agg(experiment, control_arm, metric.name, None).n
             n_treatment = _agg(experiment, treatment_arm, metric.name, None).n
@@ -486,7 +497,7 @@ def sec_novelty(experiment: Experiment, figure_dir: Path) -> SectionSpec | None:
     except ValueError:
         _report_skipped_section("Effect stability over time")
         return None
-    n_checkpoints = len(experiment.checkpoints)
+    n_checkpoints = len(_present(experiment.checkpoints, "checkpoints"))
     n_usable = min(_consistent_prefix(*series) for series in all_series)
     if n_usable < 3:
         return None
@@ -601,7 +612,9 @@ def _fig_novelty(
         interval_means = np.where(
             interval_counts > 0, interval_sums / np.maximum(interval_counts, 1.0), np.nan
         )
-        checkpoints = np.asarray(experiment.checkpoints[:n_usable], dtype=np.float64)
+        checkpoints = np.asarray(
+            _present(experiment.checkpoints, "checkpoints")[:n_usable], dtype=np.float64
+        )
         ax.plot(
             checkpoints,
             interval_means,
@@ -955,8 +968,9 @@ def sec_heavy_tail(
     if metric is None:
         return None
     control_arm, treatment_arm = _contrasts(experiment)[0]
-    control_values = experiment.rows[metric.name][experiment.rows["arm"] == control_arm]
-    treatment_values = experiment.rows[metric.name][experiment.rows["arm"] == treatment_arm]
+    rows = _present(experiment.rows, "user-level rows")
+    control_values = rows[metric.name][rows["arm"] == control_arm]
+    treatment_values = rows[metric.name][rows["arm"] == treatment_arm]
     if (
         control_values.size < 2
         or treatment_values.size < 2
@@ -1112,7 +1126,10 @@ def _fig_heavy_tail(
 
 def sec_truth(experiment: Experiment) -> SectionSpec:
     """For synthetic data only: the parameters the generator actually used."""
-    rows = "\n".join(f"| {name} | {value} |" for name, value in sorted(experiment.truth.items()))
+    rows = "\n".join(
+        f"| {name} | {value} |"
+        for name, value in sorted(_present(experiment.truth, "truth table").items())
+    )
     body = (
         "This data is SYNTHETIC, and that is disclosed here rather than in a "
         "footnote. The generator's parameters below are the true values the "
@@ -1268,9 +1285,9 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
                         cells_skipped += 1
                         continue
                     comparison = two_proportion_ztest(
-                        int(round(control_means * n_control)),
+                        round(control_means * n_control),
                         n_control,
-                        int(round(treatment_means * n_treatment)),
+                        round(treatment_means * n_treatment),
                         n_treatment,
                     )
                     p_values.append(comparison.p_value)

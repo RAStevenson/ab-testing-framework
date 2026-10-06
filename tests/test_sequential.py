@@ -88,7 +88,8 @@ def test_two_look_design_against_bivariate_normal():
     first_boundary, second_boundary = sequential_design.boundaries
     correlation = np.sqrt(0.5)
     covariance = [[1.0, correlation], [correlation, 1.0]]
-    normal_distribution = stats.multivariate_normal(mean=[0.0, 0.0], cov=covariance)
+    # scipy's stubs type multivariate_normal's cov as int; it takes a matrix
+    normal_distribution = stats.multivariate_normal(mean=[0.0, 0.0], cov=covariance)  # pyright: ignore[reportArgumentType]
     non_crossing = (
         normal_distribution.cdf([first_boundary, second_boundary])
         - normal_distribution.cdf([-first_boundary, second_boundary])
@@ -107,7 +108,8 @@ def test_three_look_design_against_trivariate_normal():
     boundaries = np.array(sequential_design.boundaries)
     # inclusion-exclusion over the 2^3 orthant corners of the rectangle
     non_crossing = 0.0
-    normal_distribution = stats.multivariate_normal(mean=np.zeros(3), cov=covariance)
+    # scipy's stubs type multivariate_normal's cov as int; it takes a matrix
+    normal_distribution = stats.multivariate_normal(mean=np.zeros(3), cov=covariance)  # pyright: ignore[reportArgumentType]
     for signs in np.ndindex(2, 2, 2):
         sign_multipliers = np.where(np.array(signs) == 0, 1.0, -1.0)
         non_crossing += np.prod(sign_multipliers) * normal_distribution.cdf(
