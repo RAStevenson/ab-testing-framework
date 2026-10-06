@@ -13,7 +13,7 @@ ALLOWED_SHORT = {"X", "y", "ax", "i", "j"}
 # Public dataclass fields are data keys every caller reads by name, so the
 # rename pass may not change them (python-repo-layout: data keys are out of
 # scope). Each is listed by file and name with the reason; the list is
-# closed and waits on Robert's ruling, recorded 2026-10-05.
+# closed. Robert ruled both kept on 2026-10-05.
 KEPT_DATA_KEYS = {
     # ArmAggregate.n, the cell's user count, read as `.n` across io and sections
     ("src/abkit/io.py", "n"),

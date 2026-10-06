@@ -97,13 +97,13 @@ class TestUserRowsReport:
 
 class TestAggregatesReport:
     @pytest.fixture()
-    def sections_and_exp(self, tmp_path: Path):
+    def sections_and_experiment(self, tmp_path: Path):
         config = load_config(FIXTURES / "aggregates_config.toml")
         experiment = load_aggregates(config, FIXTURES / "aggregates_ok.csv")
         return default_sections(experiment, np.random.default_rng(0), tmp_path / "figs"), experiment
 
-    def test_section_set(self, sections_and_exp) -> None:
-        sections, _ = sections_and_exp
+    def test_section_set(self, sections_and_experiment) -> None:
+        sections, _ = sections_and_experiment
         keys = [section.key for section in sections]
         # no user rows: heavy_tail absent; no intended split: design_power
         # requires a control rate, which exists, so it renders on the binary
@@ -112,19 +112,19 @@ class TestAggregatesReport:
         assert "truth" not in keys
         assert {"validation", "srm", "primary", "novelty", "sequential"} <= set(keys)
 
-    def test_srm_uses_ratio_stability_form(self, sections_and_exp) -> None:
-        sections, _ = sections_and_exp
+    def test_srm_uses_ratio_stability_form(self, sections_and_experiment) -> None:
+        sections, _ = sections_and_experiment
         srm = next(section for section in sections if section.key == "srm")
         assert "RATIO STABILITY" in srm.body
         assert "not on record" in srm.body
 
-    def test_render_passes_citation_check(self, sections_and_exp) -> None:
-        sections, experiment = sections_and_exp
+    def test_render_passes_citation_check(self, sections_and_experiment) -> None:
+        sections, experiment = sections_and_experiment
         report_text = render_report("# Agg", sections, capabilities(experiment), "figs")
         assert "## 1." in report_text
 
-    def test_sequential_narrates_first_contrast(self, sections_and_exp) -> None:
-        sections, _ = sections_and_exp
+    def test_sequential_narrates_first_contrast(self, sections_and_experiment) -> None:
+        sections, _ = sections_and_experiment
         sequential_section = next(section for section in sections if section.key == "sequential")
         assert "variant_2 vs control" in sequential_section.body
 
