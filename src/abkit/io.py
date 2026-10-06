@@ -296,21 +296,21 @@ def _aggregates_from_rows(
     metrics: tuple[MetricSpec, ...],
     checkpoints: tuple[float, ...] | None,
 ) -> tuple[ArmAggregate, ...]:
-    out: list[ArmAggregate] = []
+    aggregates: list[ArmAggregate] = []
     for arm in arms:
         arm_mask = rows[arm_column] == arm
         for metric in metrics:
             values = rows[metric.name][arm_mask]
             count, mean, variance = _aggregate(values)
-            out.append(ArmAggregate(arm, metric.name, None, count, mean, variance))
+            aggregates.append(ArmAggregate(arm, metric.name, None, count, mean, variance))
             if checkpoints is not None and day_column is not None:
                 days = rows[day_column][arm_mask]
                 for checkpoint in checkpoints:
                     count, mean, variance = _aggregate(values[days <= checkpoint])
-                    out.append(
+                    aggregates.append(
                         ArmAggregate(arm, metric.name, float(checkpoint), count, mean, variance)
                     )
-    return tuple(out)
+    return tuple(aggregates)
 
 
 def load_user_rows(config: dict, data_path: Path) -> Experiment:

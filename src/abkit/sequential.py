@@ -169,9 +169,10 @@ def _next_boundary(
         )
         return float(np.sum(weights * tails))
 
-    # crossing_probability is monotone decreasing in c; at c=0 it equals the
-    # remaining un-crossed mass (> increment for any valid spending), and at
-    # c=12 it is numerically zero, so the bracket always holds
+    # crossing_probability is monotone decreasing in the boundary; at a
+    # boundary of 0 it equals the remaining un-crossed mass (> increment for
+    # any valid spending), and at 12 it is numerically zero, so the bracket
+    # always holds
     # brentq returns a float unless full_output=True; scipy leaves it untyped,
     # so the checker infers the tuple form too
     root = cast(

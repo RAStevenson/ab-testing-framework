@@ -191,8 +191,8 @@ def _window(
     return int(window_count), float(window_mean), float(window_variance)
 
 
-def _successes(aggregate_columns: ArmAggregate) -> int:
-    return round(aggregate_columns.mean * aggregate_columns.n)
+def _successes(cell: ArmAggregate) -> int:
+    return round(cell.mean * cell.n)
 
 
 def _ratio_stability(
@@ -1264,51 +1264,51 @@ def sweep_aggregate_archive(config: dict, data_path: Path) -> SectionSpec:
                 try:
                     n_control = int(float(last[aggregate_columns["count_control"]]))
                     n_treatment = int(float(last[aggregate_columns["count_treatment"]]))
-                    control_means = float(last[aggregate_columns["mean_control"]])
-                    treatment_means = float(last[aggregate_columns["mean_treatment"]])
-                    control_variances = float(last[aggregate_columns["variance_control"]])
-                    treatment_variances = float(last[aggregate_columns["variance_treatment"]])
+                    mean_control = float(last[aggregate_columns["mean_control"]])
+                    mean_treatment = float(last[aggregate_columns["mean_treatment"]])
+                    variance_control = float(last[aggregate_columns["variance_control"]])
+                    variance_treatment = float(last[aggregate_columns["variance_treatment"]])
                 except ValueError:
                     cells_skipped += 1
                     continue
                 if (
                     n_control < 2
                     or n_treatment < 2
-                    or not np.isfinite(control_means)
-                    or not np.isfinite(treatment_means)
+                    or not np.isfinite(mean_control)
+                    or not np.isfinite(mean_treatment)
                 ):
                     cells_skipped += 1
                     continue
                 if metric.kind == "binary":
                     # a proportion test needs valid rates, not variances
-                    if not (0.0 <= control_means <= 1.0 and 0.0 <= treatment_means <= 1.0):
+                    if not (0.0 <= mean_control <= 1.0 and 0.0 <= mean_treatment <= 1.0):
                         cells_skipped += 1
                         continue
                     comparison = two_proportion_ztest(
-                        round(control_means * n_control),
+                        round(mean_control * n_control),
                         n_control,
-                        round(treatment_means * n_treatment),
+                        round(mean_treatment * n_treatment),
                         n_treatment,
                     )
                     p_values.append(comparison.p_value)
                 else:
                     if (
-                        not np.isfinite(control_variances)
-                        or not np.isfinite(treatment_variances)
-                        or control_variances < 0.0
-                        or treatment_variances < 0.0
-                        or control_variances / n_control + treatment_variances / n_treatment == 0.0
+                        not np.isfinite(variance_control)
+                        or not np.isfinite(variance_treatment)
+                        or variance_control < 0.0
+                        or variance_treatment < 0.0
+                        or variance_control / n_control + variance_treatment / n_treatment == 0.0
                     ):
                         cells_skipped += 1
                         continue
                     p_values.append(
                         welch_ttest_from_stats(
                             n_control,
-                            control_means,
-                            control_variances,
+                            mean_control,
+                            variance_control,
                             n_treatment,
-                            treatment_means,
-                            treatment_variances,
+                            mean_treatment,
+                            variance_treatment,
                         ).p_value
                     )
         if p_values:

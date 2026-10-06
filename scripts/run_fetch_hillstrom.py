@@ -54,10 +54,10 @@ def main() -> int:
     try:
         with (
             urllib.request.urlopen(URL, timeout=60) as response,
-            open(partial_download, "wb") as out,
+            open(partial_download, "wb") as download_file,
         ):
             while chunk := response.read(1 << 16):
-                out.write(chunk)
+                download_file.write(chunk)
     except OSError:
         traceback.print_exc()
         partial_download.unlink(missing_ok=True)

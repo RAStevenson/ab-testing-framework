@@ -13,31 +13,33 @@ from abkit.frequentist import (
 
 
 def test_ztest_matches_chi_square_without_correction():
-    result = two_proportion_ztest(480, 10_000, 552, 10_200)
+    comparison = two_proportion_ztest(480, 10_000, 552, 10_200)
     table = np.array([[480, 10_000 - 480], [552, 10_200 - 552]])
     chi2, p_value, _, _ = stats.chi2_contingency(table, correction=False)
-    assert result.statistic**2 == pytest.approx(chi2, rel=1e-10)
-    assert result.p_value == pytest.approx(p_value, rel=1e-10)
+    assert comparison.statistic**2 == pytest.approx(chi2, rel=1e-10)
+    assert comparison.p_value == pytest.approx(p_value, rel=1e-10)
 
 
 def test_ztest_estimates_and_ci():
-    result = two_proportion_ztest(500, 10_000, 600, 10_000)
-    assert result.rate_control == pytest.approx(0.05)
-    assert result.rate_treatment == pytest.approx(0.06)
-    assert result.absolute_lift == pytest.approx(0.01)
-    assert result.relative_lift == pytest.approx(0.20)
-    assert result.ci_low < 0.01 < result.ci_high
+    comparison = two_proportion_ztest(500, 10_000, 600, 10_000)
+    assert comparison.rate_control == pytest.approx(0.05)
+    assert comparison.rate_treatment == pytest.approx(0.06)
+    assert comparison.absolute_lift == pytest.approx(0.01)
+    assert comparison.relative_lift == pytest.approx(0.20)
+    assert comparison.ci_low < 0.01 < comparison.ci_high
     # Agresti-Caffo half-width, checked against a hand computation
     adjusted_rate_control, adjusted_rate_treatment = 501 / 10_002, 601 / 10_002
     standard_error = np.sqrt(
         adjusted_rate_control * (1 - adjusted_rate_control) / 10_002
         + adjusted_rate_treatment * (1 - adjusted_rate_treatment) / 10_002
     )
-    assert result.ci_high - result.ci_low == pytest.approx(2 * 1.959964 * standard_error, rel=1e-4)
+    assert comparison.ci_high - comparison.ci_low == pytest.approx(
+        2 * 1.959964 * standard_error, rel=1e-4
+    )
     # and it stays within a fraction of a percent of the plain Wald interval
     # at this sample size, which is the whole reason the adjustment is free
     wald = np.sqrt(0.05 * 0.95 / 10_000 + 0.06 * 0.94 / 10_000)
-    assert result.ci_high - result.ci_low == pytest.approx(2 * 1.959964 * wald, rel=1e-2)
+    assert comparison.ci_high - comparison.ci_low == pytest.approx(2 * 1.959964 * wald, rel=1e-2)
 
 
 def test_ci_stays_a_real_interval_at_boundary_rates():
@@ -108,12 +110,12 @@ def test_welch_matches_scipy():
     random_generator = np.random.default_rng(22)
     control_values = random_generator.normal(0.0, 1.0, 400)
     treatment_values = random_generator.normal(0.2, 2.0, 250)
-    result = welch_ttest(control_values, treatment_values)
+    comparison = welch_ttest(control_values, treatment_values)
     expected = stats.ttest_ind(treatment_values, control_values, equal_var=False)
     # scipy's stubs leave TtestResult's statistic and pvalue undeclared
-    assert result.statistic == pytest.approx(expected.statistic, rel=1e-12)  # pyright: ignore[reportAttributeAccessIssue]
-    assert result.p_value == pytest.approx(expected.pvalue, rel=1e-12)  # pyright: ignore[reportAttributeAccessIssue]
-    assert result.ci_low < result.difference < result.ci_high
+    assert comparison.statistic == pytest.approx(expected.statistic, rel=1e-12)  # pyright: ignore[reportAttributeAccessIssue]
+    assert comparison.p_value == pytest.approx(expected.pvalue, rel=1e-12)  # pyright: ignore[reportAttributeAccessIssue]
+    assert comparison.ci_low < comparison.difference < comparison.ci_high
 
 
 def test_welch_ci_coverage():
@@ -134,15 +136,15 @@ def test_welch_ci_uses_the_t_quantile_at_small_n():
     # samples above cannot tell them apart. At n=4 the gap is a factor of two.
     control_values = [1.0, 2.0, 3.0, 4.0]
     treatment_values = [4.0, 6.0, 5.0, 9.0]
-    result = welch_ttest(control_values, treatment_values)
+    comparison = welch_ttest(control_values, treatment_values)
     expected = stats.ttest_ind(
         treatment_values, control_values, equal_var=False
     ).confidence_interval()
-    assert result.ci_low == pytest.approx(expected.low, rel=1e-10)
-    assert result.ci_high == pytest.approx(expected.high, rel=1e-10)
+    assert comparison.ci_low == pytest.approx(expected.low, rel=1e-10)
+    assert comparison.ci_high == pytest.approx(expected.high, rel=1e-10)
     # the normal quantile would give a materially narrower interval
-    normal_half_width = 1.959964 * (result.ci_high - result.ci_low) / (2 * 3.182446)
-    assert (result.ci_high - result.ci_low) / 2 > 1.5 * normal_half_width
+    normal_half_width = 1.959964 * (comparison.ci_high - comparison.ci_low) / (2 * 3.182446)
+    assert (comparison.ci_high - comparison.ci_low) / 2 > 1.5 * normal_half_width
 
 
 def test_confidence_level_widens_both_intervals():
