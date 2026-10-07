@@ -42,6 +42,8 @@ from abkit.report_sections import default_sections, sweep_aggregate_archive
 
 
 def main() -> None:
+    """Validate the config and data, print a summary, and write the report unless --no-report is
+    given."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--config", required=True, type=Path, help="experiment TOML")
     parser.add_argument("--data", type=Path, help="data file; overrides the config's input path")

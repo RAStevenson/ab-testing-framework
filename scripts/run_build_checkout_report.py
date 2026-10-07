@@ -66,12 +66,14 @@ def spell(number: int) -> str:
 
 
 def style_axis(ax: Axes, *, grid_axis: Literal["both", "x", "y"] = "y") -> None:
+    """Apply the plain axis style: no top or right spine, a light grid behind the data."""
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(True, axis=grid_axis, alpha=0.25, linewidth=0.8)
     ax.set_axisbelow(True)
 
 
 def rate_test(experiment_data: ExperimentData) -> RateComparison:
+    """Run the two-proportion z-test on one generated binary experiment."""
     return two_proportion_ztest(
         int(experiment_data.control.sum()),
         experiment_data.n_control,
@@ -98,6 +100,8 @@ def fig_daily_rates(
     novelty_boost: float,
     novelty_half_life: float,
 ) -> None:
+    """Draw the daily conversion rates and the daily lift against the planted effect, and save the
+    figure."""
     days = np.arange(n_days)
     control_rates, treatment_rates, lifts, errors = [], [], [], []
     for day in days:
@@ -154,6 +158,8 @@ def fig_sequential(
     z_path: NDArray[np.float64],
     boundaries: NDArray[np.float64],
 ) -> None:
+    """Draw the daily |z| against the spending boundaries and the naive threshold, and save the
+    figure."""
     fig, ax = plt.subplots(figsize=(8, 4.4))
     ax.plot(
         days + 1,
@@ -211,6 +217,7 @@ def fig_sequential(
 def fig_secondary(
     naive: NDArray[np.float64], adjusted: NDArray[np.float64], *, secondary_metrics: list[str]
 ) -> None:
+    """Draw the secondary metrics' unadjusted and Holm-adjusted p-values, and save the figure."""
     fig, ax = plt.subplots(figsize=(8, 4.0))
     positions = np.arange(len(secondary_metrics))
     ax.scatter(naive, positions, s=55, color=COLOR_CONTROL, label="Unadjusted p", zorder=3)
@@ -264,6 +271,7 @@ def fig_revenue(
     permutation: PermutationResult,
     trimmed: float,
 ) -> None:
+    """Draw the revenue distributions by arm and the interval comparison, and save the figure."""
     fig, (histogram_ax, interval_ax) = plt.subplots(1, 2, figsize=(10, 4.2))
     control_spenders = experiment_data.control[experiment_data.control > 0]
     treatment_spenders = experiment_data.treatment[experiment_data.treatment > 0]
@@ -338,6 +346,8 @@ def fig_revenue(
 
 
 def main() -> None:
+    """Generate the checkout experiments from config.toml, analyze them, and write the report and
+    its figures."""
     argparse.ArgumentParser(description=__doc__).parse_args()
     matplotlib.use("Agg")
 

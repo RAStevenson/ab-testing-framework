@@ -251,6 +251,8 @@ def srm_check(
 
 
 def _validated_pvalues(p_values: ArrayLike) -> NDArray[np.float64]:
+    """Return the p-values as a 1-d float array, raising if it is empty or a value lies outside [0,
+    1]."""
     valid_p_values = np.asarray(p_values, dtype=np.float64)
     if valid_p_values.ndim != 1 or valid_p_values.size == 0:
         raise ValueError("p_values must be a non-empty 1-d array")

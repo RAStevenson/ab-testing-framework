@@ -17,6 +17,7 @@ from scipy import optimize, stats
 
 
 def _validate_alpha_power(alpha: float, power: float | None = None) -> None:
+    """Raise if alpha, or power when given, is outside (0, 1)."""
     if not 0.0 < alpha < 1.0:
         raise ValueError(f"alpha must be in (0, 1), got {alpha}")
     if power is not None and not 0.0 < power < 1.0:
@@ -24,6 +25,7 @@ def _validate_alpha_power(alpha: float, power: float | None = None) -> None:
 
 
 def _validate_rates(rate_control: float, rate_treatment: float) -> None:
+    """Raise if either rate is outside (0, 1) or the two rates are equal."""
     for name, rate in (("rate_control", rate_control), ("rate_treatment", rate_treatment)):
         if not 0.0 < rate < 1.0:
             raise ValueError(f"{name} must be in (0, 1), got {rate}")
@@ -152,6 +154,7 @@ def mde_two_proportions(
         )
 
     def gap(lift: float) -> float:
+        """Power at this lift minus the target power, the function brentq solves for zero."""
         return (
             power_two_proportions(
                 rate_control, rate_control + lift, n_per_arm, alpha=alpha, n_treatment=n_treatment

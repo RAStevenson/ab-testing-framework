@@ -138,12 +138,15 @@ def design(
 
 
 def _first_boundary(increment: float) -> float:
+    """Return the first look's boundary for the alpha spent there, infinite when almost nothing is
+    spent."""
     if increment < _MIN_INCREMENT:
         return float("inf")
     return float(stats.norm.isf(increment / 2.0))
 
 
 def _trapezoid_weights(grid: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Return trapezoid-rule integration weights for an evenly spaced grid."""
     spacing = grid[1] - grid[0]
     weights = np.full(grid.size, spacing)
     weights[0] = weights[-1] = spacing / 2.0
@@ -163,6 +166,8 @@ def _next_boundary(
     weights = _trapezoid_weights(grid) * density
 
     def crossing_probability(boundary: float) -> float:
+        """Probability that the score crosses this boundary at the look, given the carried density;
+        brentq matches it to the alpha increment."""
         bound = boundary * scale
         tails = stats.norm.cdf((-bound - grid) / increment_standard_deviation) + stats.norm.sf(
             (bound - grid) / increment_standard_deviation

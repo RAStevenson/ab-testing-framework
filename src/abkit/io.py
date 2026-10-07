@@ -267,6 +267,7 @@ def load_config(path: Path) -> dict:
 
 
 def _metric_specs(config: dict) -> tuple[MetricSpec, ...]:
+    """Return the config's metrics as MetricSpec records, in config order."""
     return tuple(
         MetricSpec(
             name=metric["name"],
@@ -280,6 +281,8 @@ def _metric_specs(config: dict) -> tuple[MetricSpec, ...]:
 
 
 def _aggregate(values: NDArray[np.float64]) -> tuple[int, float, float]:
+    """Return the count, mean, and ddof=1 variance of a value array, NaN where there are too few
+    values."""
     count = int(values.size)
     if count == 0:
         return 0, float("nan"), float("nan")
@@ -296,6 +299,8 @@ def _aggregates_from_rows(
     metrics: tuple[MetricSpec, ...],
     checkpoints: tuple[float, ...] | None,
 ) -> tuple[ArmAggregate, ...]:
+    """Summarize user rows into end-of-run cells per arm and metric, plus cumulative cells at each
+    checkpoint when there is a day column."""
     aggregates: list[ArmAggregate] = []
     for arm in arms:
         arm_mask = rows[arm_column] == arm
@@ -372,6 +377,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     seen_users: set[str] = set()
 
     def event(rule: str, index: int) -> None:
+        """Count one occurrence of a validation rule and keep the first data row it happened at."""
         counts[rule] = counts.get(rule, 0) + 1
         examples.setdefault(rule, f"first at data row {index}")
 
@@ -562,6 +568,8 @@ def load_aggregates(config: dict, data_path: Path) -> Experiment:
     control_seen: dict[tuple[str, float], tuple[int, float, float]] = {}
 
     def _number(row: dict, key: str, index: int) -> float:
+        """Return one cell of the aggregate file as a float, raising with the row and column named
+        if it does not parse."""
         raw = (row[aggregate_columns[key]] or "").strip()
         try:
             value = float(raw)

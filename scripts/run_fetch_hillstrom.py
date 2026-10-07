@@ -42,6 +42,8 @@ DEST = Path(__file__).resolve().parents[1] / "data" / "hillstrom" / "hillstrom.c
 
 
 def main() -> None:
+    """Download the Hillstrom file unless a verified copy is cached, check its SHA-256, and keep it
+    only on a match."""
     argparse.ArgumentParser(description=__doc__).parse_args()
     if DEST.is_file():
         digest = hashlib.sha256(DEST.read_bytes()).hexdigest()

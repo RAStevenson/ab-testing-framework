@@ -36,18 +36,22 @@ class ExperimentData:
 
     @property
     def control(self) -> NDArray[np.float64]:
+        """Outcomes of the control users."""
         return self.outcome[self.assignment == 0]
 
     @property
     def treatment(self) -> NDArray[np.float64]:
+        """Outcomes of the treatment users."""
         return self.outcome[self.assignment == 1]
 
     @property
     def n_control(self) -> int:
+        """Number of control users."""
         return int(np.sum(self.assignment == 0))
 
     @property
     def n_treatment(self) -> int:
+        """Number of treatment users."""
         return int(np.sum(self.assignment == 1))
 
     def subset(self, mask: NDArray[np.bool_]) -> ExperimentData:
@@ -60,6 +64,7 @@ class ExperimentData:
 
 
 def _validate_common(n_users: int, allocation: float, n_days: int) -> None:
+    """Raise if the user count, the allocation, or the day count is out of range."""
     if n_users < 1:
         raise ValueError(f"n_users must be positive, got {n_users}")
     if not 0.0 < allocation < 1.0:

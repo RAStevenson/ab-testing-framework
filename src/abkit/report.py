@@ -105,6 +105,8 @@ def render_report(
     figure_number = {key: i + 1 for i, key in enumerate(citation_order)}
 
     def resolve(match: re.Match[str], *, where: str) -> str:
+        """Replace one section or figure reference token with its number, raising if the target was
+        dropped or never defined."""
         kind, key = match.group(1), match.group(2)
         if kind == "sec":
             if key not in section_number:

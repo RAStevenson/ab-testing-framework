@@ -139,7 +139,7 @@ The library needs Python 3.11 or newer. There is no install step. The entry scri
 `tests/conftest.py` put `src/` on the import path themselves, so a fresh
 clone runs as-is once the dependencies are present. An editable install
 (`pip install -e '.[dev]'`) still works if you prefer one. The library
-depends only on numpy and scipy. Matplotlib is a dev dependency, and every
+depends on numpy, scipy, and statsmodels. Matplotlib is a dev dependency, and every
 report script needs it to build a report with figures.
 
 Rerunning an analysis reproduces its `report.md` byte for byte, though

@@ -64,10 +64,12 @@ _EXTRA_ARM_COLORS = ("#7fc97f", "#beaed4", "#fdc086")
 
 
 def pct(fraction: float, digits: int = 2) -> str:
+    """Format a fraction as a percentage."""
     return f"{100 * fraction:.{digits}f}%"
 
 
 def pp(difference: float, digits: int = 2) -> str:
+    """Format a difference in proportions as percentage points."""
     return f"{100 * difference:.{digits}f} pp"
 
 
@@ -77,6 +79,7 @@ def pp_signed(difference: float, digits: int = 2) -> str:
 
 
 def fmt_p(p_value: float) -> str:
+    """Format a p-value with a precision that fits its size."""
     if p_value < 1e-4:
         return f"{p_value:.1e}"
     return f"{p_value:.4f}" if p_value < 0.001 else f"{p_value:.3f}"
@@ -99,12 +102,14 @@ def fmt_perm_p(permutation: PermutationResult) -> str:
 
 
 def _style_axis(ax: Axes, *, grid_axis: Literal["both", "x", "y"] = "y") -> None:
+    """Apply the plain axis style: no top or right spine, a light grid behind the data."""
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(True, axis=grid_axis, alpha=0.25, linewidth=0.8)
     ax.set_axisbelow(True)
 
 
 def _arm_color(index: int) -> str:
+    """Return the plotting color for the arm at this position, control first."""
     if index == 0:
         return COLOR_CONTROL
     if index == 1:
@@ -133,14 +138,17 @@ def _present(value: _Field | None, what: str) -> _Field:
 
 
 def _primary(experiment: Experiment) -> MetricSpec:
+    """Return the experiment's primary metric."""
     return next(metric for metric in experiment.metrics if metric.primary)
 
 
 def _contrasts(experiment: Experiment) -> list[tuple[str, str]]:
+    """Return each (control, treatment) arm pair, control first."""
     return [(experiment.arms[0], arm) for arm in experiment.arms[1:]]
 
 
 def _agg(experiment: Experiment, arm: str, metric: str, checkpoint: float | None) -> ArmAggregate:
+    """Return the aggregate cell for this arm, metric, and checkpoint, raising if there is none."""
     for cell in experiment.aggregates:
         if cell.arm == arm and cell.metric == metric and cell.checkpoint == checkpoint:
             return cell
@@ -192,6 +200,7 @@ def _window(
 
 
 def _successes(cell: ArmAggregate) -> int:
+    """Return the cell's success count, recovered from its mean and size."""
     return round(cell.mean * cell.n)
 
 
@@ -289,12 +298,14 @@ def _cell_test(
 
 
 def _effect_and_p(comparison: RateComparison | MeanComparison) -> tuple[str, float]:
+    """Return a comparison's effect as display text, and its p-value."""
     if isinstance(comparison, RateComparison):
         return pp_signed(comparison.absolute_lift), comparison.p_value
     return f"{comparison.difference:+.3f}", comparison.p_value
 
 
 def _contrast_label(experiment: Experiment, treatment_arm: str) -> str:
+    """Return the display label for a treatment arm against control."""
     return f"{treatment_arm} vs {experiment.arms[0]}"
 
 
@@ -595,6 +606,7 @@ def sec_novelty(experiment: Experiment, figure_dir: Path) -> SectionSpec | None:
 def _fig_novelty(
     experiment: Experiment, metric: MetricSpec, figure_dir: Path, n_usable: int
 ) -> None:
+    """Draw each arm's per-interval mean over the usable checkpoints and save novelty.png."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -794,6 +806,8 @@ def sec_sequential(experiment: Experiment, figure_dir: Path) -> SectionSpec | No
 
 
 def _fig_sequential(z_path: NDArray, boundaries: NDArray, z_naive: float, figure_dir: Path) -> None:
+    """Draw the observed |z| path against the spending boundaries and the naive threshold and save
+    sequential.png."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -923,6 +937,7 @@ def sec_corrections(experiment: Experiment, figure_dir: Path) -> SectionSpec | N
 def _fig_corrections(
     labels: list[str], naive: NDArray, adjusted: NDArray, alpha: float, figure_dir: Path
 ) -> None:
+    """Draw each comparison's unadjusted and Holm-adjusted p-value and save corrections.png."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -1062,6 +1077,7 @@ def _fig_heavy_tail(
     metric_name: str,
     figure_dir: Path,
 ) -> None:
+    """Draw the metric's distribution by arm and the interval comparison and save heavy_tail.png."""
     import matplotlib
 
     matplotlib.use("Agg")

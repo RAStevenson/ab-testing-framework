@@ -49,6 +49,7 @@ REPEATS = 3
 def argsort_sums(
     random_generator: np.random.Generator, pooled: NDArray[np.float64], size: int, n_treatment: int
 ) -> NDArray[np.float64]:
+    """Treatment-group sums for a chunk of permutations drawn by argsort of random keys."""
     keys = random_generator.random((size, pooled.size), dtype=np.float32)
     take = np.argsort(keys, axis=1)[:, :n_treatment]
     return pooled[take].sum(axis=1)
@@ -57,6 +58,7 @@ def argsort_sums(
 def shuffle_sums(
     random_generator: np.random.Generator, pooled: NDArray[np.float64], size: int, n_treatment: int
 ) -> NDArray[np.float64]:
+    """Treatment-group sums for a chunk of permutations drawn by shuffling the pooled values."""
     block = np.tile(pooled, (size, 1))
     random_generator.permuted(block, axis=1, out=block)
     return block[:, :n_treatment].sum(axis=1)
@@ -92,6 +94,7 @@ def time_variant(
 def time_shipped(
     control: NDArray[np.float64], treatment: NDArray[np.float64]
 ) -> tuple[float, float]:
+    """Time the shipped permutation test once and return the seconds and its p-value."""
     random_generator = np.random.default_rng(SEED_DRAW)
     start = time.perf_counter()
     permutation = permutation_test_mean_diff(
@@ -101,6 +104,7 @@ def time_shipped(
 
 
 def main() -> None:
+    """Time each permutation method and print the comparison."""
     argparse.ArgumentParser(description=__doc__).parse_args()
     random_generator = np.random.default_rng(SEED_DATA)
     control = random_generator.standard_normal(N_PER_ARM)

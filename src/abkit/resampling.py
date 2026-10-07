@@ -25,6 +25,8 @@ _CHUNK = 256
 def _two_samples(
     control: ArrayLike, treatment: ArrayLike
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """Return both arms as 1-d float arrays, raising on a bad shape, too few values, or a non-finite
+    value."""
     control_values = np.asarray(control, dtype=np.float64)
     treatment_values = np.asarray(treatment, dtype=np.float64)
     if control_values.ndim != 1 or treatment_values.ndim != 1:
