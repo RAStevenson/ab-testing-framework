@@ -93,7 +93,7 @@ def _effect(comparison: RateComparison | MeanComparison) -> str:
 def _interval(comparison: RateComparison | MeanComparison) -> str:
     """A comparison's interval in its own unit."""
     if isinstance(comparison, RateComparison):
-        return f"{pp_signed(comparison.ci_low)} to {pp_signed(comparison.ci_high)}"
+        return f"{100 * comparison.ci_low:+.2f} to {pp_signed(comparison.ci_high)}"
     return f"{comparison.ci_low:+.3f} to {comparison.ci_high:+.3f}"
 
 
@@ -138,7 +138,7 @@ def _cuped_line(treatment_arm: str, control_arm: str, result: CupedResult, binar
     """One CUPED contrast: adjusted effect, interval, p, and the share of noise removed."""
     if binary:
         effect = pp_signed(result.difference)
-        interval = f"{pp_signed(result.ci_low)} to {pp_signed(result.ci_high)}"
+        interval = f"{100 * result.ci_low:+.2f} to {pp_signed(result.ci_high)}"
     else:
         effect = f"{result.difference:+.3f}"
         interval = f"{result.ci_low:+.3f} to {result.ci_high:+.3f}"
@@ -239,8 +239,8 @@ def _primary_block(readout: ExperimentReadout) -> list[str]:
     lines = ["", f"Primary {readout.primary_metric}: effect, 95% interval, p; interval first"]
     for treatment_arm, comparison in readout.primary:
         outcome = _primary_outcome(comparison, readout.alpha)
-        lines.append(
-            _INDENT + f"{treatment_arm} vs {control_arm}   {_effect(comparison)}   "
+        lines += _wrapped(
+            f"{treatment_arm} vs {control_arm}   {_effect(comparison)}   "
             f"{_interval(comparison)}   p {fmt_p(comparison.p_value)}   "
             + _PRIMARY_RESULTS[outcome]
         )
@@ -253,9 +253,8 @@ def _primary_block(readout: ExperimentReadout) -> list[str]:
         ]
         for cuped_metric, treatment_arm, result in readout.cuped:
             if cuped_metric == metric:
-                lines.append(
-                    _INDENT
-                    + _cuped_line(treatment_arm, control_arm, result, metric in binary_metrics)
+                lines += _wrapped(
+                    _cuped_line(treatment_arm, control_arm, result, metric in binary_metrics)
                 )
     return lines
 
@@ -268,8 +267,8 @@ def _corrections_block(readout: ExperimentReadout) -> list[str]:
     family = readout.corrections
     lines = ["", f"Other metrics: corrected for {len(family)} comparisons"]
     for corrected in family:
-        lines.append(
-            _INDENT + f"{corrected.metric}   {corrected.treatment_arm} vs {control_arm}   "
+        lines += _wrapped(
+            f"{corrected.metric}   {corrected.treatment_arm} vs {control_arm}   "
             f"{_effect(corrected.comparison)}   p {fmt_p(corrected.comparison.p_value)}   "
             f"Holm {fmt_p(corrected.holm_p)}   BH {fmt_p(corrected.bh_q)}"
         )
@@ -340,8 +339,8 @@ def _novelty_block(readout: ExperimentReadout) -> list[str]:
             outcome = "steady"
         else:
             outcome = "fell" if contrast.decay_z > 0 else "rose"
-        lines.append(
-            _INDENT + f"{contrast.treatment_arm} vs {control_arm}   early {early}   late {late}   "
+        lines += _wrapped(
+            f"{contrast.treatment_arm} vs {control_arm}   early {early}   late {late}   "
             f"z {contrast.decay_z:.2f}   p {fmt_p(contrast.decay_p)}   " + _NOVELTY_RESULTS[outcome]
         )
     return lines
@@ -371,7 +370,7 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
     estimate = replay.intervals.estimates[last]
     low, high = replay.intervals.ci_low[last], replay.intervals.ci_high[last]
     if binary:
-        final = f"effect {pp_signed(estimate)}   adjusted 95% {pp_signed(low)} to {pp_signed(high)}"
+        final = f"effect {pp_signed(estimate)}   adjusted 95% {100 * low:+.2f} to {pp_signed(high)}"
     else:
         final = f"effect {estimate:+.3f}   adjusted 95% {low:+.3f} to {high:+.3f}"
     return [
@@ -428,7 +427,7 @@ def _decision_line(readout: ExperimentReadout) -> str:
             mde_text = f"{mde:.3f}"
         return _DECISIONS[outcome].format(mde=mde_text)
     if isinstance(comparison, RateComparison):
-        low, high = pp_signed(comparison.ci_low), pp_signed(comparison.ci_high)
+        low, high = f"{100 * comparison.ci_low:+.2f}", pp_signed(comparison.ci_high)
     else:
         low, high = f"{comparison.ci_low:+.3f}", f"{comparison.ci_high:+.3f}"
     return _DECISIONS[outcome].format(

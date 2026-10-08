@@ -17,7 +17,7 @@ Sensitivity: smallest lift this sample could detect, 80% power
   control 10.5%   360 vs 370 users   detectable 7.21 pp (68.7% of control)
 
 Primary metric_1: effect, 95% interval, p; interval first
-  variant_2 vs control   +1.88 pp   -2.79 pp to +6.51 pp   p 0.427   not detected
+  variant_2 vs control   +1.88 pp   -2.79 to +6.51 pp   p 0.427   not detected
 
 Early versus late: did the effect fade?
   first checkpoint against the last, of 3 usable
@@ -27,6 +27,6 @@ Daily monitoring: 3 looks; crossing a boundary = safe to stop
   variant_2 vs control on metric_1, O'Brien-Fleming spending at the sizes reached
   spending design   never crosses in 3 looks; no early stop in either direction
   naive 1.96 rule   never fires
-  final look   effect +2.00 pp   adjusted 95% -2.73 pp to +6.73 pp   boundary 2.00
+  final look   effect +2.00 pp   adjusted 95% -2.73 to +6.73 pp   boundary 2.00
 
 Decision: no detectable effect; this test could have seen 7.21 pp or more
