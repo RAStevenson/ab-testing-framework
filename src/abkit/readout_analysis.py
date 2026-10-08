@@ -158,6 +158,8 @@ class ExperimentReadout:
 
     experiment_name: str
     data_shape: str
+    primary_metric: str
+    alpha: float
     arm_sizes: tuple[tuple[str, int], ...]
     validation: tuple[ValidationEvent, ...]
     limitations: tuple[Limitation, ...]
@@ -393,7 +395,7 @@ def _group_split(
                 "group_split",
                 "group sizes are off from the intended split for "
                 + ", ".join(failing)
-                + "; users went missing or were assigned unevenly, and no result below can be "
+                + "; users went missing or were assigned unevenly, so no result below can be "
                 "trusted",
             )
             if failing
@@ -513,9 +515,9 @@ def _few_events(experiment: Experiment, metric: MetricSpec) -> Limitation | None
         return None
     return Limitation(
         "few_events",
-        f"fewer than {MIN_EXPECTED_EVENTS} successes or failures on {metric.name} in "
+        f"fewer than {MIN_EXPECTED_EVENTS} successes or failures on {metric.name}: "
         + ", ".join(thin)
-        + "; the normal approximation behind the z-test and its interval is unreliable here",
+        + "; the z-test's normal approximation is unreliable here",
     )
 
 
@@ -541,8 +543,8 @@ def _cuped(
     if not experiment.pre_period:
         return (), Limitation(
             "no_pre_period",
-            "no metric declares a pre-experiment column (pre_column in the config), so CUPED "
-            "is skipped and the intervals are as wide as the raw data makes them",
+            "no metric declares a pre-experiment column (pre_column in the config); CUPED is "
+            "skipped",
         )
     pre_period = experiment.pre_period
     results: list[tuple[str, str, CupedResult]] = []
@@ -859,9 +861,9 @@ def analyze_experiment(
                 Limitation(
                     "excluded_checkpoints",
                     f"the final {excluded} checkpoint{'s are' if excluded != 1 else ' is'} "
-                    "internally inconsistent (an increment's recovered variance is negative, "
-                    "which no real accumulation of users produces) and left out of the "
-                    "time-based blocks; the end-of-run results still use the final totals",
+                    "internally inconsistent and left out of the time-based blocks; an "
+                    "increment's recovered variance is negative, which no real accumulation "
+                    "of users produces; the end-of-run results still use the final totals",
                 )
             )
         novelty = _novelty(experiment, metric, usable)
@@ -869,6 +871,8 @@ def analyze_experiment(
     return ExperimentReadout(
         experiment_name=experiment.name,
         data_shape="user_rows" if experiment.rows is not None else "aggregates",
+        primary_metric=metric.name,
+        alpha=experiment.alpha,
         arm_sizes=tuple(
             (arm, _agg(experiment, arm, metric.name, None).n) for arm in experiment.arms
         ),

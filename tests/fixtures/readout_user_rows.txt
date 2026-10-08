@@ -1,0 +1,53 @@
+fixture experiment: user rows
+Data: what the intake did before any statistic
+  users   control 15   treatment 15
+  repairs and drops   none; the file passed every rule as delivered
+
+Limitations (*): read every result below with these in view
+  * fewer than 10 successes or failures on converted: control (4 of 15), treatment (6 of 15); the
+      z-test's normal approximation is unreliable here
+  * the top 1% of users carry 65% of spend; the average rests on a few large values, so the
+      cross-check below compares three methods
+  * the smallest detectable effect on converted is 184.3% of the control level, above a modest 5%
+      lift; a 'not detected' result here rules out little
+  * no metric declares a pre-experiment column (pre_column in the config); CUPED is skipped
+
+Group split: does assignment match the plan?
+  treatment vs control   15 vs 15   chi-square 0.00   p 1.000
+  result   consistent with the plan
+
+Sensitivity: smallest lift this sample could detect, 80% power
+  control 26.7%   15 vs 15 users   detectable 49.15 pp (184.3% of control)
+
+Primary converted: effect, 95% interval, p; interval first
+  treatment vs control   +13.33 pp   -20.12 pp to +43.65 pp   p 0.439   not detected
+
+Other metrics: corrected for 2 comparisons
+  spend   treatment vs control   +38.333   p 0.265   Holm 0.530   BH 0.439
+  converted_again   treatment vs control   +13.33 pp   p 0.439   Holm 0.530   BH 0.439
+  result   unadjusted 0 of 2 clear alpha; after Holm 0 survive
+
+Revenue cross-check on spend: three methods, same question (treatment vs control)
+  Welch         +38.333   -32.372 to +109.038   p 0.265
+  bootstrap     +38.333   +2.000 to +170.363   BCa, 10,000 resamples
+  permutation   +38.333   p 0.193
+  trimmed 1%    +38.333   different estimand
+  result   methods DISAGREE at alpha; the estimate rests on the tail
+
+Early versus late: did the effect fade?
+  first checkpoint against the last, of 5 usable
+  treatment vs control   early +33.33 pp   late +0.00 pp   z 0.50   p 0.617   no change detected
+
+Daily monitoring: 5 looks; crossing a boundary = safe to stop
+  treatment vs control on converted, O'Brien-Fleming spending at the sizes reached
+  spending design   never crosses in 5 looks; no early stop in either direction
+  naive 1.96 rule   never fires
+  final look   effect +13.33 pp   adjusted 95% -23.06 pp to +49.73 pp   boundary 2.06
+
+Planted versus found (synthetic only)
+  absolute_lift   planted 0.13   found +13.33 pp (-20.12 pp to +43.65 pp)   inside
+  base_rate       planted 0.27   found 0.2667 (control rate)
+
+Decision: no detectable effect; this test could have seen 49.15 pp or more
+Figures:
+  figures/monitoring.png
