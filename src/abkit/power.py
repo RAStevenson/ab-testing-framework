@@ -1,10 +1,12 @@
 """Analytic power and sample-size utilities, plus a simulation cross-check.
 
-The proportion formulas use the standard normal approximation with the
-pooled variance under the null and the unpooled variance under the
-alternative, and ignore the vanishing probability of rejecting in the
-wrong direction. Tests pin them against simulation to within Monte Carlo
-error.
+The power functions call statsmodels: the standard normal approximation
+with the pooled variance under the null and the unpooled variance under
+the alternative for proportions, and a common standard deviation for
+means. statsmodels counts both tails of the two-sided test, so power is a
+hair above the one-tail-only approximation at low power and the same at
+the levels experiments plan for. Tests pin the proportion case against an
+exact binomial calculation and both against simulation.
 """
 
 from __future__ import annotations
@@ -14,6 +16,8 @@ from typing import cast
 
 import numpy as np
 from scipy import optimize, stats
+from statsmodels.stats.power import NormalIndPower
+from statsmodels.stats.proportion import power_proportions_2indep
 
 
 def _validate_alpha_power(alpha: float, power: float | None = None) -> None:
@@ -55,21 +59,26 @@ def power_two_proportions(
             f"each arm needs at least 2 users, got {control_size} and {treatment_size}"
         )
 
-    delta = abs(rate_treatment - rate_control)
-    pooled = (control_size * rate_control + treatment_size * rate_treatment) / (
-        control_size + treatment_size
+    # statsmodels calls the first sample the one at prop2 + diff, so the
+    # treatment arm goes first and the control arm follows through the ratio;
+    # it pools the null variance weighted by arm size and leaves the
+    # alternative variance unpooled, the placement the exact-binomial test pins
+    # statsmodels leaves the return untyped and pyright infers a union from
+    # its branches; without the results object the call returns the power
+    power = cast(
+        float,
+        power_proportions_2indep(
+            rate_treatment - rate_control,
+            rate_control,
+            treatment_size,
+            # statsmodels' default of 1 makes pyright read ratio as an int
+            ratio=control_size / treatment_size,  # pyright: ignore[reportArgumentType]
+            alpha=alpha,
+            alternative="two-sided",
+            return_results=False,
+        ),
     )
-    null_standard_error = np.sqrt(
-        pooled * (1.0 - pooled) * (1.0 / control_size + 1.0 / treatment_size)
-    )
-    alternative_standard_error = np.sqrt(
-        rate_control * (1.0 - rate_control) / control_size
-        + rate_treatment * (1.0 - rate_treatment) / treatment_size
-    )
-    z_critical = stats.norm.isf(alpha / 2.0)
-    return float(
-        stats.norm.sf((z_critical * null_standard_error - delta) / alternative_standard_error)
-    )
+    return float(power)
 
 
 def sample_size_two_proportions(
@@ -178,7 +187,8 @@ def power_two_means(
     """Power of the two-sided two-sample test for means, common standard deviation, equal n.
 
     Normal approximation (no t correction), fine for the arm sizes online
-    experiments run at.
+    experiments run at. The effect size handed to statsmodels is the
+    difference in standard-deviation units.
     """
     _validate_alpha_power(alpha)
     if standard_deviation <= 0.0:
@@ -187,9 +197,16 @@ def power_two_means(
         raise ValueError("difference is zero; power against a zero effect is just alpha")
     if n_per_arm < 2:
         raise ValueError(f"n_per_arm must be at least 2, got {n_per_arm}")
-    standard_error = standard_deviation * np.sqrt(2.0 / n_per_arm)
-    z_critical = stats.norm.isf(alpha / 2.0)
-    return float(stats.norm.sf(z_critical - abs(difference) / standard_error))
+    return float(
+        NormalIndPower().power(
+            effect_size=abs(difference) / standard_deviation,
+            nobs1=n_per_arm,
+            alpha=alpha,
+            # statsmodels' default of 1 makes pyright read ratio as an int
+            ratio=1.0,  # pyright: ignore[reportArgumentType]
+            alternative="two-sided",
+        )
+    )
 
 
 def sample_size_two_means(

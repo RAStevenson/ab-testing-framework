@@ -216,7 +216,7 @@ that gap, so it points at fragility rather than proving whales specifically.
 There is no analysis trick that resolves this, because the ambiguity is real.
 The true effect the generator planted is +0.32 per user, and
 with this tail the experiment only had roughly
-6% power to detect it. That figure uses the realized sample
+7% power to detect it. That figure uses the realized sample
 standard deviation of 130, itself an unstable estimate under an
 infinite-variance tail. The generator draws whale amounts from the same distribution in both
 arms, so which arm the largest whales landed in is sampling noise *by
