@@ -10,6 +10,8 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import stats
+from statsmodels.stats.multitest import multipletests
+from statsmodels.stats.proportion import confint_proportions_2indep, proportions_ztest
 
 from abkit.results import MeanComparison, RateComparison, SrmResult
 
@@ -52,30 +54,22 @@ def two_proportion_ztest(
     difference = rate_treatment - rate_control
 
     pooled = (conversions_control + conversions_treatment) / (n_control + n_treatment)
-    pooled_standard_error = np.sqrt(pooled * (1.0 - pooled) * (1.0 / n_control + 1.0 / n_treatment))
-    if pooled_standard_error == 0.0:
+    if pooled in (0.0, 1.0):
         raise ValueError("all outcomes identical in both arms; z-test is undefined")
-    z_statistic = difference / pooled_standard_error
-    p_value = 2.0 * stats.norm.sf(abs(z_statistic))
-
-    # Agresti-Caffo: add one success and one failure to each arm, then form a
-    # Wald interval on the adjusted rates. Plain Wald collapses to zero width
-    # when both arms sit exactly on 0 or 1, reporting a point as a 95%
-    # interval; Agresti-Caffo stays sensible there and has better coverage at
-    # rates near the boundary generally. The two are indistinguishable at
-    # experiment sample sizes. The interval is therefore centered on the
-    # adjusted difference, not on ``absolute_lift``, which stays unadjusted
-    # because that is the estimate worth reporting.
-    adjusted_n_control = n_control + 2.0
-    adjusted_n_treatment = n_treatment + 2.0
-    adjusted_rate_control = (conversions_control + 1.0) / adjusted_n_control
-    adjusted_rate_treatment = (conversions_treatment + 1.0) / adjusted_n_treatment
-    adjusted_difference = adjusted_rate_treatment - adjusted_rate_control
-    adjusted_standard_error = np.sqrt(
-        adjusted_rate_control * (1.0 - adjusted_rate_control) / adjusted_n_control
-        + adjusted_rate_treatment * (1.0 - adjusted_rate_treatment) / adjusted_n_treatment
+    # treatment first, so the statistic's sign follows treatment minus control;
+    # statsmodels pools the variance under the null by default
+    z_statistic, p_value = proportions_ztest(
+        [conversions_treatment, conversions_control], [n_treatment, n_control]
     )
-    z_critical = stats.norm.ppf(0.5 + confidence / 2.0)
+    ci_low, ci_high = confint_proportions_2indep(
+        conversions_treatment,
+        n_treatment,
+        conversions_control,
+        n_control,
+        method="agresti-caffo",
+        compare="diff",
+        alpha=1.0 - confidence,
+    )
     return RateComparison(
         n_control=n_control,
         n_treatment=n_treatment,
@@ -90,8 +84,8 @@ def two_proportion_ztest(
         # a difference of proportions lives in [-1, 1], and the adjustment can
         # push the interval a hair outside it at extreme rates; clipping to the
         # parameter space can only improve coverage
-        ci_low=float(max(-1.0, adjusted_difference - z_critical * adjusted_standard_error)),
-        ci_high=float(min(1.0, adjusted_difference + z_critical * adjusted_standard_error)),
+        ci_low=float(max(-1.0, ci_low)),
+        ci_high=float(min(1.0, ci_high)),
         confidence=confidence,
     )
 
@@ -123,33 +117,24 @@ def welch_ttest(
     if not 0.0 < confidence < 1.0:
         raise ValueError(f"confidence must be in (0, 1), got {confidence}")
 
-    control_variance = control_values.var(ddof=1)
-    treatment_variance = treatment_values.var(ddof=1)
-    standard_error_squared = (
-        control_variance / control_values.size + treatment_variance / treatment_values.size
-    )
-    if standard_error_squared == 0.0:
+    if control_values.var(ddof=1) == 0.0 and treatment_values.var(ddof=1) == 0.0:
         raise ValueError("both arms are constant; t-test is undefined")
-    degrees_of_freedom = standard_error_squared**2 / (
-        (control_variance / control_values.size) ** 2 / (control_values.size - 1)
-        + (treatment_variance / treatment_values.size) ** 2 / (treatment_values.size - 1)
-    )
+    # treatment first, so the statistic's sign follows treatment minus control
+    test = stats.ttest_ind(treatment_values, control_values, equal_var=False)
+    interval = test.confidence_interval(confidence_level=confidence)
     difference = treatment_values.mean() - control_values.mean()
-    t_statistic = difference / np.sqrt(standard_error_squared)
-    p_value = 2.0 * stats.t.sf(abs(t_statistic), degrees_of_freedom)
-    t_critical = stats.t.ppf(0.5 + confidence / 2.0, degrees_of_freedom)
-    half_width = t_critical * np.sqrt(standard_error_squared)
     return MeanComparison(
         n_control=int(control_values.size),
         n_treatment=int(treatment_values.size),
         mean_control=float(control_values.mean()),
         mean_treatment=float(treatment_values.mean()),
         difference=float(difference),
-        statistic=float(t_statistic),
-        df=float(degrees_of_freedom),
-        p_value=float(p_value),
-        ci_low=float(difference - half_width),
-        ci_high=float(difference + half_width),
+        # scipy's stub types the t-test result without these attributes
+        statistic=float(test.statistic),  # pyright: ignore[reportAttributeAccessIssue]
+        df=float(test.df),  # pyright: ignore[reportAttributeAccessIssue]
+        p_value=float(test.pvalue),  # pyright: ignore[reportAttributeAccessIssue]
+        ci_low=float(interval.low),
+        ci_high=float(interval.high),
         confidence=confidence,
     )
 
@@ -192,13 +177,23 @@ def welch_ttest_from_stats(
     standard_error_squared = variance_control / n_control + variance_treatment / n_treatment
     if standard_error_squared == 0.0:
         raise ValueError("both arms are constant; t-test is undefined")
+    # scipy gives the statistic and p-value from summary statistics but no
+    # interval, so the Welch-Satterthwaite degrees of freedom and the t
+    # interval are formed here
+    test = stats.ttest_ind_from_stats(
+        mean_treatment,
+        np.sqrt(variance_treatment),
+        n_treatment,
+        mean_control,
+        np.sqrt(variance_control),
+        n_control,
+        equal_var=False,
+    )
     degrees_of_freedom = standard_error_squared**2 / (
         (variance_control / n_control) ** 2 / (n_control - 1)
         + (variance_treatment / n_treatment) ** 2 / (n_treatment - 1)
     )
     difference = mean_treatment - mean_control
-    t_statistic = difference / np.sqrt(standard_error_squared)
-    p_value = 2.0 * stats.t.sf(abs(t_statistic), degrees_of_freedom)
     t_critical = stats.t.ppf(0.5 + confidence / 2.0, degrees_of_freedom)
     half_width = t_critical * np.sqrt(standard_error_squared)
     return MeanComparison(
@@ -207,9 +202,9 @@ def welch_ttest_from_stats(
         mean_control=float(mean_control),
         mean_treatment=float(mean_treatment),
         difference=float(difference),
-        statistic=float(t_statistic),
+        statistic=float(test.statistic),
         df=float(degrees_of_freedom),
-        p_value=float(p_value),
+        p_value=float(test.pvalue),
         ci_low=float(difference - half_width),
         ci_high=float(difference + half_width),
         confidence=confidence,
@@ -236,11 +231,9 @@ def srm_check(
         )
     total = n_control + n_treatment
     expected_treatment = total * expected_treatment_share
-    expected_control = total - expected_treatment
-    statistic = (n_treatment - expected_treatment) ** 2 / expected_treatment + (
-        n_control - expected_control
-    ) ** 2 / expected_control
-    p_value = stats.chi2.sf(statistic, df=1)
+    statistic, p_value = stats.chisquare(
+        [n_control, n_treatment], f_exp=[total - expected_treatment, expected_treatment]
+    )
     return SrmResult(
         n_control=n_control,
         n_treatment=n_treatment,
@@ -262,40 +255,30 @@ def _validated_pvalues(p_values: ArrayLike) -> NDArray[np.float64]:
 
 
 def bonferroni(p_values: ArrayLike) -> NDArray[np.float64]:
-    """Bonferroni-adjusted p-values. Controls FWER; simple but conservative."""
-    valid_p_values = _validated_pvalues(p_values)
-    return np.minimum(valid_p_values * valid_p_values.size, 1.0)
+    """Bonferroni-adjusted p-values, in the input order. Controls FWER; simple but conservative."""
+    return _adjusted(p_values, "bonferroni")
 
 
 def holm(p_values: ArrayLike) -> NDArray[np.float64]:
-    """Holm step-down adjusted p-values.
+    """Holm step-down adjusted p-values, in the input order.
 
     Controls FWER like Bonferroni but is uniformly more powerful, so
     there is no reason to prefer Bonferroni beyond hand-calculation.
     """
-    valid_p_values = _validated_pvalues(p_values)
-    n_tests = valid_p_values.size
-    order = np.argsort(valid_p_values)
-    scaled = valid_p_values[order] * (n_tests - np.arange(n_tests))
-    adjusted_sorted = np.minimum(np.maximum.accumulate(scaled), 1.0)
-    adjusted = np.empty(n_tests)
-    adjusted[order] = adjusted_sorted
-    return adjusted
+    return _adjusted(p_values, "holm")
 
 
 def benjamini_hochberg(p_values: ArrayLike) -> NDArray[np.float64]:
-    """Benjamini-Hochberg adjusted p-values (q-values).
+    """Benjamini-Hochberg adjusted p-values (q-values), in the input order.
 
     Controls the false discovery rate, not FWER: appropriate for screens
     over many secondary metrics where a few false positives are an
     acceptable price for power, not for a single ship decision.
     """
+    return _adjusted(p_values, "fdr_bh")
+
+
+def _adjusted(p_values: ArrayLike, method: str) -> NDArray[np.float64]:
+    """Validate the p-values and return statsmodels' adjusted values in the input order."""
     valid_p_values = _validated_pvalues(p_values)
-    n_tests = valid_p_values.size
-    order = np.argsort(valid_p_values)
-    ranks = np.arange(1, n_tests + 1)
-    scaled = valid_p_values[order] * n_tests / ranks
-    adjusted_sorted = np.minimum(np.minimum.accumulate(scaled[::-1])[::-1], 1.0)
-    adjusted = np.empty(n_tests)
-    adjusted[order] = adjusted_sorted
-    return adjusted
+    return np.asarray(multipletests(valid_p_values, method=method)[1], dtype=np.float64)
