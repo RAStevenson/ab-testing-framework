@@ -22,7 +22,8 @@ AGENTS.md
 # data artifacts and models — analysis figures are committed on purpose.
 # data/asos/ is the one committed dataset: CC BY 4.0 with its own license
 # notice, small, and pinned by md5 in analysis/asos/config.toml. Fetched
-# datasets without a redistribution license (hillstrom) stay ignored.
+# datasets without a redistribution license (hillstrom) stay ignored, and so
+# does data/synthetic/, which scripts/run_synthetic_example.py regenerates.
 data/*
 !data/asos/
 *.parquet

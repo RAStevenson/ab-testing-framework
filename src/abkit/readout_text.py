@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from abkit.readout_analysis import ExperimentReadout
+from abkit.readout_analysis import ExperimentReadout, planted_end_of_run_lift
 from abkit.results import CupedResult, MeanComparison, PermutationResult, RateComparison
 
 LINE_WIDTH = 100
@@ -394,13 +394,36 @@ def _truth_block(readout: ExperimentReadout) -> list[str]:
         _, comparison = readout.primary[0]
         if isinstance(comparison, RateComparison):
             found["base_rate"] = f"found {comparison.rate_control:.4f} (control rate)"
-            inside = (
-                comparison.ci_low
-                <= readout.truth.get("absolute_lift", np.nan)
-                <= comparison.ci_high
-            )
-            found["absolute_lift"] = f"found {_effect(comparison)} ({_interval(comparison)})   " + (
-                "inside" if inside else "OUTSIDE"
+            expected = planted_end_of_run_lift(readout.truth)
+            if expected is not None:
+                inside = comparison.ci_low <= expected <= comparison.ci_high
+                novelty_note = ", novelty averaged in" if "novelty_boost" in readout.truth else ""
+                found["absolute_lift"] = (
+                    f"expected {pp_signed(expected)} at the end of the run{novelty_note}   "
+                    f"found {_effect(comparison)} ({_interval(comparison)})   "
+                    + ("inside" if inside else "OUTSIDE")
+                )
+    if readout.novelty is not None and readout.novelty.contrasts:
+        first = readout.novelty.contrasts[0]
+        found["novelty_boost"] = (
+            f"found early {pp_signed(first.early)} against late {pp_signed(first.late)}, "
+            + _NOVELTY_RESULTS[
+                "steady"
+                if first.decay_p >= readout.alpha
+                else ("fell" if first.decay_z > 0 else "rose")
+            ]
+        )
+    for metric, _, result in readout.cuped:
+        found["pre_correlation"] = (
+            f"found CUPED on {metric} removed {result.variance_reduction:.0%} of the noise"
+        )
+        if result.variance_reduction < 0.05:
+            # the planted correlation is on the log scale among spenders; raw
+            # spend is mostly zeros and whales, which that correlation does
+            # not predict, so the readout says why the planted link barely shows
+            found["pre_correlation"] += (
+                " (the link is on the log scale among spenders; raw spend is mostly zeros and "
+                "whales)"
             )
     width = max(len(name) for name in readout.truth)
     for name, value in sorted(readout.truth.items()):

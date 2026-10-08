@@ -197,3 +197,85 @@ def generate_continuous(
 
     outcome = np.where(spends, amount, 0.0)
     return ExperimentData(assignment, outcome, day)
+
+
+def generate_example_rows(
+    n_users: int,
+    random_generator: np.random.Generator,
+    *,
+    base_rate: float,
+    absolute_lift: float,
+    n_days: int,
+    novelty_boost: float,
+    novelty_half_life_days: float,
+    spend_rate: float,
+    spend_rate_lift: float,
+    log_mean: float,
+    log_sigma: float,
+    whale_rate: float,
+    whale_shape: float,
+    whale_scale: float,
+    pre_correlation: float,
+) -> dict[str, NDArray]:
+    """One synthetic experiment as user rows: conversion and spend on the same users.
+
+    Each user gets one assignment and one exposure day, shared by every
+    column. ``converted`` follows ``generate_binary``'s rate formula (the
+    persistent ``absolute_lift`` plus a ``novelty_boost`` that has halved
+    after ``novelty_half_life_days``) and ``spend`` follows
+    ``generate_continuous``'s zero-inflated lognormal with a Pareto whale
+    tail, both on those users. ``pre_spend`` is a lognormal whose log
+    correlates with each user's log spend amount at ``pre_correlation``
+    (whales excepted), so CUPED on spend has a known amount of noise to
+    remove. Returns the columns ``user_id``, ``group``, ``day``,
+    ``converted``, ``spend``, and ``pre_spend``, aligned.
+    """
+    _validate_common(n_users, 0.5, n_days)
+    if not 0.0 <= base_rate <= 1.0:
+        raise ValueError(f"base_rate must be in [0, 1], got {base_rate}")
+    if not 0.0 <= base_rate + absolute_lift + novelty_boost <= 1.0:
+        raise ValueError("peak treatment rate outside [0, 1]")
+    if novelty_half_life_days <= 0.0:
+        raise ValueError(f"novelty_half_life_days must be positive, got {novelty_half_life_days}")
+    if not 0.0 <= spend_rate <= 1.0 or not 0.0 <= spend_rate + spend_rate_lift <= 1.0:
+        raise ValueError("spend rates must stay in [0, 1]")
+    if not 0.0 <= whale_rate <= 1.0:
+        raise ValueError(f"whale_rate must be in [0, 1], got {whale_rate}")
+    if whale_shape <= 1.0:
+        raise ValueError(f"whale_shape must exceed 1, got {whale_shape}")
+    if whale_scale <= 0.0 or log_sigma <= 0.0:
+        raise ValueError("whale_scale and log_sigma must be positive")
+    if not -1.0 < pre_correlation < 1.0:
+        raise ValueError(f"pre_correlation must be in (-1, 1), got {pre_correlation}")
+
+    day = random_generator.integers(0, n_days, size=n_users)
+    treated = random_generator.random(n_users) < 0.5
+
+    decay = 0.5 ** (day / novelty_half_life_days)
+    rate = np.where(treated, base_rate + absolute_lift + novelty_boost * decay, base_rate)
+    converted = (random_generator.random(n_users) < rate).astype(np.float64)
+
+    spend_probability = np.where(treated, spend_rate + spend_rate_lift, spend_rate)
+    spends = random_generator.random(n_users) < spend_probability
+    # the latent log amount is the user's spend propensity; pre_spend shares
+    # pre_correlation of it and the rest is independent noise
+    propensity = random_generator.standard_normal(n_users)
+    amount = np.exp(log_mean + log_sigma * propensity)
+    whale_amount = whale_scale * (1.0 + random_generator.pareto(whale_shape, size=n_users))
+    is_whale = random_generator.random(n_users) < whale_rate
+    spend = np.where(spends, np.where(is_whale, whale_amount, amount), 0.0)
+    pre_noise = random_generator.standard_normal(n_users)
+    pre_spend = np.exp(
+        log_mean
+        + log_sigma * (pre_correlation * propensity + np.sqrt(1.0 - pre_correlation**2) * pre_noise)
+    )
+
+    width = len(str(n_users))
+    return {
+        "user_id": np.array([f"u{index + 1:0{width}d}" for index in range(n_users)], dtype=object),
+        "group": np.where(treated, "treatment", "control").astype(object),
+        "day": day.astype(np.int64),
+        "converted": converted,
+        "spend": spend,
+        "pre_spend": pre_spend,
+    }

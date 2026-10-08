@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from abkit.frequentist import srm_check
-from abkit.generators import generate_binary, generate_continuous
+from abkit.generators import generate_binary, generate_continuous, generate_example_rows
 
 
 def test_binary_rates_match_configuration():
@@ -129,3 +129,56 @@ def test_binary_rejects_bad_parameters(kwargs):
 def test_continuous_rejects_bad_parameters(kwargs):
     with pytest.raises(ValueError):
         generate_continuous(100, random_generator=np.random.default_rng(0), **kwargs)
+
+
+def _example_rows(n_users: int, seed: int, **overrides: float) -> dict:
+    settings = {
+        "base_rate": 0.06,
+        "absolute_lift": 0.004,
+        "n_days": 14,
+        "novelty_boost": 0.0,
+        "novelty_half_life_days": 3.0,
+        "spend_rate": 0.06,
+        "spend_rate_lift": 0.02,
+        "log_mean": 3.4,
+        "log_sigma": 1.3,
+        "whale_rate": 0.0,
+        "whale_shape": 1.5,
+        "whale_scale": 400.0,
+        "pre_correlation": 0.6,
+    }
+    settings.update(overrides)
+    return generate_example_rows(n_users, np.random.default_rng(seed), **settings)
+
+
+def test_example_rows_share_one_assignment_across_columns():
+    rows = _example_rows(200_000, seed=15, absolute_lift=0.03)
+    assert set(rows) == {"user_id", "group", "day", "converted", "spend", "pre_spend"}
+    assert len({column.size for column in rows.values()}) == 1
+    assert len(set(rows["user_id"])) == rows["user_id"].size
+    treated = rows["group"] == "treatment"
+    assert treated.mean() == pytest.approx(0.5, abs=0.01)
+    # both planted lifts land on the same group mask, so the assignment is shared
+    conversion_lift = rows["converted"][treated].mean() - rows["converted"][~treated].mean()
+    spend_rate_lift = (rows["spend"][treated] > 0).mean() - (rows["spend"][~treated] > 0).mean()
+    assert conversion_lift == pytest.approx(0.03, abs=0.004)
+    assert spend_rate_lift == pytest.approx(0.02, abs=0.004)
+    assert np.all((rows["day"] >= 0) & (rows["day"] < 14))
+
+
+def test_pre_spend_correlates_with_the_spend_propensity_as_planted():
+    rows = _example_rows(200_000, seed=16)
+    spenders = rows["spend"] > 0
+    correlation = np.corrcoef(np.log(rows["spend"][spenders]), np.log(rows["pre_spend"][spenders]))
+    assert correlation[0, 1] == pytest.approx(0.6, abs=0.02)
+    # everyone has a pre-period value, spenders or not
+    assert np.all(rows["pre_spend"] > 0)
+
+
+def test_example_rows_reject_bad_parameters():
+    with pytest.raises(ValueError):
+        _example_rows(100, seed=0, pre_correlation=1.0)
+    with pytest.raises(ValueError):
+        _example_rows(100, seed=0, absolute_lift=0.95)
+    with pytest.raises(ValueError):
+        _example_rows(0, seed=0)

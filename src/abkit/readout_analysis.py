@@ -890,3 +890,17 @@ def analyze_experiment(
         excluded_checkpoints=excluded,
         truth=experiment.truth,
     )
+
+
+def planted_end_of_run_lift(truth: dict) -> float | None:
+    """The lift on the primary metric a generator recipe implies at the end of the run: the
+    persistent ``absolute_lift`` plus the novelty boost averaged over the run's days, when the
+    recipe carries those keys; None when it does not."""
+    if "absolute_lift" not in truth:
+        return None
+    lift = float(truth["absolute_lift"])
+    if all(key in truth for key in ("novelty_boost", "novelty_half_life_days", "n_days")):
+        days = np.arange(int(truth["n_days"]))
+        decay = 0.5 ** (days / float(truth["novelty_half_life_days"]))
+        lift += float(truth["novelty_boost"]) * float(decay.mean())
+    return lift

@@ -1,0 +1,60 @@
+# The synthetic example: one generated experiment through the real intake,
+# with the planted values the readout is checked against. This file is both
+# the generation recipe ([truth]) and the intake config the readout reads;
+# scripts/run_synthetic_example.py writes the rows to data/synthetic/ (never
+# committed) and then runs the same path as run_analyze_experiment.py.
+# Reproduce with:
+#   python scripts/run_synthetic_example.py
+
+[experiment]
+name = "synthetic checkout experiment"
+alpha = 0.05
+
+[input]
+shape = "user_rows"
+path = "../../data/synthetic/synthetic_experiment.csv"
+
+[columns]
+arm = "group"
+day = "day"
+user_id = "user_id"
+
+# the FIRST label is the control arm
+[arms]
+labels = ["control", "treatment"]
+intended_split = [0.5, 0.5]
+
+[[metrics]]
+name = "converted"
+column = "converted"
+kind = "binary"
+primary = true
+
+[[metrics]]
+name = "spend"
+column = "spend"
+kind = "continuous"
+nonnegative = true
+pre_column = "pre_spend"
+
+# the planted truth, carried from the checkout recipe: a persistent lift on
+# conversion plus a transient novelty boost that has halved after three
+# days, a lift on the share of users who spend, and a Pareto whale tail with
+# finite mean but infinite variance. pre_spend correlates with each user's
+# spend amount on the log scale, so CUPED has a known amount to remove.
+[truth]
+seed = 38
+n_users = 120000
+n_days = 14
+base_rate = 0.06
+absolute_lift = 0.004
+novelty_boost = 0.008
+novelty_half_life_days = 3.0
+spend_rate = 0.06
+spend_rate_lift = 0.004
+log_mean = 3.4
+log_sigma = 1.3
+whale_rate = 0.008
+whale_shape = 1.5
+whale_scale = 400.0
+pre_correlation = 0.6
