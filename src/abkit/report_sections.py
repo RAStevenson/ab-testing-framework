@@ -20,7 +20,7 @@ from __future__ import annotations
 import sys
 import traceback
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypeVar
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -34,14 +34,19 @@ from abkit.frequentist import (
     welch_ttest,
     welch_ttest_from_stats,
 )
-from abkit.io import (
-    ArmAggregate,
-    Experiment,
-    MetricSpec,
-    _metric_specs,
-    capabilities,
-)
+from abkit.io import Experiment, MetricSpec, _metric_specs, capabilities
 from abkit.power import mde_two_proportions
+from abkit.readout_analysis import (
+    _agg,
+    _cell_test,
+    _consistent_prefix,
+    _contrasts,
+    _present,
+    _primary,
+    _ratio_stability,
+    _series,
+    _window,
+)
 from abkit.report import FigureSpec, SectionSpec
 from abkit.resampling import bootstrap_mean_diff, permutation_test_mean_diff, trimmed_mean_diff
 from abkit.results import BootstrapResult, MeanComparison, PermutationResult, RateComparison
@@ -125,177 +130,6 @@ def _report_skipped_section(title: str) -> None:
     traceback.print_exc()
     print(
         f"note: the report omits the section '{title}' because of the error above.", file=sys.stderr
-    )
-
-
-_Field = TypeVar("_Field")
-
-
-def _present(value: _Field | None, what: str) -> _Field:
-    """Return an optional Experiment field, raising if it is missing. Sections
-    call this only where capabilities() has already promised the field."""
-    if value is None:
-        raise ValueError(f"this section needs the experiment's {what}, which it does not have")
-    return value
-
-
-def _primary(experiment: Experiment) -> MetricSpec:
-    """Return the experiment's primary metric."""
-    return next(metric for metric in experiment.metrics if metric.primary)
-
-
-def _contrasts(experiment: Experiment) -> list[tuple[str, str]]:
-    """Return each (control, treatment) arm pair, control first."""
-    return [(experiment.arms[0], arm) for arm in experiment.arms[1:]]
-
-
-def _agg(experiment: Experiment, arm: str, metric: str, checkpoint: float | None) -> ArmAggregate:
-    """Return the aggregate cell for this arm, metric, and checkpoint, raising if there is none."""
-    for cell in experiment.aggregates:
-        if cell.arm == arm and cell.metric == metric and cell.checkpoint == checkpoint:
-            return cell
-    raise ValueError(f"no aggregate for ({arm}, {metric}, {checkpoint})")
-
-
-def _series(experiment: Experiment, arm: str, metric: str) -> tuple[NDArray, NDArray, NDArray]:
-    """Cumulative (n, mean, variance) arrays for one arm and metric, in
-    checkpoint order. Raises if the experiment has no time axis."""
-    cells = sorted(
-        (
-            cell
-            for cell in experiment.aggregates
-            if cell.arm == arm and cell.metric == metric and cell.checkpoint is not None
-        ),
-        key=lambda cell: _present(cell.checkpoint, "checkpoint"),
-    )
-    if not cells:
-        raise ValueError(f"no per-checkpoint aggregates for ({arm}, {metric})")
-    return (
-        np.array([cell.n for cell in cells], dtype=np.float64),
-        np.array([cell.mean for cell in cells], dtype=np.float64),
-        np.array([cell.variance for cell in cells], dtype=np.float64),
-    )
-
-
-def _window(
-    count: NDArray, mean: NDArray, variance: NDArray, start: int, end: int
-) -> tuple[int, float, float]:
-    """(n, mean, ddof=1 variance) over cumulative checkpoints start..end-1,
-    via the same sum-of-squares identity as interval_from_cumulative."""
-    sums = count * mean
-    squares = (count - 1.0) * variance + count * mean**2
-    count_before = 0.0 if start == 0 else count[start - 1]
-    sums_before = 0.0 if start == 0 else sums[start - 1]
-    squares_before = 0.0 if start == 0 else squares[start - 1]
-    window_count = count[end - 1] - count_before
-    if window_count < 2:
-        raise ValueError(f"window {start}:{end} has fewer than 2 observations")
-    window_mean = (sums[end - 1] - sums_before) / window_count
-    window_variance = max(
-        ((squares[end - 1] - squares_before) - window_count * window_mean**2)
-        / (window_count - 1.0),
-        0.0,
-    )
-    if not (np.isfinite(window_mean) and np.isfinite(window_variance)):
-        raise ValueError(f"window {start}:{end} has non-finite statistics")
-    return int(window_count), float(window_mean), float(window_variance)
-
-
-def _successes(cell: ArmAggregate) -> int:
-    """Return the cell's success count, recovered from its mean and size."""
-    return round(cell.mean * cell.n)
-
-
-def _ratio_stability(
-    control_counts: NDArray, treatment_counts: NDArray
-) -> tuple[float, int, float, int]:
-    """Chi-square homogeneity of the per-interval assignment split.
-
-    Takes the two arms' CUMULATIVE count series and tests whether the
-    share of new users landing in each arm is constant across intervals,
-    which is the strongest sample-ratio check available when the
-    intended split is not on record. Returns (statistic, df, p,
-    n_intervals); p is NaN when fewer than two usable intervals exist.
-    """
-    control_increments = np.diff(np.asarray(control_counts, dtype=np.float64), prepend=0.0)
-    treatment_increments = np.diff(np.asarray(treatment_counts, dtype=np.float64), prepend=0.0)
-    keep = (control_increments > 0) | (treatment_increments > 0)
-    control_increments, treatment_increments = control_increments[keep], treatment_increments[keep]
-    if control_increments.sum() == 0.0 or treatment_increments.sum() == 0.0:
-        # one arm never gained a user; a split test has nothing to test
-        return float("nan"), 0, float("nan"), int(control_increments.size)
-    share = treatment_increments.sum() / (control_increments.sum() + treatment_increments.sum())
-    expected_treatment = (control_increments + treatment_increments) * share
-    expected_control = (control_increments + treatment_increments) * (1.0 - share)
-    statistic = float(
-        np.sum(
-            (treatment_increments - expected_treatment) ** 2 / expected_treatment
-            + (control_increments - expected_control) ** 2 / expected_control
-        )
-    )
-    degrees_of_freedom = int(control_increments.size - 1)
-    p_value = (
-        float(stats.chi2.sf(statistic, df=degrees_of_freedom))
-        if degrees_of_freedom > 0
-        else float("nan")
-    )
-    return statistic, degrees_of_freedom, p_value, int(control_increments.size)
-
-
-def _consistent_prefix(count: NDArray, mean: NDArray, variance: NDArray) -> int:
-    """Number of leading checkpoints whose cumulative statistics are
-    internally consistent.
-
-    For any real accumulation of observations, the variance recovered for
-    the increment between consecutive checkpoints (via the sum-of-squares
-    identity) is non-negative. A materially negative recovery means the
-    triplet (count, mean, variance) at some checkpoint is not describing
-    a superset of the previous checkpoint's sample - a settled recompute,
-    a correction, or a join error. Real archives contain such
-    checkpoints; sections trim to this prefix and say so in prose.
-    """
-    sums = count * mean
-    squares = (count - 1.0) * variance + count * mean**2
-    interval_counts = np.diff(count, prepend=0.0)
-    interval_sums = np.diff(sums, prepend=0.0)
-    interval_squares = np.diff(squares, prepend=0.0)
-    interval_means = np.divide(
-        interval_sums,
-        interval_counts,
-        out=np.full_like(interval_counts, np.nan),
-        where=interval_counts != 0,
-    )
-    interval_variances = np.divide(
-        interval_squares - interval_counts * interval_means**2,
-        interval_counts - 1.0,
-        out=np.full_like(interval_counts, np.nan),
-        where=interval_counts != 1.0,
-    )
-    bad = np.nonzero(
-        np.isfinite(interval_variances) & (interval_variances < -1e-6 * np.maximum(variance, 1.0))
-    )[0]
-    return int(bad[0]) if bad.size else int(count.size)
-
-
-def _cell_test(
-    experiment: Experiment, treatment_arm: str, metric: MetricSpec
-) -> RateComparison | MeanComparison:
-    """The appropriate two-sample test for one (contrast, metric) cell,
-    chosen by metric kind and data shape."""
-    control = _agg(experiment, experiment.arms[0], metric.name, None)
-    treatment = _agg(experiment, treatment_arm, metric.name, None)
-    if metric.kind == "binary":
-        return two_proportion_ztest(
-            _successes(control), control.n, _successes(treatment), treatment.n
-        )
-    if experiment.rows is not None:
-        control_mask = experiment.rows["arm"] == experiment.arms[0]
-        treatment_mask = experiment.rows["arm"] == treatment_arm
-        return welch_ttest(
-            experiment.rows[metric.name][control_mask], experiment.rows[metric.name][treatment_mask]
-        )
-    return welch_ttest_from_stats(
-        control.n, control.mean, control.variance, treatment.n, treatment.mean, treatment.variance
     )
 
 
