@@ -127,3 +127,23 @@ class RepeatedIntervals:
     ci_high: tuple[float, ...]
     boundaries: tuple[float, ...]
     alpha: float
+
+
+@dataclass(frozen=True)
+class CupedResult:
+    """Treatment minus control, adjusted by a pre-experiment column (CUPED).
+
+    ``variance_reduction`` is the share of the unadjusted estimate's
+    variance the adjustment removed: one minus the squared ratio of the
+    adjusted to the unadjusted standard error.
+    """
+
+    difference: float
+    standard_error: float
+    unadjusted_standard_error: float
+    variance_reduction: float
+    pre_period_coefficient: float
+    p_value: float
+    ci_low: float
+    ci_high: float
+    confidence: float
