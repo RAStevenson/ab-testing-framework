@@ -45,6 +45,14 @@ def _write_config(tmp_path: Path, text: str) -> Path:
     return config_path
 
 
+def _append_clean_filler(data_path: Path, n_filler: int = 300) -> None:
+    """Append clean rows so a test's few planted drops stay under the 1% stop."""
+    with open(data_path, "a", encoding="utf-8") as data_file:
+        for i in range(n_filler):
+            group = "control" if i % 2 else "treatment"
+            data_file.write(f"f{i},{group},{i % 3},{i % 2},{i % 4}\n")
+
+
 @pytest.fixture()
 def ok_experiment() -> Experiment:
     config = load_config(FIXTURES / "experiment_ok.toml")
@@ -151,13 +159,11 @@ class TestValidatorRules:
     def test_alias_normalized_fires(self, dirty: Experiment) -> None:
         assert self._count(dirty, "alias_normalized") == 1
         assert dirty.rows is not None
-        assert np.sum(dirty.rows["arm"] == "treatment") == 4  # u03 kept as treatment
+        # u03 kept as treatment, with the 200 even-numbered filler rows
+        assert np.sum(dirty.rows["arm"] == "treatment") == 204
 
     def test_null_row_dropped_fires(self, dirty: Experiment) -> None:
         assert self._count(dirty, "null_row_dropped") == 1  # u04, empty arm
-
-    def test_duplicate_user_dropped_fires(self, dirty: Experiment) -> None:
-        assert self._count(dirty, "duplicate_user_dropped") == 1  # second u05
 
     def test_negative_value_dropped_fires(self, dirty: Experiment) -> None:
         assert self._count(dirty, "negative_value_dropped") == 1  # u06 spend -5
@@ -166,9 +172,104 @@ class TestValidatorRules:
         assert self._count(dirty, "uncoercible_dropped") == 1  # u07 spend N/A
 
     def test_surviving_row_count(self, dirty: Experiment) -> None:
-        # 13 data rows, 4 dropped (null arm, duplicate, negative, uncoercible)
+        # 412 data rows, 3 dropped (null arm, negative, uncoercible): 0.7%,
+        # under the 1% stop
         assert dirty.rows is not None
-        assert dirty.rows["arm"].size == 9
+        assert dirty.rows["arm"].size == 409
+
+    def test_duplicate_user_stops_the_run(self, tmp_path: Path) -> None:
+        config = load_config(_write_config(tmp_path, _config_text()))
+        data_path = tmp_path / "duplicate.csv"
+        data_path.write_text(
+            "user_id,group,day,converted,spend\n"
+            "u1,control,0,1,5\nu2,treatment,0,0,0\nu1,control,1,0,0\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match=r"duplicate_user_error.*'u1'.*rows 2 and 4"):
+            load_user_rows(config, data_path)
+
+    def test_drop_share_above_one_percent_stops_the_run(self, tmp_path: Path) -> None:
+        config = load_config(_write_config(tmp_path, _config_text()))
+        clean = [
+            f"u{i},{'control' if i % 2 else 'treatment'},{i % 3},{i % 2},{i % 4}" for i in range(98)
+        ]
+        header = "user_id,group,day,converted,spend\n"
+        one_bad = tmp_path / "one_bad.csv"
+        one_bad.write_text(
+            header + "\n".join([*clean, "x1,control,0,1,N/A", "x2,control,0,1,3"]) + "\n",
+            encoding="utf-8",
+        )
+        experiment = load_user_rows(config, one_bad)
+        assert experiment.rows is not None
+        assert experiment.rows["arm"].size == 99  # 1 of 100 dropped, under the stop
+        two_bad = tmp_path / "two_bad.csv"
+        two_bad.write_text(
+            header + "\n".join([*clean, "x1,control,0,1,N/A", "x2,control,0,1,-3"]) + "\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(
+            ValueError, match=r"too_many_dropped_error.*2 of 100.*uncoercible_dropped"
+        ):
+            load_user_rows(config, two_bad)
+
+    def test_pre_column_round_trips(self, tmp_path: Path) -> None:
+        text = _config_text(
+            metrics=(
+                '[[metrics]]\nname = "converted"\ncolumn = "converted"\nkind = "binary"\n'
+                "primary = true\n"
+                '[[metrics]]\nname = "spend"\ncolumn = "spend"\nkind = "continuous"\n'
+                'nonnegative = true\npre_column = "pre_spend"\n'
+            )
+        )
+        config = load_config(_write_config(tmp_path, text))
+        assert config["metrics"][1]["pre_column"] == "pre_spend"
+        assert config["metrics"][0]["pre_column"] is None
+        data_path = tmp_path / "pre.csv"
+        data_path.write_text(
+            "user_id,group,day,converted,spend,pre_spend\n"
+            "u1,control,0,1,5,2\nu2,control,0,0,0,0\nu3,treatment,1,1,7,3.5\nu4,treatment,1,0,0,1\n",
+            encoding="utf-8",
+        )
+        experiment = load_user_rows(config, data_path)
+        assert experiment.pre_period is not None
+        assert list(experiment.pre_period) == ["spend"]
+        np.testing.assert_array_equal(experiment.pre_period["spend"], [2.0, 0.0, 3.5, 1.0])
+        assert experiment.rows is not None
+        assert "pre_spend" not in experiment.rows
+        assert experiment.validation == ()
+
+    def test_pre_column_follows_the_metric_coercion_rules(self, tmp_path: Path) -> None:
+        text = _config_text(
+            metrics=(
+                '[[metrics]]\nname = "converted"\ncolumn = "converted"\nkind = "binary"\n'
+                "primary = true\n"
+                '[[metrics]]\nname = "spend"\ncolumn = "spend"\nkind = "continuous"\n'
+                'nonnegative = true\npre_column = "pre_spend"\n'
+            )
+        )
+        config = load_config(_write_config(tmp_path, text))
+        clean = [
+            f"u{i},{'control' if i % 2 else 'treatment'},{i % 3},{i % 2},{i % 4},{i % 5}"
+            for i in range(300)
+        ]
+        data_path = tmp_path / "pre_dirty.csv"
+        data_path.write_text(
+            "user_id,group,day,converted,spend,pre_spend\n"
+            + "\n".join([*clean, "x1,control,0,1,5,-1", "x2,control,0,1,5,"])
+            + "\n",
+            encoding="utf-8",
+        )
+        experiment = load_user_rows(config, data_path)
+        assert self._count(experiment, "negative_value_dropped") == 1
+        assert self._count(experiment, "null_row_dropped") == 1
+        assert experiment.pre_period is not None
+        assert experiment.pre_period["spend"].size == 300
+
+    def test_pre_column_rejected_without_user_rows(self, tmp_path: Path) -> None:
+        text = (FIXTURES / "aggregates_config.toml").read_text(encoding="utf-8")
+        text = text.replace("primary = true", 'primary = true\npre_column = "x"', 1)
+        with pytest.raises(ValueError, match="pre_column, which needs user-level rows"):
+            load_config(_write_config(tmp_path, text))
 
     def test_rows_use_canonical_keys(self, dirty: Experiment) -> None:
         assert dirty.rows is not None
@@ -181,7 +282,7 @@ class TestValidatorRules:
 
     def test_events_carry_example_row(self, dirty: Experiment) -> None:
         by_rule = {event.rule: event.detail for event in dirty.validation}
-        assert by_rule["negative_value_dropped"] == "first at data row 8"
+        assert by_rule["negative_value_dropped"] == "first at data row 7"
 
 
 class TestAggregates:
@@ -308,7 +409,7 @@ class TestBatteryRegressions:
         experiment = load_user_rows(config, data_path)
         assert experiment.rows is not None
         assert experiment.rows["arm"].size == 4
-        assert not any(event.rule == "duplicate_user_dropped" for event in experiment.validation)
+        assert experiment.validation == ()
 
     def test_nan_and_inf_metric_values_dropped(self, tmp_path: Path) -> None:
         config = load_config(_write_config(tmp_path, _config_text()))
@@ -319,6 +420,7 @@ class TestBatteryRegressions:
             "u5,control,1,0,0\nu6,treatment,1,1,2\n",
             encoding="utf-8",
         )
+        _append_clean_filler(data_path)
         experiment = load_user_rows(config, data_path)
         assert (
             sum(
@@ -339,6 +441,7 @@ class TestBatteryRegressions:
             "u1,control,0,3.7,0\nu2,control,0,0,0\nu3,treatment,0,1,5\nu4,treatment,1,0,0\n",
             encoding="utf-8",
         )
+        _append_clean_filler(data_path)
         experiment = load_user_rows(config, data_path)
         assert (
             sum(event.count for event in experiment.validation if event.rule == "nonbinary_dropped")
@@ -353,9 +456,10 @@ class TestBatteryRegressions:
             "u1,control,N/A,1,0\nu2,control,0,0,0\nu3,treatment,,1,5\nu4,treatment,1,0,0\n",
             encoding="utf-8",
         )
+        _append_clean_filler(data_path)
         experiment = load_user_rows(config, data_path)
         assert experiment.rows is not None
-        assert experiment.rows["arm"].size == 2
+        assert experiment.rows["arm"].size == 302  # u2, u4, and the 300 filler rows
         assert (
             sum(
                 event.count

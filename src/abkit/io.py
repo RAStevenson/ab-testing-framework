@@ -36,6 +36,10 @@ from numpy.typing import NDArray
 _METRIC_KINDS = ("binary", "continuous")
 _INPUT_SHAPES = ("user_rows", "aggregates")
 _RESERVED_COLUMN_KEYS = ("arm", "day", "user_id")
+# share of data rows the drop rules may remove before the run stops: past
+# this the file is not cleaned-ish and the readout would describe the
+# survivors rather than the experiment
+DROPPED_ROW_STOP = 0.01
 
 
 @dataclass(frozen=True)
@@ -47,6 +51,7 @@ class MetricSpec:
     kind: str  # "binary" | "continuous"
     primary: bool = False
     nonnegative: bool = False
+    pre_column: str | None = None  # a pre-experiment column for CUPED, user rows only
 
 
 @dataclass(frozen=True)
@@ -80,8 +85,11 @@ class Experiment:
 
     ``arms[0]`` is the control. ``rows`` is None for aggregate-only data;
     when present it maps each declared column to a numpy array aligned
-    across columns. ``aggregates`` is always populated. ``truth`` carries
-    a generator config verbatim for synthetic data and is None otherwise.
+    across columns. ``pre_period`` maps each metric NAME that declared a
+    ``pre_column`` to that column's values, aligned with ``rows``, and is
+    None when no metric did or the data is aggregate-only. ``aggregates``
+    is always populated. ``truth`` carries a generator config verbatim for
+    synthetic data and is None otherwise.
     """
 
     name: str
@@ -90,6 +98,7 @@ class Experiment:
     metrics: tuple[MetricSpec, ...]
     alpha: float
     rows: dict[str, NDArray] | None
+    pre_period: dict[str, NDArray] | None
     aggregates: tuple[ArmAggregate, ...]
     checkpoints: tuple[float, ...] | None
     truth: dict | None
@@ -238,6 +247,16 @@ def load_config(path: Path) -> dict:
         metric.setdefault("column", metric["name"])
         metric.setdefault("primary", False)
         metric.setdefault("nonnegative", False)
+        pre_column = metric.setdefault("pre_column", None)
+        if pre_column is not None:
+            if not isinstance(pre_column, str) or not pre_column:
+                raise ValueError(
+                    f"metric {metric['name']!r} pre_column must be a non-empty column name"
+                )
+            if input_table["shape"] != "user_rows":
+                raise ValueError(
+                    f"metric {metric['name']!r} declares pre_column, which needs user-level rows"
+                )
         n_primary += bool(metric["primary"])
     if n_primary != 1:
         raise ValueError(f"exactly one metric must set primary = true, found {n_primary}")
@@ -275,6 +294,7 @@ def _metric_specs(config: dict) -> tuple[MetricSpec, ...]:
             kind=metric["kind"],
             primary=metric["primary"],
             nonnegative=metric["nonnegative"],
+            pre_column=metric.get("pre_column"),
         )
         for metric in config["metrics"]
     )
@@ -318,6 +338,26 @@ def _aggregates_from_rows(
     return tuple(aggregates)
 
 
+def _coercion_failure(metric: MetricSpec, raw: str) -> str | None:
+    """Return the drop rule a raw cell of this metric (or its pre-experiment column) breaks, or None
+    when it parses to a usable value."""
+    if not raw:
+        return "null_row_dropped"
+    try:
+        value = float(raw)
+    except ValueError:
+        return "uncoercible_dropped"
+    if not np.isfinite(value):
+        # float("nan") and float("inf") parse without error and would
+        # poison every mean while validation reported a clean load
+        return "uncoercible_dropped"
+    if metric.nonnegative and value < 0.0:
+        return "negative_value_dropped"
+    if metric.kind == "binary" and value not in (0.0, 1.0):
+        return "nonbinary_dropped"
+    return None
+
+
 def load_user_rows(config: dict, data_path: Path) -> Experiment:
     """Load, clean, and normalize a user-level CSV into an Experiment.
 
@@ -326,17 +366,26 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     - ``alias_normalized``: arm and aliased categorical values are
       stripped, casefolded, and mapped through ``[columns.aliases]``.
     - ``null_row_dropped``: a row with an empty arm or an empty value in
-      any declared metric column is dropped.
-    - ``duplicate_user_dropped``: when a user_id column is declared, the
-      first occurrence is kept and later ones dropped.
+      any declared metric or pre-experiment column is dropped.
     - ``negative_value_dropped``: a row with a negative value in a metric
-      declared ``nonnegative`` is dropped.
-    - ``uncoercible_dropped``: a row whose metric value does not parse as
-      a number is dropped.
+      declared ``nonnegative`` (or its pre-experiment column) is dropped.
+    - ``uncoercible_dropped``: a row whose metric, pre-experiment, or day
+      value does not parse as a finite number is dropped.
+    - ``nonbinary_dropped``: a row whose binary metric is not 0 or 1.
 
-    An arm label that is not in ``arms.labels`` after normalization
-    raises ValueError (``unmapped_arm_error``): silently dropping an arm
-    would fabricate a split.
+    Three things stop the run with a ValueError instead of being recorded:
+    an arm label that is not in ``arms.labels`` after normalization
+    (``unmapped_arm_error``: silently dropping an arm would fabricate a
+    split); a non-blank user id that appears twice when a user_id column is
+    declared (``duplicate_user_error``, naming the id and both rows); and
+    the drop rules removing more than ``DROPPED_ROW_STOP`` of the data
+    rows (``too_many_dropped_error``, with the count per rule). A file past
+    that share is not cleaned-ish, and a readout of its survivors would
+    describe a different experiment.
+
+    A metric's ``pre_column`` (its pre-experiment value, for CUPED) is read
+    under the same coercion rules as the metric and returned in
+    ``pre_period`` keyed by metric name.
 
     The returned ``rows`` dict uses CANONICAL keys, not the file's column
     names: ``"arm"``, ``"day"`` and ``"user_id"`` for the structural
@@ -353,6 +402,8 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     metrics = _metric_specs(config)
 
     declared = [arm_column, *(metric.column for metric in metrics)]
+    pre_columns = [metric.pre_column for metric in metrics if metric.pre_column is not None]
+    declared.extend(column for column in pre_columns if column not in declared)
     if day_column:
         declared.append(day_column)
     if user_column:
@@ -374,7 +425,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     counts: dict[str, int] = {}
     examples: dict[str, str] = {}
     kept: dict[str, list] = {column: [] for column in declared}
-    seen_users: set[str] = set()
+    first_row_of_user: dict[str, int] = {}
 
     def event(rule: str, index: int) -> None:
         """Count one occurrence of a validation rule and keep the first data row it happened at."""
@@ -402,41 +453,33 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
             )
 
         user_id = (row[user_column] or "").strip() if user_column else ""
-        if user_id and user_id in seen_users:
+        if user_id:
             # a BLANK id is treated as missing, never as a duplicate of
-            # every other blank id
-            event("duplicate_user_dropped", index)
-            continue
+            # every other blank id. A repeated id is a join or export error
+            # that no rule can repair: keeping either copy guesses which
+            # outcome is the user's, so the run stops.
+            if user_id in first_row_of_user:
+                raise ValueError(
+                    f"duplicate_user_error: user id {user_id!r} appears at data rows "
+                    f"{first_row_of_user[user_id]} and {index}; each user must appear once"
+                )
+            first_row_of_user[user_id] = index
 
         values: dict[str, float] = {}
         drop = False
         for metric in metrics:
-            raw = (row[metric.column] or "").strip()
-            if not raw:
-                event("null_row_dropped", index)
-                drop = True
+            columns_to_coerce = [metric.column]
+            if metric.pre_column is not None:
+                columns_to_coerce.append(metric.pre_column)
+            for column in columns_to_coerce:
+                rule = _coercion_failure(metric, (row[column] or "").strip())
+                if rule is not None:
+                    event(rule, index)
+                    drop = True
+                    break
+                values[column] = float((row[column] or "").strip())
+            if drop:
                 break
-            try:
-                value = float(raw)
-            except ValueError:
-                event("uncoercible_dropped", index)
-                drop = True
-                break
-            if not np.isfinite(value):
-                # float("nan") and float("inf") parse without error and would
-                # poison every mean while validation reported a clean load
-                event("uncoercible_dropped", index)
-                drop = True
-                break
-            if metric.nonnegative and value < 0.0:
-                event("negative_value_dropped", index)
-                drop = True
-                break
-            if metric.kind == "binary" and value not in (0.0, 1.0):
-                event("nonbinary_dropped", index)
-                drop = True
-                break
-            values[metric.column] = value
         if drop:
             continue
 
@@ -452,8 +495,6 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
                 continue
 
         if user_column:
-            if user_id:
-                seen_users.add(user_id)
             kept[user_column].append(user_id)
         kept[arm_column].append(arm)
         for column, value in values.items():
@@ -469,6 +510,14 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
 
     if not kept[arm_column]:
         raise ValueError(f"no usable rows in {data_path.name} after validation")
+    dropped_by_rule = {rule: count for rule, count in counts.items() if rule.endswith("_dropped")}
+    n_dropped = sum(dropped_by_rule.values())
+    if n_dropped > DROPPED_ROW_STOP * len(raw_rows):
+        raise ValueError(
+            f"too_many_dropped_error: the drop rules removed {n_dropped:,} of {len(raw_rows):,} "
+            f"data rows ({n_dropped / len(raw_rows):.1%}), above the {DROPPED_ROW_STOP:.0%} "
+            f"stop; by rule: {dropped_by_rule}. Clean the file before reading it"
+        )
 
     # canonical keys so consumers never need the config to read an Experiment;
     # metrics are keyed per metric NAME, so two metrics sharing one source
@@ -482,6 +531,15 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
         rows[metric.name] = np.asarray(kept[metric.column], dtype=np.float64)
     for column in extra_alias_cols:
         rows[column] = np.asarray(kept[column], dtype=object)
+    pre_period: dict[str, NDArray] | None = (
+        {
+            metric.name: np.asarray(kept[metric.pre_column], dtype=np.float64)
+            for metric in metrics
+            if metric.pre_column is not None
+        }
+        if pre_columns
+        else None
+    )
 
     checkpoints = (
         tuple(float(value) for value in np.unique(rows["day"])) if day_column is not None else None
@@ -497,6 +555,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
         metrics=metrics,
         alpha=config["experiment"]["alpha"],
         rows=rows,
+        pre_period=pre_period,
         aggregates=_aggregates_from_rows(
             rows, "arm", "day" if day_column else None, labels, metrics, checkpoints
         ),
@@ -678,6 +737,7 @@ def load_aggregates(config: dict, data_path: Path) -> Experiment:
         metrics=metrics,
         alpha=config["experiment"]["alpha"],
         rows=None,
+        pre_period=None,
         aggregates=tuple(aggregates),
         checkpoints=checkpoints if checkpoints else None,
         truth=config.get("truth"),
