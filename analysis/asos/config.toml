@@ -1,30 +1,19 @@
-# The ASOS real-data demo: a close read of one experiment from the ASOS
-# Digital Experiments Dataset, plus (via --sweep) a whole-archive
-# summary. Reproduce with:
-#   python scripts/run_analyze_experiment.py --config analysis/asos/config.toml --sweep
+# The ASOS real-data example: one experiment from the ASOS Digital
+# Experiments Dataset, real online controlled experiments from ASOS.com
+# published as daily or twice-daily CUMULATIVE summary statistics per arm
+# with no user-level rows (Liu, Cardoso, Couturier, McCoy, NeurIPS 2021,
+# DOI 10.17605/OSF.IO/64JSB, CC BY 4.0). Provenance and integrity notes are
+# in data/asos/LICENSE-DATA.md. Metrics are anonymized by the publisher;
+# the dataset's OSF wiki describes metric 1 as binary, metrics 2 and 3 as
+# count-based, and metric 4 as non-negative real. Experiment 54a85a was
+# chosen by a rule that does not look at this tool's results: the datasheet
+# flags one experiment for a possible primacy effect, and the rule takes it
+# if its variances are complete at every checkpoint. Reproduce with:
+#   python scripts/run_analyze_experiment.py --config analysis/asos/config.toml
 
 [experiment]
 name = "ASOS experiment 54a85a"
 alpha = 0.05
-preamble = """
-The data is the ASOS Digital Experiments Dataset, real online controlled
-experiments from ASOS.com, published as daily or twice-daily CUMULATIVE
-summary statistics per arm with no user-level rows (Liu, Cardoso,
-Couturier, McCoy, NeurIPS 2021, DOI 10.17605/OSF.IO/64JSB, CC BY 4.0).
-Provenance and integrity notes are in data/asos/LICENSE-DATA.md. Metrics
-are anonymized by the publisher. The dataset's OSF wiki describes metric 1 as
-binary, metrics 2 and 3 as count-based, and metric 4 as non-negative
-real, with metrics 2 to 4 right-skewed, so numbered names are the only
-accurate ones available. The single-experiment analysis below reads
-experiment 54a85a, chosen by a rule that does not look at this
-pipeline's results. The datasheet flags one experiment for a possible
-primacy effect (the passage is quoted in LICENSE-DATA.md). The rule
-takes that experiment if its variances are complete at every
-checkpoint, and otherwise falls back to the complete-variance
-experiment with the most checkpoints. 54a85a met both conditions.
-Because no user-level rows exist, the resampling analyses do not appear
-below. That omission is the report adapting to the data rather than an
-oversight."""
 
 [input]
 shape = "aggregates"

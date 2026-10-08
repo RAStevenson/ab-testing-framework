@@ -814,9 +814,9 @@ def _missing_days(experiment: Experiment) -> Limitation | None:
         return None
     return Limitation(
         "missing_days",
-        f"{gaps.size} gap{'s' if gaps.size != 1 else ''} in the day sequence (the largest "
-        f"{gaps.max():g} day{'s' if gaps.max() != 1 else ''} against a typical {typical:g}); "
-        "the time-based blocks treat the days present as the whole run",
+        f"{gaps.size} gap{'s' if gaps.size != 1 else ''} in the checkpoint sequence (the "
+        f"largest {gaps.max():g} day{'s' if gaps.max() != 1 else ''} against a typical "
+        f"{typical:g}); the time-based blocks treat the checkpoints present as the whole run",
     )
 
 

@@ -215,7 +215,10 @@ class TestLimitationCodes:
         gap = next(
             limitation for limitation in readout.limitations if limitation.code == "missing_days"
         )
-        assert "1 gap in the day sequence (the largest 4 days against a typical 1)" in gap.detail
+        assert (
+            "1 gap in the checkpoint sequence (the largest 4 days against a typical 1)"
+            in gap.detail
+        )
 
     def test_excluded_checkpoints(self) -> None:
         config = load_config(FIXTURES / "aggregates_config.toml")

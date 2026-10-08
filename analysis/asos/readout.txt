@@ -1,0 +1,57 @@
+ASOS experiment 54a85a: per-group totals
+Data: what the intake did before any statistic
+  users   control 3,320,536   variant_0 102,316   variant_1 3,316,730   variant_2 3,320,435
+  repairs and drops   none; the file passed every rule as delivered
+
+Limitations (*): read every result below with these in view
+  * aggregate data carries no per-user pre-experiment values, so CUPED cannot run
+  * 3 gaps in the checkpoint sequence (the largest 1 day against a typical 0.5); the time-based
+      blocks treat the checkpoints present as the whole run
+  * the final 1 checkpoint is internally inconsistent and left out of the time-based blocks; an
+      increment's recovered variance is negative, which no real accumulation of users produces; the
+      end-of-run results still use the final totals
+
+Group split: does assignment match the plan?
+  intended split not on record; testing whether the share of new users per checkpoint is constant
+  variant_0 vs control   96 checkpoints   chi-square 78.23   df 95   p 0.894
+  result   stable across checkpoints
+
+Sensitivity: smallest lift this sample could detect, 80% power
+  control 25.1%   3,320,536 vs 102,316 users   detectable 0.39 pp (1.5% of control)
+
+Primary metric_1: effect, 95% interval, p; interval first
+  variant_0 vs control   -0.07 pp   -0.33 to +0.20 pp   p 0.635   not detected
+  variant_1 vs control   +0.10 pp   +0.04 to +0.17 pp   p 0.003   detected, treatment higher
+  variant_2 vs control   -0.06 pp   -0.12 to +0.01 pp   p 0.085   not detected
+
+Other metrics: corrected for 9 comparisons
+  metric_2   variant_0 vs control   +0.001   p 0.893   Holm 1.000   BH 0.893
+  metric_2   variant_1 vs control   +0.002   p 0.106   Holm 0.703   BH 0.238
+  metric_2   variant_2 vs control   -0.002   p 0.100   Holm 0.703   BH 0.238
+  metric_3   variant_0 vs control   -0.003   p 0.848   Holm 1.000   BH 0.893
+  metric_3   variant_1 vs control   +0.009   p 0.033   Holm 0.296   BH 0.238
+  metric_3   variant_2 vs control   -0.007   p 0.088   Holm 0.703   BH 0.238
+  metric_4   variant_0 vs control   -0.185   p 0.628   Holm 1.000   BH 0.808
+  metric_4   variant_1 vs control   +0.065   p 0.497   Holm 1.000   BH 0.745
+  metric_4   variant_2 vs control   -0.110   p 0.251   Holm 1.000   BH 0.451
+  result   unadjusted 1 of 9 clear alpha; after Holm 0 survive
+
+Early versus late: did the effect fade?
+  first 31 checkpoints against the last 31, of 95 usable
+  variant_0 vs control   early -0.01 pp   late -1.26 pp   z 2.88   p 0.004   effect fell over the
+      run
+  variant_1 vs control   early +0.09 pp   late +0.08 pp   z 0.09   p 0.924   no change detected
+  variant_2 vs control   early -0.17 pp   late +0.23 pp   z -3.70   p 0.0002   effect rose over the
+      run
+
+Daily monitoring: 95 looks; crossing a boundary = safe to stop
+  variant_0 vs control on metric_1, O'Brien-Fleming spending at the sizes reached
+  spending design   never crosses in 95 looks; no early stop in either direction
+  naive 1.96 rule   never fires
+  final look   effect -0.07 pp   adjusted 95% -0.38 to +0.24 pp   boundary 2.25
+
+Decision: no detectable effect; this test could have seen 0.39 pp or more
+Figures:
+  figures/corrections.png
+  figures/early_late.png
+  figures/monitoring.png

@@ -1,27 +1,19 @@
-# The Hillstrom real-data demo: user-level rows from the 2008
-# MineThatData e-mail challenge. The data file is NOT in this repository
-# (its publisher never stated a license); fetch it first, then analyze:
+# The Hillstrom real-data example: user-level rows from the 2008
+# MineThatData E-Mail Analytics And Data Mining Challenge, 64,000 customers
+# of a retailer randomly assigned in thirds to a men's merchandise e-mail,
+# a women's merchandise e-mail, or no e-mail, with site visits, conversion,
+# and dollars spent tracked for the following two weeks. The publisher never
+# stated a license, so the file is NOT in this repository; it is fetched
+# from its original URL by scripts/run_fetch_hillstrom.py (SHA-256 pinned
+# there). The data carries no per-day fields, so the time-based blocks do
+# not appear. The history column (dollars spent in the year before the
+# e-mail) is the pre-experiment column for CUPED on spend. Reproduce with:
 #   python scripts/run_fetch_hillstrom.py
 #   python scripts/run_analyze_experiment.py --config analysis/hillstrom/config.toml
 
 [experiment]
 name = "Hillstrom e-mail experiment"
 alpha = 0.05
-preamble = """
-The data is Kevin Hillstrom's MineThatData E-Mail Analytics And Data
-Mining Challenge (2008). It covers 64,000 customers of a retailer
-randomly assigned in thirds to a men's merchandise e-mail, a women's
-merchandise e-mail, or no e-mail, with site visits, conversion, and
-dollars spent tracked for the following two weeks. It is real user-level data and a
-widely used public benchmark for incremental-lift analysis. The publisher
-never stated a license, so the file is fetched from its original URL by
-scripts/run_fetch_hillstrom.py (SHA-256 pinned there) rather than
-redistributed in this repository. The data carries no per-day fields,
-so the time-based sections do not appear below. That omission is the
-report adapting to the data. The data does contain one error. A
-category value arrives misspelled, in a background column the analyses
-never use, and the validation section records normalizing it. That is
-the kind of cleaning an intake has to report rather than do silently."""
 
 [input]
 shape = "user_rows"
@@ -55,3 +47,4 @@ name = "spend"
 column = "spend"
 kind = "continuous"
 nonnegative = true
+pre_column = "history"

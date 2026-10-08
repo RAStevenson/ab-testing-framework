@@ -1,0 +1,46 @@
+Hillstrom e-mail experiment: user rows
+Data: what the intake did before any statistic
+  users   No E-Mail 21,306   Mens E-Mail 21,307   Womens E-Mail 21,387
+  alias_normalized   28,776 rows   first at data row 2
+
+Limitations (*): read every result below with these in view
+  * the top 1% of users carry 100% of spend; the average rests on a few large values, so the
+      cross-check below compares three methods
+  * the smallest detectable effect on visit is 8.0% of the control level, above a modest 5% lift; a
+      'not detected' result here rules out little
+
+Group split: does assignment match the plan?
+  Mens E-Mail vs No E-Mail   21,307 vs 21,306   chi-square 0.00   p 0.971
+  Womens E-Mail vs No E-Mail   21,387 vs 21,306   chi-square 0.18   p 0.672
+  result   consistent with the plan
+
+Sensitivity: smallest lift this sample could detect, 80% power
+  control 10.6%   21,306 vs 21,307 users   detectable 0.85 pp (8.0% of control)
+
+Primary visit: effect, 95% interval, p; interval first
+  Mens E-Mail vs No E-Mail   +7.66 pp   +6.99 to +8.32 pp   p 5.7e-112   detected, treatment higher
+  Womens E-Mail vs No E-Mail   +4.52 pp   +3.89 to +5.16 pp   p 3.2e-44   detected, treatment higher
+
+CUPED on spend: adjusted by its pre-experiment column; narrower interval = less noise
+  Mens E-Mail vs No E-Mail   +0.767   +0.483 to +1.052   p 1.2e-07   noise removed 0%
+  Womens E-Mail vs No E-Mail   +0.423   +0.167 to +0.678   p 0.001   noise removed 0%
+
+Other metrics: corrected for 4 comparisons
+  conversion   Mens E-Mail vs No E-Mail   +0.68 pp   p 1.5e-13   Holm 6.1e-13   BH 6.1e-13
+  conversion   Womens E-Mail vs No E-Mail   +0.31 pp   p 0.0002   Holm 0.0003   BH 0.0002
+  spend   Mens E-Mail vs No E-Mail   +0.770   p 1.2e-07   Holm 3.5e-07   BH 2.3e-07
+  spend   Womens E-Mail vs No E-Mail   +0.424   p 0.001   Holm 0.001   BH 0.001
+  result   unadjusted 4 of 4 clear alpha; after Holm 4 survive
+
+Revenue cross-check on spend: three methods, same question (Mens E-Mail vs No E-Mail)
+  Welch         +0.770   +0.485 to +1.055   p 1.2e-07
+  bootstrap     +0.770   +0.493 to +1.069   BCa, 10,000 resamples
+  permutation   +0.770   p 0.0002, the floor for 10,000 relabelings
+  trimmed 1%    +0.078   different estimand
+  result   methods agree
+  trimmed row is not a tail check here: 99% of users sit at zero
+
+Decision: treatment higher on visit by +7.66 pp (+6.99 to +8.32 pp)
+Figures:
+  figures/corrections.png
+  figures/revenue.png
