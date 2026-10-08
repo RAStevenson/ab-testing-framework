@@ -66,13 +66,13 @@ Unadjusted, 4 comparisons clear alpha. After Holm, 4 survive. Figure 1 shows eac
 
 ## 6. Heavy-tailed metric: spend
 
-**spend** is the kind of metric where a few extreme users can dominate the average (99% of users in the first contrast sit at zero). The first contrast (Mens E-Mail vs No E-Mail) is analyzed four ways, each stressing the tail differently: a Welch t-test (relies on the normal approximation of the mean), a percentile bootstrap (resamples the observed tail), a permutation test (no normal approximation, with a p-value computed from 10,000 random relabelings under the null that the arms' distributions are identical), and a trimmed-mean difference. The trimmed-mean difference is a diagnostic for how much the estimate depends on the tail. It deliberately estimates a different quantity (a different estimand), so its number is not comparable to the other three.
+**spend** is the kind of metric where a few extreme users can dominate the average (99% of users in the first contrast sit at zero). The first contrast (Mens E-Mail vs No E-Mail) is analyzed four ways, each stressing the tail differently: a Welch t-test (relies on the normal approximation of the mean), a BCa bootstrap (resamples the observed tail), a permutation test (no normal approximation, with a p-value computed from 10,000 random relabelings under the null that the arms' distributions are identical), and a trimmed-mean difference. The trimmed-mean difference is a diagnostic for how much the estimate depends on the tail. It deliberately estimates a different quantity (a different estimand), so its number is not comparable to the other three.
 
 | Method | Estimate | Interval / p |
 |---|---|---|
 | Welch t-test | +0.770 | 95% CI +0.485 to +1.055, p = 1.2e-07 |
-| Percentile bootstrap | +0.770 | 95% CI +0.482 to +1.059 |
-| Permutation test | +0.770 | p = 1.0e-04, the smallest value 10,000 relabelings can give |
+| BCa bootstrap | +0.770 | 95% CI +0.493 to +1.069 |
+| Permutation test | +0.770 | p = 0.0002, the smallest value 10,000 relabelings can give |
 | Trimmed mean diff (1%) | +0.078 | different estimand |
 
 Figure 2 shows the distributions and the interval comparison. The three same-estimand methods agree here, which is what a well-behaved tail looks like. The trimmed row is not a tail check on this data. With 99% of users at zero, cutting 1% from each end of each arm removes most or all of the users with a nonzero value along with the extreme ones, so the trimmed difference sits near zero whatever the true effect.

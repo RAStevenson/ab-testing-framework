@@ -829,14 +829,14 @@ disagreement.
 | Method | Estimate | Interval / p |
 |---|---|---|
 | Welch t-test | {welch.difference:+.2f} per user | 95% CI {welch.ci_low:+.2f} to {welch.ci_high:+.2f}, p = {fmt_p(welch.p_value)} |
-| Percentile bootstrap | {bootstrap.estimate:+.2f} per user | 95% CI {bootstrap.ci_low:+.2f} to {bootstrap.ci_high:+.2f} |
+| BCa bootstrap | {bootstrap.estimate:+.2f} per user | 95% CI {bootstrap.ci_low:+.2f} to {bootstrap.ci_high:+.2f} |
 | Permutation test | {permutation.observed:+.2f} per user | p = {fmt_p(permutation.p_value)} |
 | Trimmed mean diff (1%) | {trimmed:+.2f} per user | different estimand, see below |
 
 The first three estimate the same quantity and disagree about it. One caveat
 applies before the bootstrap is used as a tiebreaker. Its coverage
 evidence in this repo is finite-variance only, and under an infinite-variance
-tail the percentile interval for a mean is itself unstable, which is part of
+tail the bootstrap interval for a mean is itself unstable, which is part of
 the point. The Welch
 test says not significant (p = {fmt_p(welch.p_value)}). The permutation test says
 significant (p = {fmt_p(permutation.p_value)}). The bootstrap interval

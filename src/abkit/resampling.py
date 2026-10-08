@@ -4,11 +4,11 @@ These are the workhorses for heavy-tailed metrics (revenue per user)
 where the normal-theory tests in ``frequentist`` rely on a CLT that has
 not kicked in at realistic sample sizes.
 
-Both routines vectorize over resamples in fixed-size chunks, so peak
-memory is set by the chunk size and stays flat as the resample count
-grows. A chunk holds a few arrays of ``_CHUNK * n`` elements at once
-(random keys, the index array, and the gathered values), so budget a
-small multiple of ``_CHUNK * n * 8`` bytes rather than exactly that.
+Both routines call scipy and process resamples in fixed-size batches, so
+peak memory is set by the batch size and stays flat as the resample count
+grows. A batch holds a few arrays of ``_BATCH * n`` elements at once, so
+budget a small multiple of ``_BATCH * n * 8`` bytes rather than exactly
+that.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from scipy import stats
 
 from abkit.results import BootstrapResult, PermutationResult
 
-_CHUNK = 256
+_BATCH = 256
 
 
 def _two_samples(
@@ -39,11 +39,18 @@ def _two_samples(
             f"and {treatment_values.size}"
         )
     # NaN fails every comparison, which in the permutation test means no
-    # resample ever counts as extreme: it would return p = 1/(n+1), its most
-    # significant possible value, on unusable data. Refuse instead.
+    # resample ever counts as extreme: it would return the most significant
+    # possible p-value on unusable data. Refuse instead.
     if not np.all(np.isfinite(control_values)) or not np.all(np.isfinite(treatment_values)):
         raise ValueError("outcomes must all be finite; found NaN or infinity")
     return control_values, treatment_values
+
+
+def _mean_difference(
+    control_values: NDArray[np.float64], treatment_values: NDArray[np.float64], axis: int = -1
+) -> NDArray[np.float64]:
+    """Treatment mean minus control mean along an axis, in the form scipy's resamplers call."""
+    return np.mean(treatment_values, axis=axis) - np.mean(control_values, axis=axis)
 
 
 def bootstrap_mean_diff(
@@ -54,12 +61,13 @@ def bootstrap_mean_diff(
     n_resamples: int = 10_000,
     confidence: float = 0.95,
 ) -> BootstrapResult:
-    """Percentile bootstrap interval for the difference in means.
+    """Bootstrap interval for the difference in means, scipy's BCa method.
 
-    Arms are resampled independently with replacement. The percentile
-    interval is adequate here because the bootstrap distribution of a
-    mean difference is close to symmetric at experiment-scale n; a BCa
-    interval would tighten small-sample skew cases.
+    Arms are resampled independently with replacement. The
+    bias-corrected and accelerated (BCa) interval adjusts the percentile
+    interval for the skew of the bootstrap distribution, which matters
+    for heavy-tailed metrics at modest n; the coverage test pins it on
+    lognormal arms.
     """
     control_values, treatment_values = _two_samples(control, treatment)
     if n_resamples < 100:
@@ -67,27 +75,20 @@ def bootstrap_mean_diff(
     if not 0.0 < confidence < 1.0:
         raise ValueError(f"confidence must be in (0, 1), got {confidence}")
 
-    differences = np.empty(n_resamples)
-    done = 0
-    while done < n_resamples:
-        size = min(_CHUNK, n_resamples - done)
-        control_resample_indices = random_generator.integers(
-            0, control_values.size, size=(size, control_values.size)
-        )
-        treatment_resample_indices = random_generator.integers(
-            0, treatment_values.size, size=(size, treatment_values.size)
-        )
-        differences[done : done + size] = treatment_values[treatment_resample_indices].mean(
-            axis=1
-        ) - control_values[control_resample_indices].mean(axis=1)
-        done += size
-
-    tail = (1.0 - confidence) / 2.0
-    low, high = np.quantile(differences, [tail, 1.0 - tail])
+    result = stats.bootstrap(
+        (control_values, treatment_values),
+        _mean_difference,
+        n_resamples=n_resamples,
+        batch=_BATCH,
+        vectorized=True,
+        confidence_level=confidence,
+        method="BCa",
+        rng=random_generator,
+    )
     return BootstrapResult(
         estimate=float(treatment_values.mean() - control_values.mean()),
-        ci_low=float(low),
-        ci_high=float(high),
+        ci_low=float(result.confidence_interval.low),
+        ci_high=float(result.confidence_interval.high),
         confidence=confidence,
         n_resamples=n_resamples,
     )
@@ -100,50 +101,34 @@ def permutation_test_mean_diff(
     random_generator: np.random.Generator,
     n_permutations: int = 10_000,
 ) -> PermutationResult:
-    """Two-sided permutation test for a difference in means.
+    """Two-sided permutation test for a difference in means, through scipy.
 
     Exact conditional on the pooled outcomes: no distributional
     assumptions, so it stays valid for heavy-tailed and zero-inflated
     metrics. Also correct for binary outcomes, where the mean difference
-    is the rate difference. Uses the add-one p-value
-    ``(1 + hits) / (n_permutations + 1)``, which is conservative and
-    never exactly zero.
+    is the rate difference. scipy counts the observed difference among
+    the relabelings, so each one-sided p-value is at least
+    ``1 / (n_permutations + 1)``, and the two-sided p-value is twice the
+    smaller one-sided value, capped at 1: its floor is
+    ``2 / (n_permutations + 1)``.
     """
     control_values, treatment_values = _two_samples(control, treatment)
     if n_permutations < 100:
         raise ValueError(f"n_permutations must be at least 100, got {n_permutations}")
 
-    pooled = np.concatenate([control_values, treatment_values])
-    n_treatment = treatment_values.size
-    n_control = control_values.size
-    total = pooled.sum()
-    observed = treatment_values.mean() - control_values.mean()
-
-    hits = 0
-    done = 0
-    while done < n_permutations:
-        size = min(_CHUNK, n_permutations - done)
-        # argpartition on random keys draws a uniform n_t-subset per row in
-        # O(n), against O(n log n) to argsort the same keys. A per-row
-        # Fisher-Yates shuffle is also O(n), but has to materialize and
-        # permute the whole block, and measures about 2.5x slower here
-        # (timed by scripts/run_bench_permutation.py, run of 2026-08-07).
-        # float32 keys halve the memory; they collide for roughly 0.4% of
-        # keys at n = 100k, and ties break by position rather than at random,
-        # which biases the draw far below the Monte Carlo error of the
-        # p-value itself.
-        keys = random_generator.random((size, pooled.size), dtype=np.float32)
-        take = np.argpartition(keys, n_treatment - 1, axis=1)[:, :n_treatment]
-        treatment_sums = pooled[take].sum(axis=1)
-        permutation_differences = (
-            treatment_sums / n_treatment - (total - treatment_sums) / n_control
-        )
-        hits += int(np.sum(np.abs(permutation_differences) >= abs(observed)))
-        done += size
-
+    result = stats.permutation_test(
+        (control_values, treatment_values),
+        _mean_difference,
+        permutation_type="independent",
+        vectorized=True,
+        n_resamples=n_permutations,
+        batch=_BATCH,
+        alternative="two-sided",
+        rng=random_generator,
+    )
     return PermutationResult(
-        observed=float(observed),
-        p_value=(1 + hits) / (n_permutations + 1),
+        observed=float(treatment_values.mean() - control_values.mean()),
+        p_value=float(result.pvalue),
         n_permutations=n_permutations,
     )
 

@@ -88,12 +88,14 @@ def fmt_p(p_value: float) -> str:
 def fmt_perm_p(permutation: PermutationResult) -> str:
     """Permutation p-value as report text, flagged when it sits at the estimator's floor.
 
-    The add-one estimator's smallest possible value is 1 / (n_permutations + 1),
-    reached when no relabeling is as extreme as the observed difference. That
-    value is still a valid, conservative p-value, but printed bare it reads as
-    a measurement rather than as the resolution limit of the relabeling count.
+    scipy's two-sided p-value is twice the smaller one-sided value, each of
+    which counts the observed difference among the relabelings, so the
+    smallest possible value is 2 / (n_permutations + 1), reached when no
+    relabeling is as extreme as the observed difference. That value is still
+    a valid, conservative p-value, but printed bare it reads as a measurement
+    rather than as the resolution limit of the relabeling count.
     """
-    if permutation.p_value <= 1.0 / (permutation.n_permutations + 1):
+    if permutation.p_value <= 2.0 / (permutation.n_permutations + 1):
         return (
             f"p = {fmt_p(permutation.p_value)}, the smallest value "
             f"{permutation.n_permutations:,} relabelings can give"
@@ -1038,7 +1040,7 @@ def sec_heavy_tail(
         )
         + f". The first contrast ({_contrast_label(experiment, treatment_arm)}) is "
         "analyzed four ways, each stressing the tail differently: a Welch t-test (relies "
-        "on the normal approximation of the mean), a percentile bootstrap "
+        "on the normal approximation of the mean), a BCa bootstrap "
         "(resamples the observed tail), a permutation test (no normal "
         "approximation, with a p-value computed from 10,000 random "
         "relabelings under the null that the arms' distributions are "
@@ -1050,7 +1052,7 @@ def sec_heavy_tail(
         f"| Method | Estimate | Interval / p |\n|---|---|---|\n"
         f"| Welch t-test | {welch.difference:+.3f} | 95% CI {welch.ci_low:+.3f} "
         f"to {welch.ci_high:+.3f}, p = {fmt_p(welch.p_value)} |\n"
-        f"| Percentile bootstrap | {bootstrap.estimate:+.3f} | 95% CI {bootstrap.ci_low:+.3f} "
+        f"| BCa bootstrap | {bootstrap.estimate:+.3f} | 95% CI {bootstrap.ci_low:+.3f} "
         f"to {bootstrap.ci_high:+.3f} |\n"
         f"| Permutation test | {permutation.observed:+.3f} | {fmt_perm_p(permutation)} |\n"
         f"| Trimmed mean diff (1%) | {trimmed:+.3f} | different estimand |\n\n"

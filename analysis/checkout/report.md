@@ -180,18 +180,18 @@ disagreement.
 | Method | Estimate | Interval / p |
 |---|---|---|
 | Welch t-test | +1.23 per user | 95% CI -0.25 to +2.71, p = 0.104 |
-| Percentile bootstrap | +1.23 per user | 95% CI +0.14 to +2.97 |
-| Permutation test | +1.23 per user | p = 0.029 |
+| BCa bootstrap | +1.23 per user | 95% CI +0.32 to +4.18 |
+| Permutation test | +1.23 per user | p = 0.027 |
 | Trimmed mean diff (1%) | +0.29 per user | different estimand, see below |
 
 The first three estimate the same quantity and disagree about it. One caveat
 applies before the bootstrap is used as a tiebreaker. Its coverage
 evidence in this repo is finite-variance only, and under an infinite-variance
-tail the percentile interval for a mean is itself unstable, which is part of
+tail the bootstrap interval for a mean is itself unstable, which is part of
 the point. The Welch
 test says not significant (p = 0.104). The permutation test says
-significant (p = 0.029). The bootstrap interval
-(+0.14 to +2.97) excludes zero, but its lower bound barely
+significant (p = 0.027). The bootstrap interval
+(+0.32 to +4.18) excludes zero, but its lower bound barely
 clears it.
 
 The Welch/permutation split has a specific cause. The permutation test is

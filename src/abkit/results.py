@@ -59,7 +59,7 @@ class SrmResult:
 
 @dataclass(frozen=True)
 class BootstrapResult:
-    """Point estimate with a bootstrap confidence interval."""
+    """Point estimate with a bootstrap confidence interval (scipy's BCa method)."""
 
     estimate: float
     ci_low: float
