@@ -28,7 +28,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import optimize, stats
 
-from abkit.results import SequentialDesign, SequentialOutcome
+from abkit.results import RepeatedIntervals, SequentialDesign, SequentialOutcome
 
 # below this spending increment the boundary exceeds 6.4 sigma; treat the
 # look as unspendable rather than chase integration noise
@@ -234,6 +234,43 @@ def monitor(z_values: Sequence[float], sequential_design: SequentialDesign) -> S
             stopped = i + 1
             break
     return SequentialOutcome(stopped_at_look=stopped, z_values=z_scores, boundaries=boundaries)
+
+
+def repeated_intervals(
+    estimates: ArrayLike, standard_errors: ArrayLike, sequential_design: SequentialDesign
+) -> RepeatedIntervals:
+    """Adjusted (repeated) confidence intervals for every look of a monitored experiment.
+
+    Each look's interval is its estimate plus or minus that look's boundary
+    times its standard error. Together the intervals cover the true effect
+    with probability at least ``1 - alpha`` across all looks at once
+    (Jennison and Turnbull 2000, chapter 9), which is what a plain interval
+    read at each look does not do. An infinite boundary gives an unbounded
+    interval. The inputs must have one entry per look of the design, in
+    look order.
+    """
+    estimate_array = np.asarray(estimates, dtype=np.float64)
+    error_array = np.asarray(standard_errors, dtype=np.float64)
+    boundaries = np.asarray(sequential_design.boundaries, dtype=np.float64)
+    if estimate_array.ndim != 1 or not (
+        estimate_array.shape == error_array.shape == boundaries.shape
+    ):
+        raise ValueError(
+            "estimates, standard errors, and the design's looks must be 1-d and the same length, "
+            f"got {estimate_array.shape}, {error_array.shape}, and {boundaries.shape}"
+        )
+    if not np.all(np.isfinite(estimate_array)):
+        raise ValueError("estimates must all be finite")
+    if np.any(error_array <= 0.0) or not np.all(np.isfinite(error_array)):
+        raise ValueError("standard errors must be positive and finite")
+    half_widths = boundaries * error_array
+    return RepeatedIntervals(
+        estimates=tuple(float(value) for value in estimate_array),
+        ci_low=tuple(float(value) for value in estimate_array - half_widths),
+        ci_high=tuple(float(value) for value in estimate_array + half_widths),
+        boundaries=tuple(float(value) for value in boundaries),
+        alpha=sequential_design.alpha,
+    )
 
 
 def z_from_cumulative_counts(

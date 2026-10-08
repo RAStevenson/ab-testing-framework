@@ -110,3 +110,20 @@ class SequentialOutcome:
     stopped_at_look: int | None
     z_values: tuple[float, ...]
     boundaries: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class RepeatedIntervals:
+    """Adjusted confidence intervals, one per look, that hold their coverage at every look at once
+    (repeated confidence intervals).
+
+    ``ci_low[k]`` and ``ci_high[k]`` are ``estimates[k]`` minus and plus
+    ``boundaries[k]`` times that look's standard error. An infinite
+    boundary gives an unbounded interval.
+    """
+
+    estimates: tuple[float, ...]
+    ci_low: tuple[float, ...]
+    ci_high: tuple[float, ...]
+    boundaries: tuple[float, ...]
+    alpha: float

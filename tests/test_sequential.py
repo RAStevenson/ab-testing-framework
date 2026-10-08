@@ -7,6 +7,7 @@ from abkit.sequential import (
     monitor,
     obrien_fleming_spending,
     pocock_spending,
+    repeated_intervals,
     z_from_cumulative_counts,
 )
 
@@ -244,3 +245,56 @@ def test_backwards_conversions_would_have_forced_a_false_stop():
     assert np.all(np.abs(good) < 3.0)
     with pytest.raises(ValueError):
         z_from_cumulative_counts([50, 10], [1000, 2000], [70, 130], [1000, 2000])
+
+
+def test_repeated_intervals_cover_jointly_by_simulation():
+    # 14 daily looks under a null effect: the share of paths on which every
+    # look's adjusted interval covers zero must be at least 1 - alpha, up to
+    # Monte Carlo error. Each path's estimate at look k is the running mean
+    # of n_k standard normal draws, with standard error 1 / sqrt(n_k).
+    fractions = np.linspace(1 / 14, 1.0, 14)
+    sequential_design = design(fractions.tolist(), alpha=0.05)
+    random_generator = np.random.default_rng(43)
+    n_sims = 20_000
+    final_n = 14_000
+    look_sizes = fractions * final_n
+    increments = random_generator.normal(size=(n_sims, 14)) * np.sqrt(
+        np.diff(look_sizes, prepend=0.0)
+    )
+    running_means = np.cumsum(increments, axis=1) / look_sizes
+    standard_errors = 1.0 / np.sqrt(look_sizes)
+    covered_everywhere = 0
+    for path_means in running_means:
+        intervals = repeated_intervals(path_means, standard_errors, sequential_design)
+        covered_everywhere += all(
+            low <= 0.0 <= high
+            for low, high in zip(intervals.ci_low, intervals.ci_high, strict=True)
+        )
+    monte_carlo_standard_error = np.sqrt(0.05 * 0.95 / n_sims)
+    assert covered_everywhere / n_sims >= 0.95 - 3 * monte_carlo_standard_error
+    # the first look's boundary is infinite under this design, so its interval is unbounded
+    assert intervals.ci_low[0] == -np.inf and intervals.ci_high[0] == np.inf
+    assert intervals.alpha == 0.05
+
+
+def test_repeated_intervals_are_the_boundary_times_the_standard_error():
+    sequential_design = design([0.5, 1.0], alpha=0.05, spending="pocock")
+    intervals = repeated_intervals([0.1, 0.2], [0.05, 0.04], sequential_design)
+    first_boundary, second_boundary = sequential_design.boundaries
+    assert intervals.estimates == (0.1, 0.2)
+    assert intervals.ci_low[0] == pytest.approx(0.1 - first_boundary * 0.05)
+    assert intervals.ci_high[1] == pytest.approx(0.2 + second_boundary * 0.04)
+    # wider than the fixed-sample interval at every look, which is the price of peeking
+    assert intervals.ci_high[1] - intervals.ci_low[1] > 2 * stats.norm.isf(0.025) * 0.04
+
+
+def test_repeated_intervals_reject_mismatched_or_bad_input():
+    sequential_design = design([0.5, 1.0], alpha=0.05)
+    with pytest.raises(ValueError):  # one look short
+        repeated_intervals([0.1], [0.05], sequential_design)
+    with pytest.raises(ValueError):  # errors and estimates disagree
+        repeated_intervals([0.1, 0.2], [0.05], sequential_design)
+    with pytest.raises(ValueError):  # a zero standard error
+        repeated_intervals([0.1, 0.2], [0.05, 0.0], sequential_design)
+    with pytest.raises(ValueError):  # a non-finite estimate
+        repeated_intervals([0.1, np.nan], [0.05, 0.04], sequential_design)
