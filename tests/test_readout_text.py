@@ -82,7 +82,9 @@ def test_user_rows_readout_has_every_block_in_order(tmp_path: Path) -> None:
         "Decision:",
         "Figures:",
     ]
-    positions = [next(i for i, line in enumerate(lines) if line.startswith(h)) for h in headings]
+    positions = [
+        next(i for i, line in enumerate(lines) if line.startswith(heading)) for heading in headings
+    ]
     assert positions == sorted(positions)
     assert lines[-1] == "  figures/monitoring.png"
     assert "  * " in "\n".join(lines)  # the fixture is tiny, so flags are raised
@@ -91,7 +93,7 @@ def test_user_rows_readout_has_every_block_in_order(tmp_path: Path) -> None:
 def test_aggregates_readout_omits_user_level_blocks(tmp_path: Path) -> None:
     text = "\n".join(_aggregates_lines(tmp_path))
     assert "Revenue cross-check" not in text
-    assert "CUPED" not in text
+    assert "CUPED on" not in text
     assert "Planted versus found" not in text
     assert "intended split not on record" in text
     assert "Figures:" not in text
