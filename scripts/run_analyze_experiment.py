@@ -1,26 +1,23 @@
-"""Analyze an experiment from a config and a data file, end to end.
+"""Read an experiment from a config and a data file, and print its readout.
 
-This is the door: point it at a TOML experiment description and a CSV in
-either supported shape (user-level rows or per-arm cumulative
-aggregates), and it validates the data, runs every analysis the data can
-support, and writes a report whose sections adapt to exactly that. The
-committed demo analyses under analysis/ are this script run on their
-committed configs; a user's own experiment goes through the identical
-path.
+Point it at a TOML experiment description and a CSV in either supported
+shape (user-level rows or per-group cumulative totals). It checks and
+gently repairs the data, runs every check and analysis the data can
+support, prints the readout, and saves it as readout.txt with the figures
+beside it. The committed example readouts under analysis/ are this script
+run on their committed configs; a user's own experiment goes through the
+identical path.
 
 Run with:
     python scripts/run_analyze_experiment.py --config <experiment.toml>
 
 Flags: --data overrides the config's input path, --out chooses the
-output directory (default: the config's directory), --seed fixes the
-resampling seed (default 0), --no-report stops after validation and a
-printed summary, and --sweep (aggregate archives only) appends a section
-summarizing every experiment in the file alongside the config's deep
-dive. The full job, report included, is the default.
+output directory (default: the config's directory), and --seed fixes the
+resampling seed (default 0).
 
 When the config declares `input.md5`, the data file's digest is checked
-before anything reads it, so an analysis can never silently run against
-a file other than the one its config pinned.
+before anything reads it, so a readout can never silently describe a
+file other than the one its config pinned.
 """
 
 from __future__ import annotations
@@ -36,29 +33,19 @@ import traceback
 
 import numpy as np
 
-from abkit.io import capabilities, load_aggregates, load_config, load_user_rows
-from abkit.report import ReportBuildError, render_report
-from abkit.report_sections import default_sections, sweep_aggregate_archive
+from abkit.io import load_aggregates, load_config, load_user_rows
+from abkit.readout_analysis import analyze_experiment
+from abkit.readout_figures import draw_figures
+from abkit.readout_text import save_readout
 
 
 def main() -> None:
-    """Validate the config and data, print a summary, and write the report unless --no-report is
-    given."""
+    """Load the config and data, analyze, draw the figures, print the readout, and save it."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--config", required=True, type=Path, help="experiment TOML")
     parser.add_argument("--data", type=Path, help="data file; overrides the config's input path")
     parser.add_argument("--out", type=Path, help="output directory (default: config's directory)")
     parser.add_argument("--seed", type=int, default=0, help="resampling seed (default 0)")
-    parser.add_argument(
-        "--no-report",
-        action="store_true",
-        help="stop after validation and a printed summary",
-    )
-    parser.add_argument(
-        "--sweep",
-        action="store_true",
-        help="aggregate archives only: append a whole-archive summary section",
-    )
     args = parser.parse_args()
 
     try:
@@ -66,7 +53,7 @@ def main() -> None:
         data_path = args.data or args.config.parent / config["input"].get("path", "")
         if not data_path.is_file():
             hint = (
-                " For the committed hillstrom demo, run scripts/run_fetch_hillstrom.py first."
+                " For the committed hillstrom example, run scripts/run_fetch_hillstrom.py first."
                 if "hillstrom" in str(data_path).lower()
                 else ""
             )
@@ -80,54 +67,17 @@ def main() -> None:
             if digest != pinned:
                 raise ValueError(
                     f"data file {data_path.name} has md5 {digest}, but the config "
-                    f"pins {pinned}; refusing to analyze a file other than the "
+                    f"pins {pinned}; refusing to read a file other than the "
                     "one the config was written against"
                 )
-        if args.sweep and config["input"]["shape"] != "aggregates":
-            raise ValueError("--sweep only applies to aggregate archives")
         loader = load_user_rows if config["input"]["shape"] == "user_rows" else load_aggregates
         experiment = loader(config, data_path)
-
-        data_capabilities = capabilities(experiment)
-        print(f"experiment: {experiment.name}")
-        print(f"arms: control = {experiment.arms[0]}; treatment = {', '.join(experiment.arms[1:])}")
-        print(f"capabilities: {', '.join(sorted(data_capabilities)) or 'none'}")
-        if experiment.validation:
-            for event in experiment.validation:
-                print(f"validation: {event.rule} x{event.count} ({event.detail})")
-        else:
-            print("validation: clean, nothing altered or dropped")
-
-        if args.no_report:
-            return
-
-        repo_root = Path(__file__).resolve().parents[1]
-        try:
-            config_display = args.config.resolve().relative_to(repo_root).as_posix()
-        except ValueError:
-            config_display = str(args.config)
-        sweep_flag = " --sweep" if args.sweep else ""
+        readout = analyze_experiment(experiment, np.random.default_rng(args.seed))
         out_dir = args.out or args.config.parent
-        figure_dir = out_dir / "figures"
-        sections = default_sections(experiment, np.random.default_rng(args.seed), figure_dir)
-        if args.sweep:
-            sections.append(sweep_aggregate_archive(config, data_path))
-        header = (
-            f"# {experiment.name}: analysis\n\n"
-            f"Generated by `python scripts/run_analyze_experiment.py --config "
-            f"{config_display}{sweep_flag}` (seed {args.seed}) from `{data_path.name}`. "
-            "Sections appear only where the data can support them. A section "
-            "you expected but do not see was omitted because its requirements "
-            "were not met, not overlooked."
-        )
-        preamble = config["experiment"].get("preamble")
-        if preamble:
-            header += "\n\n" + preamble.strip()
-        report = render_report(header, sections, data_capabilities, "figures")
-        out_dir.mkdir(parents=True, exist_ok=True)
-        report_path = out_dir / "report.md"
-        report_path.write_text(report, encoding="utf-8", newline="\n")
-        print(f"wrote {report_path} with {len(sections)} sections")
+        figure_paths = draw_figures(readout, experiment, out_dir / "figures")
+        lines = save_readout(readout, out_dir, figure_paths)
+        print("\n".join(lines))
+        print(f"\nsaved {out_dir / 'readout.txt'}")
         return
     except ImportError as error:
         # only a missing matplotlib has a known fix; any other failed import
@@ -136,16 +86,16 @@ def main() -> None:
             raise
         traceback.print_exc()
         print(
-            "error: building a report draws figures with matplotlib, which "
+            "error: the readout's figures are drawn with matplotlib, which "
             'installs with the dev extras: pip install -e ".[dev]". '
-            "No report was written.",
+            "No readout was written.",
             file=sys.stderr,
         )
         sys.exit(2)
-    except (ReportBuildError, ValueError, OSError):
+    except (ValueError, OSError):
         traceback.print_exc()
         print(
-            "error: the analysis stopped before report.md was fully written; figures "
+            "error: the analysis stopped before readout.txt was written; figures "
             "drawn before the failure may already be replaced. Fix the problem named "
             "in the error above and rerun the same command.",
             file=sys.stderr,

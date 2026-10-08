@@ -24,10 +24,11 @@ jobs:
       - run: python -m pytest
 
   report-drift:
-    # analysis/checkout/report.md and analysis/asos/report.md are committed so
-    # they read without running anything. This job checks that they still match
-    # the code: regenerate both and fail if the working tree moved. Figures are
-    # excluded because matplotlib renders them differently across versions.
+    # analysis/checkout/report.md is committed so it reads without running
+    # anything. This job checks that it still matches the code: regenerate it
+    # and fail if the working tree moved. Figures are excluded because
+    # matplotlib renders them differently across versions. The ASOS step
+    # returns in readout form once the example readouts are committed.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,9 +37,8 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install -e ".[dev]"
       - run: python scripts/run_build_checkout_report.py
-      - run: python scripts/run_analyze_experiment.py --config analysis/asos/config.toml --sweep
       # hillstrom is excluded here on purpose: its data is fetched, never
       # committed, and CI must not depend on a 2008 URL staying up. Its
       # logic is covered by the fixture-driven suite above.
       - name: Fail if a committed report is stale
-        run: git diff --exit-code -- analysis/checkout/report.md analysis/asos/report.md
+        run: git diff --exit-code -- analysis/checkout/report.md

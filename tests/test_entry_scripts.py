@@ -73,8 +73,37 @@ class TestAnalyzeExperiment:
         stderr = capsys.readouterr().err
         assert "Traceback" in stderr
         assert "data file not found" in stderr
-        assert _last_line(stderr).startswith("error: the analysis stopped before report.md")
+        assert _last_line(stderr).startswith("error: the analysis stopped before readout.txt")
         assert not out_dir.exists()
+
+    def test_aggregates_fixture_writes_the_readout_and_its_figures(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        analyze = _load_script("run_analyze_experiment")
+        for name in ("aggregates_config.toml", "aggregates_ok.csv"):
+            (tmp_path / name).write_bytes((FIXTURES / name).read_bytes())
+        out_dir = tmp_path / "out"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "run_analyze_experiment.py",
+                "--config",
+                str(tmp_path / "aggregates_config.toml"),
+                "--out",
+                str(out_dir),
+            ],
+        )
+        analyze.main()
+        printed = capsys.readouterr().out
+        readout = (out_dir / "readout.txt").read_text(encoding="utf-8")
+        assert readout.startswith("fixture-aggregates: per-group totals\n")
+        assert readout in printed
+        assert "Decision:" in readout
+        assert sorted(path.name for path in (out_dir / "figures").iterdir()) == [
+            "early_late.png",
+            "monitoring.png",
+        ]
 
     def test_missing_matplotlib_names_the_install_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -109,3 +138,78 @@ class TestAnalyzeExperiment:
         )
         with pytest.raises(ImportError, match="simulated broken install"):
             analyze.main()
+
+
+class TestPlanExperiment:
+    def test_rate_plan_matches_the_library_function(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from abkit.power import sample_size_two_proportions
+
+        plan = _load_script("run_plan_experiment")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["run_plan_experiment.py", "--baseline-rate", "0.05", "--minimum-lift", "0.005"],
+        )
+        plan.main()
+        printed = capsys.readouterr().out
+        per_group = sample_size_two_proportions(0.05, 0.055)
+        assert f"per group   {per_group:,}   total   {2 * per_group:,}" in printed
+        assert "smallest lift worth detecting +0.50 pp (10.0% of baseline)" in printed
+        assert printed.strip().splitlines()[-1].startswith("Decision: run until each group has")
+
+    def test_mean_plan_matches_the_library_function(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from abkit.power import sample_size_two_means
+
+        plan = _load_script("run_plan_experiment")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "run_plan_experiment.py",
+                "--standard-deviation",
+                "12",
+                "--minimum-difference",
+                "0.5",
+                "--power",
+                "0.9",
+            ],
+        )
+        plan.main()
+        printed = capsys.readouterr().out
+        per_group = sample_size_two_means(0.5, 12.0, power=0.9)
+        assert f"per group   {per_group:,}" in printed
+        assert "90% power" in printed
+
+    def test_bad_input_shows_the_error_then_one_line(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        plan = _load_script("run_plan_experiment")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["run_plan_experiment.py", "--baseline-rate", "1.5", "--minimum-lift", "0.01"],
+        )
+        with pytest.raises(SystemExit) as stopped:
+            plan.main()
+        assert stopped.value.code == 2
+        stderr = capsys.readouterr().err
+        assert "Traceback" in stderr
+        assert _last_line(stderr).startswith("error: nothing was planned")
+
+    def test_mixing_the_two_modes_is_refused(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        plan = _load_script("run_plan_experiment")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["run_plan_experiment.py", "--baseline-rate", "0.05", "--standard-deviation", "2"],
+        )
+        with pytest.raises(SystemExit) as stopped:
+            plan.main()
+        assert stopped.value.code == 2
+        assert "not both" in capsys.readouterr().err
