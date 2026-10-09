@@ -282,7 +282,7 @@ class TestValidatorRules:
 
     def test_events_carry_example_row(self, dirty: Experiment) -> None:
         by_rule = {event.rule: event.detail for event in dirty.validation}
-        assert by_rule["negative_value_dropped"] == "first at data row 7"
+        assert by_rule["negative_value_dropped"] == "column 'spend', first at data row 7"
 
 
 class TestAggregates:

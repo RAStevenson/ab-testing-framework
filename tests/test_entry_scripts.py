@@ -122,7 +122,7 @@ class TestAnalyzeExperiment:
         assert stopped.value.code == 2
         stderr = capsys.readouterr().err
         assert "Traceback" in stderr
-        assert 'pip install -e ".[dev]"' in _last_line(stderr)
+        assert "pip install -r requirements.txt" in _last_line(stderr)
 
     def test_other_import_errors_are_not_caught(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

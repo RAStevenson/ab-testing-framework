@@ -145,8 +145,6 @@ def load_config(path: Path) -> dict:
     alpha = experiment.setdefault("alpha", 0.05)
     if not isinstance(alpha, float) or not 0.0 < alpha < 1.0:
         raise ValueError(f"experiment.alpha must be a float in (0, 1), got {alpha!r}")
-    if "preamble" in experiment and not isinstance(experiment["preamble"], str):
-        raise ValueError("experiment.preamble must be a string when present")
 
     input_table = config.get("input")
     if not isinstance(input_table, dict) or input_table.get("shape") not in _INPUT_SHAPES:
@@ -366,7 +364,8 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     - ``alias_normalized``: arm and aliased categorical values are
       stripped, casefolded, and mapped through ``[columns.aliases]``.
     - ``null_row_dropped``: a row with an empty arm or an empty value in
-      any declared metric or pre-experiment column is dropped.
+      any declared metric or pre-experiment column is dropped. Each drop rule
+      records the column it fired on with the first data row.
     - ``negative_value_dropped``: a row with a negative value in a metric
       declared ``nonnegative`` (or its pre-experiment column) is dropped.
     - ``uncoercible_dropped``: a row whose metric, pre-experiment, or day
@@ -475,7 +474,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
             for column in columns_to_coerce:
                 rule = _coercion_failure(metric, (row[column] or "").strip())
                 if rule is not None:
-                    event(rule, index)
+                    event(rule, index, f"column {column!r}")
                     drop = True
                     break
                 values[column] = float((row[column] or "").strip())
@@ -489,10 +488,10 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
             try:
                 day_value = float(day_raw)
             except ValueError:
-                event("uncoercible_dropped", index)
+                event("uncoercible_dropped", index, f"column {day_column!r}")
                 continue
             if not np.isfinite(day_value):
-                event("uncoercible_dropped", index)
+                event("uncoercible_dropped", index, f"column {day_column!r}")
                 continue
 
         if user_column:
@@ -517,7 +516,9 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
         raise ValueError(
             f"too_many_dropped_error: the drop rules removed {n_dropped:,} of {len(raw_rows):,} "
             f"data rows ({n_dropped / len(raw_rows):.1%}), above the {DROPPED_ROW_STOP:.0%} "
-            f"stop; by rule: {dropped_by_rule}. Clean the file before reading it"
+            f"stop; by rule: {dropped_by_rule}; where each first fired: "
+            + "; ".join(f"{rule} {examples[rule]}" for rule in dropped_by_rule)
+            + ". Clean the file before reading it"
         )
 
     # canonical keys so consumers never need the config to read an Experiment;

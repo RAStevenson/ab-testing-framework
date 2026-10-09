@@ -388,8 +388,8 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
         final = f"effect {estimate:+.3f}   adjusted 95% {low:+.3f} to {high:+.3f}"
     return [
         "",
-        f"Daily monitoring: {n_looks} looks; the {readout.alpha:.0%} budget is spread across "
-        "them; crossing a boundary = safe to stop",
+        f"Monitoring replay: {n_looks} looks; {readout.alpha:.0%} budget spread across them; "
+        "a boundary crossing = safe to stop",
         _INDENT + f"{replay.treatment_arm} vs {control_arm} on {replay.metric}, "
         "O'Brien-Fleming spending at the sizes reached",
         _INDENT + f"spending design   {design_line}",
@@ -444,9 +444,7 @@ def _truth_block(readout: ExperimentReadout) -> list[str]:
         )
     for metric, _, result in readout.cuped:
         found["pre_correlation"] = (
-            f"found CUPED on {metric} removed {result.variance_reduction:.0%} of the noise "
-            "(the planted value links hidden draws, not dollar amounts, and the whale tail has "
-            "no pre-period counterpart)"
+            f"found CUPED on {metric} removed {result.variance_reduction:.0%} of the noise"
         )
     width = max(len(name) for name in readout.truth)
     for name, value in sorted(readout.truth.items()):

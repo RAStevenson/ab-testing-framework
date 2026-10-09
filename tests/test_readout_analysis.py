@@ -397,3 +397,46 @@ def test_planted_spend_difference_matches_the_recipe_by_hand():
     assert planted_spend_difference(recipe) == pytest.approx(expected, rel=1e-12)
     assert planted_spend_difference(recipe) == pytest.approx(0.315, abs=5e-4)
     assert planted_spend_difference({"spend_rate_lift": 0.004}) is None
+
+
+def test_cumulative_increments_flag_on_aggregates_with_a_time_axis():
+    config = load_config(FIXTURES / "aggregates_config.toml")
+    readout = _readout(load_aggregates(config, FIXTURES / "aggregates_ok.csv"))
+    flag = next(
+        limitation
+        for limitation in readout.limitations
+        if limitation.code == "cumulative_increments"
+    )
+    assert "earlier users' outcomes stay fixed" in flag.detail
+
+
+def test_many_looks_flag_past_the_pinned_schedule(tmp_path: Path):
+    readout = _readout(_generated_experiment(tmp_path, n_per_arm=4000, days=tuple(range(60))))
+    assert readout.monitoring is not None and readout.monitoring.n_usable == 60
+    flag = next(limitation for limitation in readout.limitations if limitation.code == "many_looks")
+    assert "the replay has 60 looks" in flag.detail
+    assert "cumulative_increments" not in _codes(readout)  # user rows carry no such risk
+
+
+def test_heavy_tail_flag_names_zero_inflation_when_most_users_are_zero(tmp_path: Path):
+    text = _user_config_text()
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(text, encoding="utf-8")
+    lines = [HEADER.rstrip("\n")]
+    for user in range(4000):
+        arm = "control" if user % 2 else "treatment"
+        spend = 50.0 + user % 7 if user % 200 == 0 else 0.0
+        lines.append(f"u{user},{arm},{user % 5},{user % 3 == 0:d},{spend}")
+    data_path = tmp_path / "rows.csv"
+    data_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    readout = _readout(load_user_rows(load_config(config_path), data_path))
+    flag = next(limitation for limitation in readout.limitations if limitation.code == "heavy_tail")
+    assert "fewer than 1% have any spend at all" in flag.detail
+
+
+def test_heavy_tail_flag_states_both_facts_when_spenders_exceed_one_percent(tmp_path: Path):
+    readout = _readout(_generated_experiment(tmp_path, n_per_arm=500, whale=1e6))
+    flag = next(limitation for limitation in readout.limitations if limitation.code == "heavy_tail")
+    # half the generated users convert and only converters spend, so the
+    # spenders are far above 1% and the flag must not claim a cause
+    assert "because" not in flag.detail

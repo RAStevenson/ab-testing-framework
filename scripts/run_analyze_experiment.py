@@ -87,7 +87,7 @@ def main() -> None:
         traceback.print_exc()
         print(
             "error: the readout's figures are drawn with matplotlib, which "
-            'installs with the dev extras: pip install -e ".[dev]". '
+            "installs with the pinned dependencies: pip install -r requirements.txt. "
             "No readout was written.",
             file=sys.stderr,
         )

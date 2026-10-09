@@ -77,7 +77,7 @@ def test_user_rows_readout_has_every_block_in_order(tmp_path: Path) -> None:
         "Other metrics:",
         "Cross-check on spend:",
         "Early versus late:",
-        "Daily monitoring:",
+        "Monitoring replay:",
         "Planted versus found",
         "Decision for",
         "Figures:",

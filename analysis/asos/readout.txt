@@ -10,6 +10,10 @@ Limitations (*): read every result below with these in view
   * the final checkpoint is internally inconsistent and left out of the time-based blocks; the
       variance implied for the users added there comes out negative, which no real accumulation of
       users produces; the end-of-run results still use the final totals
+  * the time-based blocks assume earlier users' outcomes stay fixed between checkpoints; if the file
+      recomputes outcomes over all enrolled users at each checkpoint, those blocks are approximate
+  * the replay has 95 looks; the boundary calculation is checked for accuracy on 14 looks, so treat
+      its boundaries as approximate
 
 Group split: does assignment match the plan?
   intended split not on record; testing whether the share of new users per checkpoint is constant
@@ -45,7 +49,7 @@ Early versus late: did the effect fade?
   variant_2 vs control   early -0.17 pp   late +0.23 pp   z -3.70   p 0.0002   effect rose over the
       run
 
-Daily monitoring: 95 looks; the 5% budget is spread across them; crossing a boundary = safe to stop
+Monitoring replay: 95 looks; 5% budget spread across them; a boundary crossing = safe to stop
   variant_0 vs control on metric_1, O'Brien-Fleming spending at the sizes reached
   spending design   never crosses in 95 looks; no early stop in either direction
   naive 1.96 rule   never fires

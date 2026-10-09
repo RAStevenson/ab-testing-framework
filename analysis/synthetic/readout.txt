@@ -4,8 +4,8 @@ Data: what the intake did before any statistic
   repairs and drops   none; the file passed every rule as delivered
 
 Limitations (*): read every result below with these in view
-  * the top 1% of users carry 67% of spend; the average rests on a few large values, so the
-      cross-check below compares three methods
+  * the top 1% of users carry 67% of spend, and 94% of users have none; the cross-check below
+      compares three methods
   * the smallest detectable effect on converted is 6.5% of the control level, above a modest 5%
       lift; a 'not detected' result here rules out little
 
@@ -35,7 +35,7 @@ Early versus late: did the effect fade?
   treatment vs control   early +1.03 pp   late +0.23 pp   z 2.13   p 0.033   effect fell over the
       run
 
-Daily monitoring: 14 looks; the 5% budget is spread across them; crossing a boundary = safe to stop
+Monitoring replay: 14 looks; 5% budget spread across them; a boundary crossing = safe to stop
   treatment vs control on converted, O'Brien-Fleming spending at the sizes reached
   spending design   crosses at look 4 of 14; stopping there keeps the full run's guarantee
   naive 1.96 rule   fires at look 1, on evidence the design does not accept
@@ -52,9 +52,7 @@ Planted versus found (synthetic only)
   novelty_boost            planted 0.008   found early +1.03 pp against late +0.23 pp, effect fell
       over the run
   novelty_half_life_days   planted 3.0
-  pre_correlation          planted 0.9   found CUPED on spend removed 14% of the noise (the planted
-      value links hidden draws, not dollar amounts, and the whale tail has no pre-period
-      counterpart)
+  pre_correlation          planted 0.9   found CUPED on spend removed 14% of the noise
   seed                     planted 38
   spend_rate               planted 0.06
   spend_rate_lift          planted 0.004   expected +0.315 per user on spend   found +0.433 (-0.309

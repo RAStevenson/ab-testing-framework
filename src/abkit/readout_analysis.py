@@ -67,6 +67,9 @@ MODEST_RELATIVE_LIFT = 0.05  # a 5% relative lift; a smallest detectable effect 
 TARGET_POWER = 0.8
 N_RESAMPLES = 10_000
 MIN_LOOKS = 3  # fewer looks than this and neither time-based block can say anything
+# the boundary integration's grid convergence is pinned on a 14-look schedule
+# (tests/test_sequential.py); past that the boundaries are unchecked, so flagged
+MANY_LOOKS = 14
 # a gap in the day sequence this many times the typical spacing counts as missing days
 MISSING_DAY_GAP_FACTOR = 1.5
 
@@ -629,10 +632,28 @@ def _heavy_tail(
         top = max(1, int(np.ceil(0.01 * pooled.size)))
         top_share = float(np.sort(np.abs(pooled))[-top:].sum() / total)
         if top_share > HEAVY_TAIL_TOP_SHARE:
+            zero_share = float(np.mean(pooled == 0.0))
+            # when fewer than 1% of users have any value, the top 1% hold all of
+            # them and the share says nothing about large values; between that and
+            # half the users at zero, both facts are true and neither explains the
+            # other, so the flag states both without a cause
+            if 1.0 - zero_share <= 0.01:
+                detail = (
+                    f"the top 1% of users carry {top_share:.0%} of {metric.name}, because "
+                    f"fewer than 1% have any {metric.name} at all"
+                )
+            elif zero_share > 0.5:
+                detail = (
+                    f"the top 1% of users carry {top_share:.0%} of {metric.name}, and "
+                    f"{zero_share:.0%} of users have none"
+                )
+            else:
+                detail = (
+                    f"the top 1% of users carry {top_share:.0%} of {metric.name}; the average "
+                    "rests on a few large values"
+                )
             limitation = Limitation(
-                "heavy_tail",
-                f"the top 1% of users carry {top_share:.0%} of {metric.name}; the average rests "
-                "on a few large values, so the cross-check below compares three methods",
+                "heavy_tail", detail + "; the cross-check below compares three methods"
             )
     welch = welch_ttest(control_values, treatment_values)
     bootstrap = bootstrap_mean_diff(
@@ -722,8 +743,16 @@ def _novelty(
 def _monitoring(
     experiment: Experiment, metric: MetricSpec, usable: tuple[int, int]
 ) -> MonitoringReplay | None:
-    """Replay the first contrast as daily looks under O'Brien-Fleming spending at the sizes
-    reached, with adjusted intervals, against the naive fixed threshold."""
+    """Replay the first contrast look by look, one look per checkpoint in the file, under
+    O'Brien-Fleming spending at the sizes reached, with adjusted intervals, against the naive
+    fixed threshold.
+
+    A replay of a finished run, not live monitoring: each look's information
+    fraction divides by the final look's information, which is known only
+    once the run has ended. Information is taken as proportional to
+    1 / (1/n_control + 1/n_treatment), which assumes the outcome's variance
+    is steady across looks; where it drifts, the per-look fractions and so
+    the boundaries are approximate."""
     n_usable, n_checkpoints = usable
     if n_usable < MIN_LOOKS:
         return None
@@ -873,6 +902,23 @@ def analyze_experiment(
             )
         novelty = _novelty(experiment, metric, usable)
         monitoring = _monitoring(experiment, metric, usable)
+        if experiment.rows is None and (novelty is not None or monitoring is not None):
+            limitations.append(
+                Limitation(
+                    "cumulative_increments",
+                    "the time-based blocks assume earlier users' outcomes stay fixed between "
+                    "checkpoints; if the file recomputes outcomes over all enrolled users at each "
+                    "checkpoint, those blocks are approximate",
+                )
+            )
+        if monitoring is not None and monitoring.n_usable > MANY_LOOKS:
+            limitations.append(
+                Limitation(
+                    "many_looks",
+                    f"the replay has {monitoring.n_usable} looks; the boundary calculation is "
+                    "checked for accuracy on 14 looks, so treat its boundaries as approximate",
+                )
+            )
     return ExperimentReadout(
         experiment_name=experiment.name,
         data_shape="user_rows" if experiment.rows is not None else "aggregates",

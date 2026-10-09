@@ -6,8 +6,8 @@ Data: what the intake did before any statistic
 Limitations (*): read every result below with these in view
   * fewer than 10 successes or failures on converted: control (4 of 15), treatment (6 of 15); the
       z-test's normal approximation is unreliable here
-  * the top 1% of users carry 65% of spend; the average rests on a few large values, so the
-      cross-check below compares three methods
+  * the top 1% of users carry 65% of spend, and 67% of users have none; the cross-check below
+      compares three methods
   * the smallest detectable effect on converted is 184.3% of the control level, above a modest 5%
       lift; a 'not detected' result here rules out little
   * no metric declares a pre-experiment column (pre_column in the config); CUPED is skipped
@@ -38,7 +38,7 @@ Early versus late: did the effect fade?
   first checkpoint against the last, of 5 usable
   treatment vs control   early +33.33 pp   late +0.00 pp   z 0.50   p 0.617   no change detected
 
-Daily monitoring: 5 looks; the 5% budget is spread across them; crossing a boundary = safe to stop
+Monitoring replay: 5 looks; 5% budget spread across them; a boundary crossing = safe to stop
   treatment vs control on converted, O'Brien-Fleming spending at the sizes reached
   spending design   never crosses in 5 looks; no early stop in either direction
   naive 1.96 rule   never fires

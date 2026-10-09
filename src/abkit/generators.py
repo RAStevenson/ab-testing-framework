@@ -94,8 +94,9 @@ def generate_binary(
 
     so ``absolute_lift`` is the persistent effect and ``novelty_boost`` is
     a transient effect that has halved after ``novelty_half_life_days``.
-    The decay is over calendar days: the existing user base habituates to
-    the change as the experiment runs.
+    Each user's rate is set once, by the day they enter, so the boost is
+    per entry cohort: users who arrive later see a smaller one. Real novelty
+    can also fade within a user who arrived early, which this does not model.
 
     ``treatment_loss_rate`` models a tracking bug that silently drops that
     fraction of *non-converting* treatment users (e.g. a redirect that
