@@ -23,7 +23,7 @@ AGENTS.md
 # data/asos/ is the one committed dataset: CC BY 4.0 with its own license
 # notice, small, and pinned by md5 in analysis/asos/config.toml. Fetched
 # datasets without a redistribution license (hillstrom) stay ignored, and so
-# does data/synthetic/, which scripts/run_synthetic_example.py regenerates.
+# does data/synthetic/, which scripts/run_synthetic_check.py regenerates.
 data/*
 !data/asos/
 *.parquet

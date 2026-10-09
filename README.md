@@ -195,7 +195,7 @@ python -m venv .venv
 .venv/Scripts/python -m pytest
 .venv/Scripts/python scripts/run_analyze_experiment.py --config analysis/asos/config.toml
 .venv/Scripts/python scripts/run_plan_experiment.py --baseline-rate 0.05 --minimum-lift 0.005
-.venv/Scripts/python scripts/run_synthetic_example.py
+.venv/Scripts/python scripts/run_synthetic_check.py
 .venv/Scripts/python scripts/run_fetch_hillstrom.py   # fetches the 2008 dataset (not redistributed)
 .venv/Scripts/python scripts/run_analyze_experiment.py --config analysis/hillstrom/config.toml
 ```

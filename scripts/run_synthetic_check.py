@@ -10,7 +10,7 @@ block confirms the pipeline finds effects of known size. The run tests
 the system; it is not an example of analysis.
 
 Run with:
-    python scripts/run_synthetic_example.py
+    python scripts/run_synthetic_check.py
 
 Flags: --config picks another recipe (default analysis/synthetic/config.toml),
 --out another output directory (default: the config's directory), and

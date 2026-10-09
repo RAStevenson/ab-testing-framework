@@ -3,10 +3,10 @@
 # the readout's planted-versus-found block confirms the pipeline finds them.
 # This file is both
 # the generation recipe ([truth]) and the intake config the readout reads;
-# scripts/run_synthetic_example.py writes the rows to data/synthetic/ (never
+# scripts/run_synthetic_check.py writes the rows to data/synthetic/ (never
 # committed) and then runs the same path as run_analyze_experiment.py.
 # Reproduce with:
-#   python scripts/run_synthetic_example.py
+#   python scripts/run_synthetic_check.py
 
 [experiment]
 name = "Synthetic pipeline check (planted effects, a test of the tool)"
