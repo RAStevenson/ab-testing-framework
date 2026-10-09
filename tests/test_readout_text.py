@@ -75,11 +75,11 @@ def test_user_rows_readout_has_every_block_in_order(tmp_path: Path) -> None:
         "Sensitivity:",
         "Primary converted:",
         "Other metrics:",
-        "Revenue cross-check on spend:",
+        "Cross-check on spend:",
         "Early versus late:",
         "Daily monitoring:",
         "Planted versus found",
-        "Decision:",
+        "Decision for",
         "Figures:",
     ]
     positions = [

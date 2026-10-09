@@ -860,10 +860,15 @@ def analyze_experiment(
             limitations.append(
                 Limitation(
                     "excluded_checkpoints",
-                    f"the final {excluded} checkpoint{'s are' if excluded != 1 else ' is'} "
-                    "internally inconsistent and left out of the time-based blocks; an "
-                    "increment's recovered variance is negative, which no real accumulation "
-                    "of users produces; the end-of-run results still use the final totals",
+                    (
+                        "the final checkpoint is"
+                        if excluded == 1
+                        else f"the final {excluded} checkpoints are"
+                    )
+                    + " internally inconsistent and left out of the time-based blocks; the "
+                    "variance implied for the users added there comes out negative, which no "
+                    "real accumulation of users produces; the end-of-run results still use the "
+                    "final totals",
                 )
             )
         novelty = _novelty(experiment, metric, usable)

@@ -17,38 +17,39 @@ Group split: does assignment match the plan?
   result   consistent with the plan
 
 Sensitivity: smallest lift this sample could detect, 80% power
-  control 26.7%   15 vs 15 users   detectable 49.15 pp (184.3% of control)
+  treatment vs control   15 vs 15 users   control 26.7%   detectable 49.15 pp (184.3% of control)
 
 Primary converted: effect, 95% interval, p; interval first
   treatment vs control   +13.33 pp   -20.12 to +43.65 pp   p 0.439   not detected
 
-Other metrics: corrected for 2 comparisons
+Other metrics: corrected for 2 comparisons (Holm, and BH = Benjamini-Hochberg)
   spend   treatment vs control   +38.333   p 0.265   Holm 0.530   BH 0.439
   converted_again   treatment vs control   +13.33 pp   p 0.439   Holm 0.530   BH 0.439
-  result   unadjusted 0 of 2 clear alpha; after Holm 0 survive
+  result   unadjusted 0 of 2 below 0.05; after Holm 0 survive
 
-Revenue cross-check on spend: three methods, same question (treatment vs control)
+Cross-check on spend: three methods, same question (treatment vs control)
   Welch         +38.333   -32.372 to +109.038   p 0.265
   bootstrap     +38.333   +2.000 to +170.363   BCa, 10,000 resamples
   permutation   +38.333   p 0.193
-  trimmed 1%    +38.333   different estimand
+  trimmed 1%    +38.333   a different quantity, not comparable
   result   methods DISAGREE at alpha; the estimate rests on the tail
 
 Early versus late: did the effect fade?
   first checkpoint against the last, of 5 usable
   treatment vs control   early +33.33 pp   late +0.00 pp   z 0.50   p 0.617   no change detected
 
-Daily monitoring: 5 looks; crossing a boundary = safe to stop
+Daily monitoring: 5 looks; the 5% budget is spread across them; crossing a boundary = safe to stop
   treatment vs control on converted, O'Brien-Fleming spending at the sizes reached
   spending design   never crosses in 5 looks; no early stop in either direction
   naive 1.96 rule   never fires
-  final look   effect +13.33 pp   adjusted 95% -23.06 to +49.73 pp   boundary 2.06
+  final look   effect +13.33 pp   adjusted 95% -23.06 to +49.73 pp   boundary |z| 2.06
 
 Planted versus found (synthetic only)
   absolute_lift   planted 0.13   expected +13.00 pp at the end of the run   found +13.33 pp (-20.12
       to +43.65 pp)   inside
   base_rate       planted 0.27   found 0.2667 (control rate)
 
-Decision: no detectable effect; this test could have seen 49.15 pp or more
+Decision for treatment vs control: no detectable effect; that contrast could have seen 49.15 pp or
+    more
 Figures:
   figures/monitoring.png

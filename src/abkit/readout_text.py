@@ -28,9 +28,12 @@ _PRIMARY_RESULTS = {
 }
 _DECISIONS = {
     "split_broken": "Decision: do not act; the group split is broken",
-    "higher": "Decision: treatment higher on {metric} by {effect} ({low} to {high})",
-    "lower": "Decision: treatment lower on {metric} by {effect} ({low} to {high})",
-    "not_detected": "Decision: no detectable effect; this test could have seen {mde} or more",
+    "higher": "Decision for {arm} vs {control}: higher on {metric} by {effect} ({low} to {high})",
+    "lower": "Decision for {arm} vs {control}: lower on {metric} by {effect} ({low} to {high})",
+    "not_detected": (
+        "Decision for {arm} vs {control}: no detectable effect; that contrast could have seen "
+        "{mde} or more"
+    ),
 }
 _SPLIT_RESULTS = {
     "ok": "consistent with the plan",
@@ -226,9 +229,10 @@ def _sensitivity_block(readout: ExperimentReadout) -> list[str]:
         detectable = pp(mde) if binary else f"{mde:.3f}"
         if np.isfinite(values["relative_mde"]):
             detectable += f" ({pct(values['relative_mde'], 1)} of control)"
-    lines.append(
-        _INDENT + f"control {control}   {values['n_control']:,.0f} vs "
-        f"{values['n_treatment']:,.0f} users   detectable {detectable}"
+    treatment_arm, control_arm = readout.primary[0][0], readout.arm_sizes[0][0]
+    lines += _wrapped(
+        f"{treatment_arm} vs {control_arm}   {values['n_treatment']:,.0f} vs "
+        f"{values['n_control']:,.0f} users   control {control}   detectable {detectable}"
     )
     return lines
 
@@ -265,7 +269,11 @@ def _corrections_block(readout: ExperimentReadout) -> list[str]:
         return []
     control_arm = readout.arm_sizes[0][0]
     family = readout.corrections
-    lines = ["", f"Other metrics: corrected for {len(family)} comparisons"]
+    lines = [
+        "",
+        f"Other metrics: corrected for {len(family)} comparisons "
+        "(Holm, and BH = Benjamini-Hochberg)",
+    ]
     for corrected in family:
         lines += _wrapped(
             f"{corrected.metric}   {corrected.treatment_arm} vs {control_arm}   "
@@ -275,7 +283,7 @@ def _corrections_block(readout: ExperimentReadout) -> list[str]:
     n_naive = sum(corrected.comparison.p_value < readout.alpha for corrected in family)
     n_holm = sum(corrected.holm_p < readout.alpha for corrected in family)
     lines.append(
-        _INDENT + f"result   unadjusted {n_naive} of {len(family)} clear alpha; "
+        _INDENT + f"result   unadjusted {n_naive} of {len(family)} below {readout.alpha:g}; "
         f"after Holm {n_holm} survive"
     )
     return lines
@@ -296,14 +304,15 @@ def _heavy_tail_block(readout: ExperimentReadout) -> list[str]:
     )
     lines = [
         "",
-        f"Revenue cross-check on {check.metric}: three methods, same question "
+        f"Cross-check on {check.metric}: three methods, same question "
         f"({check.treatment_arm} vs {control_arm})",
         _INDENT + f"Welch         {welch.difference:+.3f}   {welch.ci_low:+.3f} to "
         f"{welch.ci_high:+.3f}   p {fmt_p(welch.p_value)}",
         _INDENT + f"bootstrap     {bootstrap.estimate:+.3f}   {bootstrap.ci_low:+.3f} to "
         f"{bootstrap.ci_high:+.3f}   BCa, {bootstrap.n_resamples:,} resamples",
         _INDENT + f"permutation   {permutation.observed:+.3f}   {fmt_perm_p(permutation)}",
-        _INDENT + f"trimmed 1%    {check.trimmed_difference:+.3f}   different estimand",
+        _INDENT
+        + f"trimmed 1%    {check.trimmed_difference:+.3f}   a different quantity, not comparable",
         _INDENT + "result   " + _TAIL_RESULTS["agree" if agree else "disagree"],
     ]
     if check.trim_degenerate:
@@ -375,12 +384,13 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
         final = f"effect {estimate:+.3f}   adjusted 95% {low:+.3f} to {high:+.3f}"
     return [
         "",
-        f"Daily monitoring: {n_looks} looks; crossing a boundary = safe to stop",
+        f"Daily monitoring: {n_looks} looks; the {readout.alpha:.0%} budget is spread across "
+        "them; crossing a boundary = safe to stop",
         _INDENT + f"{replay.treatment_arm} vs {control_arm} on {replay.metric}, "
         "O'Brien-Fleming spending at the sizes reached",
         _INDENT + f"spending design   {design_line}",
         _INDENT + f"naive {replay.z_naive:.2f} rule   {naive_line}",
-        _INDENT + f"final look   {final}   boundary {replay.intervals.boundaries[last]:.2f}",
+        _INDENT + f"final look   {final}   boundary |z| {replay.intervals.boundaries[last]:.2f}",
     ]
 
 
@@ -415,22 +425,33 @@ def _truth_block(readout: ExperimentReadout) -> list[str]:
         )
     for metric, _, result in readout.cuped:
         found["pre_correlation"] = (
-            f"found CUPED on {metric} removed {result.variance_reduction:.0%} of the noise"
+            f"found CUPED on {metric} removed {result.variance_reduction:.0%} of the noise "
+            "(the planted value links hidden draws, not dollar amounts, and the whale tail has "
+            "no pre-period counterpart)"
         )
     width = max(len(name) for name in readout.truth)
     for name, value in sorted(readout.truth.items()):
-        line = f"{name:<{width}}   planted {value}"
+        line = f"{name:<{width}}   planted {_planted(value)}"
         if name in found:
             line += f"   {found[name]}"
         lines += _wrapped(line)
     return lines
 
 
+def _planted(value: object) -> str:
+    """A planted value as the readout prints numbers: thousands separators on whole numbers."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return f"{value:,}"
+    return str(value)
+
+
 def _decision_line(readout: ExperimentReadout) -> str:
-    """The closing line: a broken split first, then the primary result of the first contrast."""
+    """The closing line: a broken split first, then the primary result of the first contrast,
+    named, since a readout with several treatments decides one contrast at a time."""
     if any(limitation.code == "group_split" for limitation in readout.limitations):
         return _DECISIONS["split_broken"]
-    _, comparison = readout.primary[0]
+    treatment_arm, comparison = readout.primary[0]
+    control_arm = readout.arm_sizes[0][0]
     outcome = _primary_outcome(comparison, readout.alpha)
     if outcome == "not_detected":
         mde = readout.sensitivity["mde"]
@@ -440,13 +461,18 @@ def _decision_line(readout: ExperimentReadout) -> str:
             mde_text = pp(mde)
         else:
             mde_text = f"{mde:.3f}"
-        return _DECISIONS[outcome].format(mde=mde_text)
+        return _DECISIONS[outcome].format(arm=treatment_arm, control=control_arm, mde=mde_text)
     if isinstance(comparison, RateComparison):
         low, high = f"{100 * comparison.ci_low:+.2f}", pp_signed(comparison.ci_high)
     else:
         low, high = f"{comparison.ci_low:+.3f}", f"{comparison.ci_high:+.3f}"
     return _DECISIONS[outcome].format(
-        metric=readout.primary_metric, effect=_effect(comparison), low=low, high=high
+        arm=treatment_arm,
+        control=control_arm,
+        metric=readout.primary_metric,
+        effect=_effect(comparison),
+        low=low,
+        high=high,
     )
 
 
@@ -466,7 +492,8 @@ def readout_lines(
         + _novelty_block(readout)
         + _monitoring_block(readout)
         + _truth_block(readout)
-        + ["", _decision_line(readout)]
+        + [""]
+        + _wrapped(_decision_line(readout), indent="")
     )
     if figure_paths:
         lines.append("Figures:")

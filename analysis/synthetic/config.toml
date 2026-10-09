@@ -7,7 +7,7 @@
 #   python scripts/run_synthetic_example.py
 
 [experiment]
-name = "synthetic checkout experiment"
+name = "Synthetic checkout experiment"
 alpha = 0.05
 
 [input]

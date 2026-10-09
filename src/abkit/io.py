@@ -427,16 +427,17 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     kept: dict[str, list] = {column: [] for column in declared}
     first_row_of_user: dict[str, int] = {}
 
-    def event(rule: str, index: int) -> None:
-        """Count one occurrence of a validation rule and keep the first data row it happened at."""
+    def event(rule: str, index: int, note: str | None = None) -> None:
+        """Count one occurrence of a validation rule and keep the first data row it happened at,
+        with the note (which value became which) when the rule changed a value."""
         counts[rule] = counts.get(rule, 0) + 1
-        examples.setdefault(rule, f"first at data row {index}")
+        examples.setdefault(rule, (f"{note}, " if note else "") + f"first at data row {index}")
 
     for index, row in enumerate(raw_rows, start=2):  # row 1 is the header
         arm_raw = (row[arm_column] or "").strip()
         arm_aliased = aliases.get(arm_column, {}).get(arm_raw, arm_raw)
         if arm_aliased != arm_raw:
-            event("alias_normalized", index)
+            event("alias_normalized", index, f"{arm_column} {arm_raw!r} to {arm_aliased!r}")
         if not arm_aliased:
             event("null_row_dropped", index)
             continue
@@ -505,7 +506,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
             raw = (row[column] or "").strip()
             mapped = aliases[column].get(raw, raw)
             if mapped != raw:
-                event("alias_normalized", index)
+                event("alias_normalized", index, f"{column} {raw!r} to {mapped!r}")
             kept[column].append(mapped)
 
     if not kept[arm_column]:

@@ -99,7 +99,7 @@ class TestAnalyzeExperiment:
         readout = (out_dir / "readout.txt").read_text(encoding="utf-8")
         assert readout.startswith("fixture-aggregates: per-group totals\n")
         assert readout in printed
-        assert "Decision:" in readout
+        assert "Decision for" in readout
         assert sorted(path.name for path in (out_dir / "figures").iterdir()) == [
             "early_late.png",
             "monitoring.png",

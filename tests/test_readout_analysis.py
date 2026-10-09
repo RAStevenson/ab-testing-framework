@@ -252,7 +252,7 @@ class TestLimitationCodes:
             for limitation in readout.limitations
             if limitation.code == "excluded_checkpoints"
         )
-        assert "final 1 checkpoint is internally inconsistent" in excluded.detail
+        assert "final checkpoint is internally inconsistent" in excluded.detail
         assert readout.monitoring is None  # two usable looks are too few to replay
 
 
