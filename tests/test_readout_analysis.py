@@ -16,6 +16,7 @@ from abkit.readout_analysis import (
     ExperimentReadout,
     _consistent_prefix,
     analyze_experiment,
+    planted_spend_difference,
 )
 from abkit.results import RateComparison
 
@@ -379,3 +380,20 @@ class TestOmittedBlocks:
         assert stderr.count("Traceback") == 1
         assert "no per-checkpoint aggregates" in stderr
         assert "omits the block 'Early versus late, and Daily monitoring'" in stderr
+
+
+def test_planted_spend_difference_matches_the_recipe_by_hand():
+    # 0.004 times the mean spender amount: 0.992 * exp(3.4 + 1.3^2 / 2) for the
+    # lognormal plus 0.008 * 400 * 1.5 / 0.5 = 1200 for the whales
+    recipe = {
+        "spend_rate_lift": 0.004,
+        "log_mean": 3.4,
+        "log_sigma": 1.3,
+        "whale_rate": 0.008,
+        "whale_shape": 1.5,
+        "whale_scale": 400.0,
+    }
+    expected = 0.004 * (0.992 * np.exp(3.4 + 0.845) + 0.008 * 1200.0)
+    assert planted_spend_difference(recipe) == pytest.approx(expected, rel=1e-12)
+    assert planted_spend_difference(recipe) == pytest.approx(0.315, abs=5e-4)
+    assert planted_spend_difference({"spend_rate_lift": 0.004}) is None

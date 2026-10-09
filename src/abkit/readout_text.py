@@ -15,7 +15,11 @@ from pathlib import Path
 
 import numpy as np
 
-from abkit.readout_analysis import ExperimentReadout, planted_end_of_run_lift
+from abkit.readout_analysis import (
+    ExperimentReadout,
+    planted_end_of_run_lift,
+    planted_spend_difference,
+)
 from abkit.results import CupedResult, MeanComparison, PermutationResult, RateComparison
 
 LINE_WIDTH = 100
@@ -422,6 +426,21 @@ def _truth_block(readout: ExperimentReadout) -> list[str]:
                 if first.decay_p >= readout.alpha
                 else ("fell" if first.decay_z > 0 else "rose")
             ]
+        )
+    expected_spend = planted_spend_difference(readout.truth)
+    if expected_spend is not None and readout.heavy_tail is not None:
+        welch = readout.heavy_tail.welch
+        inside = welch.ci_low <= expected_spend <= welch.ci_high
+        detected = welch.p_value < readout.alpha
+        found["spend_rate_lift"] = (
+            f"expected {expected_spend:+.3f} per user on {readout.heavy_tail.metric}   found "
+            f"{welch.difference:+.3f} ({welch.ci_low:+.3f} to {welch.ci_high:+.3f})   "
+            + ("inside" if inside else "OUTSIDE")
+            + (
+                ", detected"
+                if detected
+                else f", too small to detect at this sample (p {fmt_p(welch.p_value)})"
+            )
         )
     for metric, _, result in readout.cuped:
         found["pre_correlation"] = (

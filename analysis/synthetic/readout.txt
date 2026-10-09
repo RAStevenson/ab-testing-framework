@@ -1,4 +1,4 @@
-Synthetic checkout experiment: user rows
+Synthetic pipeline check (planted effects, a test of the tool): user rows
 Data: what the intake did before any statistic
   users   control 60,156   treatment 59,844
   repairs and drops   none; the file passed every rule as delivered
@@ -57,7 +57,8 @@ Planted versus found (synthetic only)
       counterpart)
   seed                     planted 38
   spend_rate               planted 0.06
-  spend_rate_lift          planted 0.004
+  spend_rate_lift          planted 0.004   expected +0.315 per user on spend   found +0.433 (-0.309
+      to +1.174)   inside, too small to detect at this sample (p 0.253)
   whale_rate               planted 0.008
   whale_scale              planted 400.0
   whale_shape              planted 1.5

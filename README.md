@@ -118,7 +118,8 @@ test, and a trimmed mean on the same question. With a day
 column, the early-versus-late block tests whether the effect faded. The
 monitoring block replays the run as daily looks against boundaries
 computed at the sizes reached, with an adjusted interval built to contain
-the true effect at every look at once. On the synthetic example only, a final block prints what
+the true effect at every look at once. On the synthetic
+pipeline check described below, and only there, a final block prints what
 the generator planted beside what the readout found.
 
 Two more readouts are committed. [analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt)
@@ -126,18 +127,26 @@ reads the 2008 MineThatData e-mail experiment, user-level rows with three
 arms, a heavy-tailed spend metric, and a misspelled category value the
 intake normalizes and counts. CUPED adjusts spend by its past-spending
 column and removes none of the noise there.
-[analysis/synthetic/readout.txt](analysis/synthetic/readout.txt) is the
-check that the tool recovers what was planted. It is one generated
-experiment, read through the identical intake. The generator plants a
-conversion lift, a novelty boost that fades over the first days, a few
-users who spend far more than the rest (a whale tail), and a
-pre-experiment column. The planted
-end-of-run lift is +0.67 pp with the novelty averaged in, and the readout
-finds +0.67 pp with an interval of +0.39 to +0.95 pp. CUPED on the
-pre-experiment column removes 14% of the noise on spend. The planted
-correlation of 0.9 links the hidden draws behind spend, not the dollar
-amounts, and the whale tail has no counterpart in the pre-experiment
-column, so the share removed sits far below 0.81.
+
+[analysis/synthetic/readout.txt](analysis/synthetic/readout.txt) is not an
+example of analysis. It is a test of the tool, there to confirm that the
+pipeline finds effects of known size. I generated one experiment with
+planted effects and ran it through the same intake and readout as the real
+files. The generator plants a conversion lift and a
+novelty boost that fades over the first days. It also plants a small rise
+in the share of users who spend, a few users who spend far more than the
+rest (a whale tail), and a pre-experiment column. The planted end-of-run lift on conversion is +0.67
+percentage points (pp) with the novelty averaged in, and the readout finds
++0.67 pp with an interval of +0.39 to +0.95 pp. The planted rise in spend
+works out to +0.32 per user. The readout estimates +0.43, and its interval
+of -0.31 to +1.17 contains the planted value. The whale tail makes spend
+too noisy for this sample to detect an effect that small (p 0.253), so the
+readout reports it as not detected rather than found, which is the other
+half of what the check confirms. CUPED on the pre-experiment column
+removes 14% of the noise on spend. The planted correlation of 0.9 links the
+hidden draws behind spend, not the dollar amounts, and the whale tail has
+no counterpart in the pre-experiment column. So the share removed sits far
+below the 81% that a correlation of 0.9 on spend itself would remove.
 
 ## Data checks and repairs
 
@@ -324,7 +333,7 @@ outside a short allowed list.
 - `src/abkit/frequentist.py`, `power.py`, `resampling.py`, `cuped_adjustment.py`: thin wrappers over statsmodels and scipy that return the repo's result dataclasses.
 - `src/abkit/sequential.py`: the spending boundaries and the adjusted intervals.
 - `src/abkit/results.py`: the frozen result dataclasses every public function returns.
-- `src/abkit/generators.py`: the synthetic experiment with its planted effects.
+- `src/abkit/generators.py`: the generated experiment the synthetic pipeline check runs on.
 - `scripts/`: the analyze, plan, synthetic, and fetch commands.
 - `analysis/`: the three committed readouts with their configs and figures.
 

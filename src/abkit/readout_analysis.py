@@ -909,3 +909,20 @@ def planted_end_of_run_lift(truth: dict) -> float | None:
         decay = 0.5 ** (days / float(truth["novelty_half_life_days"]))
         lift += float(truth["novelty_boost"]) * float(decay.mean())
     return lift
+
+
+def planted_spend_difference(truth: dict) -> float | None:
+    """The per-user spend difference a generator recipe implies: the lift in the share of users
+    who spend times the mean amount a spender spends, the lognormal mean blended with the Pareto
+    whale mean at the whale rate; None when the recipe does not carry those keys."""
+    keys = ("spend_rate_lift", "log_mean", "log_sigma", "whale_rate", "whale_shape", "whale_scale")
+    if not all(key in truth for key in keys):
+        return None
+    whale_rate = float(truth["whale_rate"])
+    whale_shape = float(truth["whale_shape"])
+    lognormal_mean = float(np.exp(float(truth["log_mean"]) + float(truth["log_sigma"]) ** 2 / 2.0))
+    # the generator draws whales as Pareto I with minimum whale_scale, whose
+    # mean is whale_scale * shape / (shape - 1); shape > 1 is validated there
+    whale_mean = float(truth["whale_scale"]) * whale_shape / (whale_shape - 1.0)
+    mean_amount = (1.0 - whale_rate) * lognormal_mean + whale_rate * whale_mean
+    return float(truth["spend_rate_lift"]) * mean_amount

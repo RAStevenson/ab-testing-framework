@@ -1,4 +1,4 @@
-"""Generate the synthetic example experiment and write its readout.
+"""Generate the synthetic pipeline check and write its readout.
 
 The config's [truth] table is the recipe: one experiment with a planted
 lift on conversion, a transient novelty boost, a lift on the share of
@@ -6,7 +6,8 @@ users who spend, a whale tail, and a pre-experiment spend column for
 CUPED. The rows are written to data/synthetic/ (never committed) and then
 read through the identical intake, analysis, figure, and text path that
 run_analyze_experiment.py uses, so the readout's planted-versus-found
-block is the proof that the tool recovers known effects.
+block confirms the pipeline finds effects of known size. The run tests
+the system; it is not an example of analysis.
 
 Run with:
     python scripts/run_synthetic_example.py
