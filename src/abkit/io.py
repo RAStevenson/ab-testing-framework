@@ -11,15 +11,15 @@ provided the data arrives in one of two shapes:
 
 Both shapes normalize into the ``Experiment`` object defined here.
 Aggregates are always derivable from user-level rows; the reverse is
-impossible, and that asymmetry is what drives the report's
-presence-keying: ``capabilities`` reports what a given Experiment can
-support, and each report section declares what it requires.
+impossible, and that asymmetry is what decides which blocks the readout
+can compute: ``capabilities`` reports what a given Experiment can
+support, and the readout's analysis layer reads it.
 
 The experiment description comes from a TOML config (stdlib ``tomllib``,
-so the library's numpy + scipy dependency claim holds). ``load_config``
-validates the config's shape; the loaders validate the data, recording
-every cleaning action as a ``ValidationEvent`` so the report can show
-what was done to the data before any statistic was computed.
+so the library's dependencies stay numpy, scipy, and statsmodels).
+``load_config`` validates the config's shape; the loaders validate the
+data, recording every cleaning action as a ``ValidationEvent`` that the
+readout's data block prints before any statistic.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ class MetricSpec:
 
 @dataclass(frozen=True)
 class ValidationEvent:
-    """One cleaning or rejection action taken by a loader, for the report."""
+    """One cleaning or rejection action taken by a loader, for the readout."""
 
     rule: str
     count: int
@@ -106,7 +106,7 @@ class Experiment:
 
 
 def capabilities(experiment: Experiment) -> frozenset[str]:
-    """The data properties this experiment can support a section with."""
+    """The data properties this experiment can support a readout block with."""
     data_capabilities = set()
     if experiment.rows is not None:
         data_capabilities.add("user_rows")

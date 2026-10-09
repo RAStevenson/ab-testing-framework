@@ -20,7 +20,7 @@ for code.
   2021 Datasets and Benchmarks Track. arXiv:2111.10198.
 - **Integrity:** MD5 `acdb1bebeede91cad1545f52d9a8a246` (2,737,991
   bytes, as downloaded 2026-08-12). The analysis config pins this digest
-  and the toolkit refuses to run against a file that does not match it.
+  and the analyze command refuses to run against a file that does not match it.
   The dataset's maintainers state that minor corrections would be
   published in place under the same filename, so a future mismatch means
   a new upstream version should be reviewed, re-pinned, and re-analyzed.

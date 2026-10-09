@@ -37,7 +37,7 @@ kind = "continuous"
 nonnegative = true
 pre_column = "pre_spend"
 
-# the planted truth, carried from the checkout recipe: a persistent lift on
+# the planted truth, carried from the former checkout example: a persistent lift on
 # conversion plus a transient novelty boost that has halved after three
 # days, a lift on the share of users who spend, and a Pareto whale tail with
 # finite mean but infinite variance. pre_spend is the same zero-inflated

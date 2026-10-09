@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "abkit"
 version = "0.1.0"
-description = "A/B testing and experiment-analysis toolkit: data generators, frequentist and resampling tests, sequential monitoring, power analysis"
+description = "A command-line readout for an exported experiment file: data checks and repairs, the standard tests through statsmodels and scipy, CUPED, and daily-monitoring boundaries at the sizes reached"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -72,7 +72,3 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN"]     # test functions don't need return annotations
-# report prose and markdown tables live in f-strings that cannot wrap. The
-# annotation rules deliberately still apply here: this is the code a reader
-# looks at first, so it holds the same bar as the library.
-"scripts/*" = ["E501"]

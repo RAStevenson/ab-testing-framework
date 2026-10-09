@@ -60,7 +60,7 @@ from abkit.sequential import (
 )
 
 # the flag thresholds, accepted 2026-10-06
-SRM_ALARM_P = 1e-3  # the alarm threshold the reports already use
+SRM_ALARM_P = 1e-3  # the conventional alarm threshold for a split check
 MIN_EXPECTED_EVENTS = 10  # successes and failures per arm for the normal approximation
 HEAVY_TAIL_TOP_SHARE = 0.25  # top 1% of users carrying this share of a metric's total
 MODEST_RELATIVE_LIFT = 0.05  # a 5% relative lift; a smallest detectable effect above it is flagged

@@ -203,8 +203,9 @@ working examples of both input shapes. A few conventions matter when
 writing yours. The first label in `arms.labels` is the control, and
 ordering them the other way flips the sign of every effect. A `day`
 column under `[columns]`, numeric time since the experiment started, is
-what turns on the early-versus-late block and the monitoring replay. A
-`pre_column` on a metric, a value measured before assignment, is what
+what turns on the early-versus-late block and the monitoring replay (for
+per-group totals, the checkpoint column under `[aggregates]` does the
+same). A `pre_column` on a metric, a value measured before assignment, is what
 turns on CUPED for that metric. Columns the config does not name are
 ignored. A config may pin its data file's md5 so a readout cannot quietly
 describe the wrong file.
@@ -310,6 +311,7 @@ outside a short allowed list.
 - `src/abkit/readout_text.py` and `readout_figures.py`: the lines and the figures.
 - `src/abkit/frequentist.py`, `power.py`, `resampling.py`, `cuped_adjustment.py`: thin wrappers over statsmodels and scipy that return the repo's result dataclasses.
 - `src/abkit/sequential.py`: the spending boundaries and the adjusted intervals.
+- `src/abkit/results.py`: the frozen result dataclasses every public function returns.
 - `src/abkit/generators.py`: the synthetic experiment with its planted effects.
 - `scripts/`: the analyze, plan, synthetic, and fetch commands.
 - `analysis/`: the three committed readouts with their configs and figures.

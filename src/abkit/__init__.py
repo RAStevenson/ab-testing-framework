@@ -1,4 +1,4 @@
-"""abkit: A/B testing and experiment-analysis toolkit.
+"""abkit: a command-line readout for an exported experiment file.
 
 Import from submodules directly, for example::
 
