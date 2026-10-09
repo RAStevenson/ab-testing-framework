@@ -6,7 +6,9 @@ users who spend, a whale tail, and a pre-experiment spend column for
 CUPED. The rows are written to data/synthetic/ (never committed) and then
 read through the identical intake, analysis, figure, and text path that
 run_analyze_experiment.py uses, so the readout's planted-versus-found
-block confirms the pipeline finds effects of known size. The run tests
+block confirms the pipeline finds effects of known size when they are
+large enough to detect, and reports smaller ones as not detected with
+intervals that contain the planted value. The run tests
 the system; it is not an example of analysis.
 
 Run with:

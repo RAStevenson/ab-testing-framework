@@ -4,8 +4,8 @@ Data: what the intake did before any statistic
   repairs and drops   none; the file passed every rule as delivered
 
 Limitations (*): read every result below with these in view
-  * the smallest detectable effect on metric_1 is 68.7% of the control level, above a modest 5%
-      lift; a 'not detected' result here rules out little
+  * the smallest detectable effect on metric_1 is above a modest 5% lift for variant_2 vs control
+      (68.7% of control); a 'not detected' result there rules out little
   * aggregate data carries no per-user pre-experiment values, so CUPED cannot run
   * the time-based blocks assume earlier users' outcomes stay fixed between checkpoints; if the file
       recomputes outcomes over all enrolled users at each checkpoint, those blocks are approximate

@@ -17,17 +17,25 @@ Limitations (*): read every result below with these in view
 
 Group split: does assignment match the plan?
   intended split not on record; testing whether the share of new users per checkpoint is constant
+  chosen   first treatment in the arm order, not by its result
   variant_0 vs control   96 checkpoints   chi-square 78.23   df 95   p 0.894
   result   stable across checkpoints
 
 Sensitivity: smallest lift this sample could detect, 80% power
-  variant_0 vs control   102,316 vs 3,320,536 users   control 25.1%   detectable 0.39 pp (1.5% of
+  each at alpha 0.05/3, the strictest level the Holm correction applies
+  variant_0 vs control   102,316 vs 3,320,536 users   control 25.1%   detectable 0.45 pp (1.8% of
+      control)
+  variant_1 vs control   3,316,730 vs 3,320,536 users   control 25.1%   detectable 0.11 pp (0.4% of
+      control)
+  variant_2 vs control   3,320,435 vs 3,320,536 users   control 25.1%   detectable 0.11 pp (0.4% of
       control)
 
 Primary metric_1: effect, 95% interval, p; interval first
-  variant_0 vs control   -0.07 pp   -0.33 to +0.20 pp   p 0.635   not detected
-  variant_1 vs control   +0.10 pp   +0.04 to +0.17 pp   p 0.003   detected, treatment higher
-  variant_2 vs control   -0.06 pp   -0.12 to +0.01 pp   p 0.085   not detected
+  variant_0 vs control   -0.07 pp   -0.33 to +0.20 pp   p 0.635   Holm 0.635   not detected
+  variant_1 vs control   +0.10 pp   +0.04 to +0.17 pp   p 0.003   Holm 0.008   detected, treatment
+      higher
+  variant_2 vs control   -0.06 pp   -0.12 to +0.01 pp   p 0.085   Holm 0.170   not detected
+  Holm-corrected across the 3 treatments; detection judged on the Holm p; intervals unadjusted
 
 Other metrics: corrected for 9 comparisons (Holm, and BH = Benjamini-Hochberg)
   metric_2   variant_0 vs control   +0.001   p 0.893   Holm 1.000   BH 0.893
@@ -51,11 +59,15 @@ Early versus late: did the effect fade?
 
 Monitoring replay: 95 looks; 5% budget spread across them; a boundary crossing = safe to stop
   variant_0 vs control on metric_1, O'Brien-Fleming spending at the sizes reached
+  chosen   first treatment in the arm order, not by its result
   spending design   never crosses in 95 looks; no early stop in either direction
   naive 1.96 rule   never fires
   final look   effect -0.07 pp   adjusted 95% -0.38 to +0.24 pp   boundary |z| 2.25
 
-Decision for variant_0 vs control: no detectable effect; that contrast could have seen 0.39 pp or
+Decision for variant_0 vs control: no detectable effect; that contrast could have seen 0.45 pp or
+    more
+Decision for variant_1 vs control: higher on metric_1 by +0.10 pp (+0.04 to +0.17 pp)
+Decision for variant_2 vs control: no detectable effect; that contrast could have seen 0.11 pp or
     more
 Figures:
   figures/corrections.png

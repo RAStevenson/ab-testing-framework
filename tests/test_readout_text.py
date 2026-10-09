@@ -126,3 +126,40 @@ def test_permutation_floor_is_named():
     assert fmt_perm_p(floor) == "p 0.0002, the floor for 10,000 relabelings"
     above = PermutationResult(observed=0.5, p_value=3 / 10_001, n_permutations=10_000)
     assert fmt_perm_p(above) == "p 0.0003"
+
+
+def test_several_treatments_get_a_decision_and_sensitivity_each(tmp_path: Path) -> None:
+    text = (
+        '[experiment]\nname = "hillstrom-fixture"\nalpha = 0.05\n\n'
+        '[input]\nshape = "user_rows"\n\n'
+        '[columns]\narm = "segment"\n\n'
+        '[columns.aliases.zip_code]\n"Surburban" = "Suburban"\n\n'
+        '[arms]\nlabels = ["No E-Mail", "Mens E-Mail", "Womens E-Mail"]\n'
+        "intended_split = [0.3334, 0.3333, 0.3333]\n\n"
+        '[[metrics]]\nname = "visit"\nkind = "binary"\nprimary = true\n\n'
+        '[[metrics]]\nname = "spend"\nkind = "continuous"\nnonnegative = true\n'
+    )
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(text, encoding="utf-8")
+    experiment = load_user_rows(load_config(config_path), FIXTURES / "hillstrom_shaped.csv")
+    lines = readout_lines(analyze_experiment(experiment, np.random.default_rng(0)), tmp_path, [])
+    decisions = [line for line in lines if line.startswith("Decision for")]
+    assert [line.split(":")[0] for line in decisions] == [
+        "Decision for Mens E-Mail vs No E-Mail",
+        "Decision for Womens E-Mail vs No E-Mail",
+    ]
+    assert (
+        "  Holm-corrected across the 2 treatments; detection judged on the Holm p; "
+        "intervals unadjusted"
+    ) in lines
+    sensitivity = lines.index("Sensitivity: smallest lift this sample could detect, 80% power")
+    assert (
+        lines[sensitivity + 1]
+        == "  each at alpha 0.05/2, the strictest level the Holm correction applies"
+    )
+    block = lines[sensitivity + 2 : lines.index("", sensitivity)]
+    assert [line.split("   ")[0] for line in block if not line.startswith("    ")] == [
+        "  Mens E-Mail vs No E-Mail",
+        "  Womens E-Mail vs No E-Mail",
+    ]
+    assert "  chosen   first treatment in the arm order, not by its result" in lines

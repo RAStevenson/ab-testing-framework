@@ -6,8 +6,8 @@ Data: what the intake did before any statistic
 Limitations (*): read every result below with these in view
   * the top 1% of users carry 67% of spend, and 94% of users have none; the cross-check below
       compares three methods
-  * the smallest detectable effect on converted is 6.5% of the control level, above a modest 5%
-      lift; a 'not detected' result here rules out little
+  * the smallest detectable effect on converted is above a modest 5% lift for treatment vs control
+      (6.5% of control); a 'not detected' result there rules out little
 
 Group split: does assignment match the plan?
   treatment vs control   59,844 vs 60,156   chi-square 0.81   p 0.368

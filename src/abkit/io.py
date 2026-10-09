@@ -130,7 +130,9 @@ def load_config(path: Path) -> dict:
 
     Returns the parsed dict with defaults filled. Raises ValueError naming
     the offending key on any structural problem; nothing is silently
-    defaulted except ``alpha`` (0.05) and the optional tables.
+    defaulted except ``alpha`` (0.05), the optional tables, and each
+    metric's ``column`` (its name), ``primary`` and ``nonnegative``
+    (False), and ``pre_column`` (None).
     """
     with open(path, "rb") as config_file:
         config = tomllib.load(config_file)
@@ -361,11 +363,14 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
 
     Cleaning rules, each recorded as a ValidationEvent when it fires:
 
-    - ``alias_normalized``: arm and aliased categorical values are
-      stripped, casefolded, and mapped through ``[columns.aliases]``.
+    - ``alias_normalized``: arm and aliased categorical values are stripped
+      and mapped through ``[columns.aliases]``.
+    - ``arm_label_normalized``: an arm label matched to ``arms.labels`` only
+      after trimming spaces or ignoring capitals.
     - ``null_row_dropped``: a row with an empty arm or an empty value in
-      any declared metric or pre-experiment column is dropped. Each drop rule
-      records the column it fired on with the first data row.
+      any declared metric or pre-experiment column is dropped. Where a
+      metric, pre-experiment, or day column caused a drop, the rule's first
+      occurrence records that column with its data row.
     - ``negative_value_dropped``: a row with a negative value in a metric
       declared ``nonnegative`` (or its pre-experiment column) is dropped.
     - ``uncoercible_dropped``: a row whose metric, pre-experiment, or day
@@ -693,7 +698,7 @@ def load_aggregates(config: dict, data_path: Path) -> Experiment:
         aggregates.append(ArmAggregate(arm, metric_name, None, count, mean, variance))
 
     # every declared metric must actually be present for every arm, and every
-    # arm must share the same checkpoint grid per metric: sections combine
+    # arm must share the same checkpoint grid per metric: the readout's blocks combine
     # arm series positionally, so a missing metric or an offset grid would
     # surface as a far-away crash or, worse, silently misaligned statistics
     grids: dict[str, tuple[float, ...]] = {}
@@ -719,7 +724,7 @@ def load_aggregates(config: dict, data_path: Path) -> Experiment:
                 raise ValueError(
                     f"checkpoint grids differ across arms for metric {metric.name!r}: "
                     f"{arm!r} has {len(cell_checkpoints)} checkpoints where "
-                    f"{arms[0]!r} has {len(reference)}; the archive rows are not "
+                    f"{arms[0]!r} has {len(reference)}; the file's rows are not "
                     "aligned and positional analysis would be wrong"
                 )
 

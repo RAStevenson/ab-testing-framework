@@ -126,6 +126,7 @@ class TestUserRowsFixture:
         assert comparison.absolute_lift == pytest.approx(0.13333, abs=1e-5)
         assert readout.data_shape == "user_rows"
         assert readout.arm_sizes == (("control", 15), ("treatment", 15))
+        assert readout.primary_holm is None  # one treatment, no family to correct
 
     def test_blocks_present_on_the_fixture(self, tmp_path: Path) -> None:
         readout = _readout(_user_experiment(tmp_path, extra_metric=True))
@@ -162,7 +163,7 @@ class TestLimitationCodes:
     def test_clean_generated_data_raises_only_the_missing_pre_column(self, tmp_path: Path) -> None:
         readout = _readout(_generated_experiment(tmp_path))
         assert _codes(readout) == ["no_pre_period"]
-        assert 0.0 < readout.sensitivity["relative_mde"] <= 0.05
+        assert 0.0 < readout.sensitivity[0][1]["relative_mde"] <= 0.05
 
     def test_group_split(self, tmp_path: Path) -> None:
         readout = _readout(_generated_experiment(tmp_path, treatment_share=0.4))
@@ -192,7 +193,8 @@ class TestLimitationCodes:
             limitation for limitation in readout.limitations if limitation.code == "low_sensitivity"
         )
         assert "smallest detectable effect on converted" in low.detail
-        assert readout.sensitivity["relative_mde"] > 0.05
+        assert "for treatment vs control (" in low.detail
+        assert readout.sensitivity[0][1]["relative_mde"] > 0.05
 
     def test_no_pre_period_clears_when_a_pre_column_is_declared(self, tmp_path: Path) -> None:
         readout = _readout(_generated_experiment(tmp_path, pre_column=True))
@@ -320,6 +322,13 @@ class TestHillstromShapedFixture:
             ("spend", "Womens E-Mail"),
         ]
         assert "no_pre_period" not in _codes(readout)
+        # two treatments: one sensitivity per contrast, and Holm across the primary's contrasts
+        assert [arm for arm, _ in readout.sensitivity] == ["Mens E-Mail", "Womens E-Mail"]
+        assert readout.primary_holm is not None and len(readout.primary_holm) == 2
+        raw = [comparison.p_value for _, comparison in readout.primary]
+        assert all(
+            adjusted >= p_value for adjusted, p_value in zip(readout.primary_holm, raw, strict=True)
+        )
 
 
 class TestConsistentPrefix:
@@ -379,7 +388,7 @@ class TestOmittedBlocks:
         stderr = capsys.readouterr().err
         assert stderr.count("Traceback") == 1
         assert "no per-checkpoint aggregates" in stderr
-        assert "omits the block 'Early versus late, and Daily monitoring'" in stderr
+        assert "omits the block 'Early versus late, and Monitoring replay'" in stderr
 
 
 def test_planted_spend_difference_matches_the_recipe_by_hand():
@@ -440,3 +449,21 @@ def test_heavy_tail_flag_states_both_facts_when_spenders_exceed_one_percent(tmp_
     # half the generated users convert and only converters spend, so the
     # spenders are far above 1% and the flag must not claim a cause
     assert "because" not in flag.detail
+
+
+def test_sensitivity_with_several_treatments_is_solved_at_alpha_over_their_number(
+    tmp_path: Path,
+):
+    text = (
+        '[experiment]\nname = "hillstrom-fixture"\nalpha = 0.05\n\n'
+        '[input]\nshape = "user_rows"\n\n'
+        '[columns]\narm = "segment"\n\n'
+        '[columns.aliases.zip_code]\n"Surburban" = "Suburban"\n\n'
+        '[arms]\nlabels = ["No E-Mail", "Mens E-Mail", "Womens E-Mail"]\n\n'
+        '[[metrics]]\nname = "visit"\nkind = "binary"\nprimary = true\n'
+    )
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(text, encoding="utf-8")
+    experiment = load_user_rows(load_config(config_path), FIXTURES / "hillstrom_shaped.csv")
+    readout = _readout(experiment)
+    assert [values["alpha"] for _, values in readout.sensitivity] == [0.025, 0.025]

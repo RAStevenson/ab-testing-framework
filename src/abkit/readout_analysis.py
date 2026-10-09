@@ -7,7 +7,7 @@ the checks raised, the group-split check, the sensitivity of the sample,
 the primary metric per contrast with its CUPED adjustment where a
 pre-experiment column exists, the corrected secondary comparisons, the
 revenue cross-check, the early-versus-late comparison, the
-daily-monitoring replay with adjusted intervals, and the planted truth
+monitoring replay with adjusted intervals, and the planted truth
 for synthetic runs. ``readout_text`` turns the record into lines and
 ``readout_figures`` draws from it; neither recomputes anything.
 
@@ -131,7 +131,7 @@ class NoveltyCheck:
 
 @dataclass(frozen=True)
 class MonitoringReplay:
-    """The daily-monitoring replay of the first contrast with boundaries and adjusted intervals.
+    """The monitoring replay of the first contrast with boundaries and adjusted intervals.
 
     ``z_naive`` is the fixed dashboard threshold and ``naive_look`` the
     first look it would have fired at, for the comparison the readout
@@ -153,10 +153,12 @@ class MonitoringReplay:
 class ExperimentReadout:
     """Every result the readout reports, in its order, with no text.
 
-    ``sensitivity`` holds the smallest detectable effect of the first
-    contrast at the realized sizes and the inputs behind it. ``primary``,
-    ``cuped``, and ``corrections`` are per contrast. ``excluded_checkpoints``
-    counts the trailing checkpoints the time-based blocks could not use.
+    ``sensitivity`` holds, per contrast, the smallest detectable effect at
+    the realized sizes and the inputs behind it. ``primary``, ``cuped``, and
+    ``corrections`` are per contrast. ``primary_holm`` holds the primary
+    metric's Holm-adjusted p-values, in contrast order, when there are two or
+    more treatments, and is None otherwise. ``excluded_checkpoints`` counts
+    the trailing checkpoints the time-based blocks could not use.
     """
 
     experiment_name: str
@@ -168,8 +170,9 @@ class ExperimentReadout:
     limitations: tuple[Limitation, ...]
     group_split: tuple[tuple[str, SrmResult], ...] | None
     ratio_stability: tuple[float, int, float, int] | None
-    sensitivity: dict[str, float]
+    sensitivity: tuple[tuple[str, dict[str, float]], ...]
     primary: tuple[tuple[str, RateComparison | MeanComparison], ...]
+    primary_holm: tuple[float, ...] | None
     cuped: tuple[tuple[str, str, CupedResult], ...]
     corrections: tuple[CorrectedComparison, ...]
     heavy_tail: HeavyTailCheck | None
@@ -430,20 +433,55 @@ def _group_split(
     return None, None, None
 
 
-def _sensitivity(
+def _joined(items: list[str]) -> str:
+    """A plain-English list: "a", "a and b", or "a, b, and c" with the Oxford comma."""
+    if len(items) <= 2:
+        return " and ".join(items)
+    return ", ".join(items[:-1]) + ", and " + items[-1]
+
+
+def _sensitivities(
     experiment: Experiment, metric: MetricSpec
-) -> tuple[dict[str, float], Limitation | None]:
-    """The smallest effect the first contrast could detect at its realized sizes with the target
-    power. Binary metrics solve the pooled z-test's power; continuous ones use the normal
-    approximation with each arm's realized variance (accurate to the same order as the
-    planning formula, which ignores the wrong-direction tail)."""
+) -> tuple[tuple[tuple[str, dict[str, float]], ...], Limitation | None]:
+    """The smallest detectable effect for every contrast, and one flag naming each contrast whose
+    smallest detectable effect is above a modest lift or cannot be reached at all."""
+    results: list[tuple[str, dict[str, float]]] = []
+    weak: list[str] = []
+    for _, treatment_arm in _contrasts(experiment):
+        values, problem = _sensitivity(experiment, metric, treatment_arm)
+        results.append((treatment_arm, values))
+        if problem is not None:
+            weak.append(f"{treatment_arm} vs {experiment.arms[0]} ({problem})")
+    if not weak:
+        return tuple(results), None
+    return tuple(results), Limitation(
+        "low_sensitivity",
+        f"the smallest detectable effect on {metric.name} is above a modest "
+        f"{MODEST_RELATIVE_LIFT:.0%} lift for " + _joined(weak) + "; a 'not detected' result "
+        "there rules out little",
+    )
+
+
+def _sensitivity(
+    experiment: Experiment, metric: MetricSpec, treatment_arm: str
+) -> tuple[dict[str, float], str | None]:
+    """The smallest effect one contrast could detect at its realized sizes with the target power,
+    and a short note when it is above a modest lift or unreachable. Binary metrics solve the
+    pooled z-test's power; continuous ones use the normal approximation with each arm's realized
+    variance (accurate to the same order as the planning formula, which ignores the
+    wrong-direction tail).
+
+    With k treatments the primary's contrasts are Holm-corrected, and Holm's strictest level for
+    any one of them is alpha / k, so the effect is solved at that level: an effect this large is
+    detected under the correction whatever the other contrasts show."""
+    alpha = experiment.alpha / max(1, len(experiment.arms) - 1)
     control = _agg(experiment, experiment.arms[0], metric.name, None)
-    treatment = _agg(experiment, experiment.arms[1], metric.name, None)
+    treatment = _agg(experiment, treatment_arm, metric.name, None)
     values: dict[str, float] = {
         "n_control": float(control.n),
         "n_treatment": float(treatment.n),
         "control_mean": float(control.mean),
-        "alpha": float(experiment.alpha),
+        "alpha": float(alpha),
         "power": TARGET_POWER,
     }
     if metric.kind == "binary":
@@ -455,7 +493,7 @@ def _sensitivity(
                 control.mean,
                 control.mean + (1.0 - control.mean - 1e-9),
                 control.n,
-                alpha=experiment.alpha,
+                alpha=alpha,
                 n_treatment=treatment.n,
             )
             >= TARGET_POWER
@@ -463,15 +501,11 @@ def _sensitivity(
         if not reachable:
             values["mde"] = float("nan")
             values["relative_mde"] = float("nan")
-            return values, Limitation(
-                "low_sensitivity",
-                f"the sample ({control.n:,} and {treatment.n:,} users) cannot reach "
-                f"{TARGET_POWER:.0%} power for any lift from a control rate of {control.mean:.1%}",
-            )
+            return values, f"no lift reachable at {TARGET_POWER:.0%} power"
         mde = mde_two_proportions(
             control.mean,
             control.n,
-            alpha=experiment.alpha,
+            alpha=alpha,
             power=TARGET_POWER,
             n_treatment=treatment.n,
         )
@@ -488,20 +522,12 @@ def _sensitivity(
         standard_error = float(
             np.sqrt(control.variance / control.n + treatment.variance / treatment.n)
         )
-        mde = (
-            stats.norm.isf(experiment.alpha / 2.0) + stats.norm.isf(1.0 - TARGET_POWER)
-        ) * standard_error
+        mde = (stats.norm.isf(alpha / 2.0) + stats.norm.isf(1.0 - TARGET_POWER)) * standard_error
     values["mde"] = float(mde)
     values["relative_mde"] = float(mde / control.mean) if control.mean != 0.0 else float("nan")
-    limitation = None
     if np.isfinite(values["relative_mde"]) and values["relative_mde"] > MODEST_RELATIVE_LIFT:
-        limitation = Limitation(
-            "low_sensitivity",
-            f"the smallest detectable effect on {metric.name} is {values['relative_mde']:.1%} of "
-            f"the control level, above a modest {MODEST_RELATIVE_LIFT:.0%} lift; a 'not detected' "
-            "result here rules out little",
-        )
-    return values, limitation
+        return values, f"{values['relative_mde']:.1%} of control"
+    return values, None
 
 
 def _few_events(experiment: Experiment, metric: MetricSpec) -> Limitation | None:
@@ -576,15 +602,14 @@ def _cuped(
 def _corrections(experiment: Experiment) -> tuple[CorrectedComparison, ...]:
     """Holm and Benjamini-Hochberg over the non-primary family (or the primary metric's contrasts
     when there is no other metric); empty when the family has fewer than two members."""
-    metric_primary = _primary(experiment)
     family: list[tuple[MetricSpec, str]] = [
         (metric, treatment_arm)
         for metric in experiment.metrics
         if not metric.primary
         for _, treatment_arm in _contrasts(experiment)
     ]
-    if not family:
-        family = [(metric_primary, treatment_arm) for _, treatment_arm in _contrasts(experiment)]
+    # the primary's own contrasts are corrected in the primary block, so they
+    # never stand in for a missing secondary family here
     if len(family) < 2:
         return ()
     comparisons = [_cell_test(experiment, arm, metric) for metric, arm in family]
@@ -695,7 +720,7 @@ def _usable_checkpoints(experiment: Experiment, metric: MetricSpec) -> tuple[int
     try:
         all_series = [_series(experiment, arm, metric.name) for arm in experiment.arms]
     except ValueError:
-        _report_skipped_block("Early versus late, and Daily monitoring")
+        _report_skipped_block("Early versus late, and Monitoring replay")
         return None
     n_checkpoints = len(_present(experiment.checkpoints, "checkpoints"))
     n_usable = min(_consistent_prefix(*series) for series in all_series)
@@ -871,12 +896,20 @@ def analyze_experiment(
     heavy_tail, tail_limitation = _heavy_tail(experiment, random_generator)
     if tail_limitation is not None:
         limitations.append(tail_limitation)
-    sensitivity, sensitivity_limitation = _sensitivity(experiment, metric)
+    sensitivity, sensitivity_limitation = _sensitivities(experiment, metric)
     if sensitivity_limitation is not None:
         limitations.append(sensitivity_limitation)
     cuped, cuped_limitation = _cuped(experiment)
     if cuped_limitation is not None:
         limitations.append(cuped_limitation)
+    primary = _primary_comparisons(experiment, metric)
+    # with two or more treatments the primary metric's contrasts are a family of
+    # their own, and a ship decision needs the chance of any false positive capped
+    primary_holm = (
+        tuple(float(value) for value in holm([comparison.p_value for _, comparison in primary]))
+        if len(primary) >= 2
+        else None
+    )
     missing_days = _missing_days(experiment)
     if missing_days is not None:
         limitations.append(missing_days)
@@ -932,7 +965,8 @@ def analyze_experiment(
         group_split=group_split,
         ratio_stability=ratio_stability,
         sensitivity=sensitivity,
-        primary=_primary_comparisons(experiment, metric),
+        primary=primary,
+        primary_holm=primary_holm,
         cuped=cuped,
         corrections=_corrections(experiment),
         heavy_tail=heavy_tail,

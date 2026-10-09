@@ -1,6 +1,8 @@
 # The synthetic pipeline check, not an example of analysis. One generated
 # experiment with effects of known size runs through the real intake, and
-# the readout's planted-versus-found block confirms the pipeline finds them.
+# the readout's planted-versus-found block confirms the pipeline finds the
+# effects large enough to detect and reports the rest as not detected, with
+# intervals that contain the planted values.
 # This file is both
 # the generation recipe ([truth]) and the intake config the readout reads;
 # scripts/run_synthetic_check.py writes the rows to data/synthetic/ (never
@@ -45,8 +47,11 @@ pre_column = "pre_spend"
 # finite mean but infinite variance. pre_spend is the same zero-inflated
 # spend for the period before: whether a user spent before and how much each
 # share pre_correlation of the latent draws behind their spend now, so CUPED
-# has a planted link to find. The whale tail is unpredictable from the past,
-# so the share of noise removed sits well below the correlation squared.
+# has a planted link to find. pre_correlation links the hidden draws, not
+# spend itself, so spend
+# correlates with past spend at about 0.54 and CUPED removes about 30%
+# without whales; the whale tail, which the past does not predict, pulls the
+# share lower.
 [truth]
 seed = 38
 n_users = 120000

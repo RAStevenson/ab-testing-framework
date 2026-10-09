@@ -1,7 +1,7 @@
 """The readout's figures, drawn from an ExperimentReadout and listed by path in the readout.
 
 ``draw_figures`` draws only the figures the readout has data for: the
-daily-monitoring replay with its adjusted intervals, the early-versus-late
+monitoring replay with its adjusted intervals, the early-versus-late
 means, the corrections, and the revenue distributions. matplotlib is
 imported inside the drawing functions, so the library's runtime
 dependencies stay numpy, scipy, and statsmodels for everything except

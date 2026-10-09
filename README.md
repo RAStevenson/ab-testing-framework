@@ -34,7 +34,7 @@ adjusted interval contains zero at every look.*
 
 The readout is a text file of labeled blocks. Each heading carries a few
 words on how to read its block, results are short labeled lines, and the
-file closes with a decision line and the figures' paths. There is no
+file closes with a decision line for each treatment and the figures' paths. There is no
 generated prose. This is the committed readout of a real ASOS.com
 experiment, [analysis/asos/readout.txt](analysis/asos/readout.txt), whole:
 
@@ -58,17 +58,25 @@ Limitations (*): read every result below with these in view
 
 Group split: does assignment match the plan?
   intended split not on record; testing whether the share of new users per checkpoint is constant
+  chosen   first treatment in the arm order, not by its result
   variant_0 vs control   96 checkpoints   chi-square 78.23   df 95   p 0.894
   result   stable across checkpoints
 
 Sensitivity: smallest lift this sample could detect, 80% power
-  variant_0 vs control   102,316 vs 3,320,536 users   control 25.1%   detectable 0.39 pp (1.5% of
+  each at alpha 0.05/3, the strictest level the Holm correction applies
+  variant_0 vs control   102,316 vs 3,320,536 users   control 25.1%   detectable 0.45 pp (1.8% of
+      control)
+  variant_1 vs control   3,316,730 vs 3,320,536 users   control 25.1%   detectable 0.11 pp (0.4% of
+      control)
+  variant_2 vs control   3,320,435 vs 3,320,536 users   control 25.1%   detectable 0.11 pp (0.4% of
       control)
 
 Primary metric_1: effect, 95% interval, p; interval first
-  variant_0 vs control   -0.07 pp   -0.33 to +0.20 pp   p 0.635   not detected
-  variant_1 vs control   +0.10 pp   +0.04 to +0.17 pp   p 0.003   detected, treatment higher
-  variant_2 vs control   -0.06 pp   -0.12 to +0.01 pp   p 0.085   not detected
+  variant_0 vs control   -0.07 pp   -0.33 to +0.20 pp   p 0.635   Holm 0.635   not detected
+  variant_1 vs control   +0.10 pp   +0.04 to +0.17 pp   p 0.003   Holm 0.008   detected, treatment
+      higher
+  variant_2 vs control   -0.06 pp   -0.12 to +0.01 pp   p 0.085   Holm 0.170   not detected
+  Holm-corrected across the 3 treatments; detection judged on the Holm p; intervals unadjusted
 
 Other metrics: corrected for 9 comparisons (Holm, and BH = Benjamini-Hochberg)
   metric_2   variant_0 vs control   +0.001   p 0.893   Holm 1.000   BH 0.893
@@ -92,11 +100,15 @@ Early versus late: did the effect fade?
 
 Monitoring replay: 95 looks; 5% budget spread across them; a boundary crossing = safe to stop
   variant_0 vs control on metric_1, O'Brien-Fleming spending at the sizes reached
+  chosen   first treatment in the arm order, not by its result
   spending design   never crosses in 95 looks; no early stop in either direction
   naive 1.96 rule   never fires
   final look   effect -0.07 pp   adjusted 95% -0.38 to +0.24 pp   boundary |z| 2.25
 
-Decision for variant_0 vs control: no detectable effect; that contrast could have seen 0.39 pp or
+Decision for variant_0 vs control: no detectable effect; that contrast could have seen 0.45 pp or
+    more
+Decision for variant_1 vs control: higher on metric_1 by +0.10 pp (+0.04 to +0.17 pp)
+Decision for variant_2 vs control: no detectable effect; that contrast could have seen 0.11 pp or
     more
 Figures:
   figures/corrections.png
@@ -111,10 +123,15 @@ group-split check comes before any result. A split that is off from the
 plan means users went missing or were assigned unevenly, and no result can
 repair that. When the intended split is not on record, as here, the check
 becomes a test that the share of new users per checkpoint stayed constant.
-Sensitivity states the smallest effect this sample could have
-detected, so a "not detected" result says what it rules out.
+Sensitivity states, for each
+treatment, the smallest effect this sample could have detected, so a "not
+detected" result says what it rules out. With several treatments it is
+solved at alpha divided by their number, the strictest level the Holm
+correction below can apply, so the figure holds under that correction.
 
-The primary metric comes next, interval first. A CUPED block follows for each metric
+The primary metric comes next, interval first. With two or more treatments, the
+primary metric is compared with the control once per treatment, so those comparisons are corrected with Holm. Whether each counts as detected is judged on the corrected
+p-value, while its interval stays unadjusted. A CUPED block follows for each metric
 that has a pre-experiment column, which in both committed user-level
 readouts is spend, not the primary. Secondary metrics are corrected two
 ways. Holm caps the chance of any false positive, which is what a ship
@@ -127,9 +144,15 @@ test, and a trimmed mean on the same question. With a day
 column, the early-versus-late block tests whether the effect faded. The
 monitoring replay checks the finished run look by look against boundaries
 computed at the sample sizes each look reached. Its adjusted interval is
-built to contain the true effect at every look at once. On the synthetic
+built to contain the true effect at every look at once. With several treatments, the cross-check, the
+replay, and the split test across checkpoints run on the first treatment,
+meaning the first in `arms.labels` for user rows or the first variant in
+sorted order for per-group totals. That rule does not look at the results, so the choice cannot favor
+whichever treatment looks best. On the synthetic
 pipeline check described below, and only there, a final block prints what
-the generator planted beside what the readout found.
+the generator planted beside what the readout found. The readout closes
+with one decision line per treatment, or a single stop line when the group
+split is broken.
 
 Two more readouts are committed. [analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt)
 reads the 2008 MineThatData e-mail experiment, user-level rows with three
@@ -151,12 +174,28 @@ works out to +0.32 per user. The readout estimates +0.43, and its interval
 of -0.31 to +1.17 contains the planted value. The whale tail makes spend
 too noisy for this sample to detect an effect that small (p 0.253), so the
 readout reports it as not detected rather than found, which is the other
-half of what the check confirms. 
-CUPED on the pre-experiment column removes 14% of the noise on spend. The
-generator gives the pre-experiment column a correlation of 0.9 with whether
-a user spends and roughly how much, but the column has no whale purchases,
-which carry much of the noise in spend. So CUPED removes far less than the
-81% (0.9 squared) that a correlation of 0.9 on spend itself would remove.
+half of what the check confirms.
+
+
+CUPED on the pre-experiment column removes 14% of the noise on spend. The generator decides
+whether a user spends, and how much, from hidden random draws. The
+pre-experiment column comes from matching draws for the period before,
+each correlated with its present one at 0.9. Spend itself then correlates
+with past spend at only about 0.54. CUPED removes the square of that,
+about 30% when there are no whale purchases. The
+tests compute that value in closed form and check it against simulation.
+The whale purchases have no counterpart in the pre-experiment column, so
+they add noise CUPED cannot remove. The whale tail's variance is infinite,
+so how much they add depends on how large the sample's biggest purchases
+happen to be. Measured on 2026-10-09 with a one-off loop that is not in
+the repo, over eight seeds at 400,000 users, the share CUPED removed ran from 12% to 18%.
+
+The generator was revised once, on 2026-10-08. The first
+version tied past to present spend only through the log of the amount,
+among the few users who spend, so CUPED, which works on spend itself,
+removed 0%. The revision also ties whether a user spent before to whether they spend
+now, and the setting for the hidden draws' correlation rose from 0.6 to
+0.9.
 
 ## Data checks and repairs
 
@@ -180,6 +219,10 @@ Dropped and counted, with a stop above 1% of rows:
 
 The 1% stop exists because a file past that share is not clean enough to
 read, and a readout of the survivors would describe a different experiment.
+Some exports leave a metric blank for users who never did the thing it
+counts, such as spend for a user who bought nothing. Fill those blanks with
+zero before running the tool. Otherwise each such row is dropped, and once the drops pass 1% of rows
+the run stops.
 
 Stops the run, naming what failed:
 
@@ -242,7 +285,29 @@ per-group totals, the checkpoint column under `[aggregates]` does the
 same). A `pre_column` on a metric, a value measured before assignment, is what
 turns on CUPED for that metric. Columns the config does not name are
 ignored. A config may pin its data file's md5 so a readout cannot quietly
-describe the wrong file.
+describe the wrong file. These are the keys a config can carry.
+
+| Table and key | Needed | What it does |
+|---|---|---|
+| `[experiment]` `name` | yes | the readout's title |
+| `[experiment]` `alpha` | no, 0.05 | the false-positive rate for the effect tests, the sensitivity, the corrections, and the replay, whose adjusted interval follows it; the other intervals stay 95% and the split check uses 0.001 |
+| `[input]` `shape` | yes | `user_rows` or `aggregates` |
+| `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
+| `[input]` `md5` | no | the data file's checksum; a different file stops the run |
+| `[columns]` `arm` | user rows | the column holding each user's group |
+| `[columns]` `day` | no | numeric time since the start; turns on the time-based blocks |
+| `[columns]` `user_id` | no | turns on the stop for a user appearing twice |
+| `[columns.aliases.<column>]` | no | value replacements for that column, old = new |
+| `[arms]` `labels` | user rows | the group labels, control first |
+| `[arms]` `intended_split` | no | the planned share per group; turns on the check against the plan |
+| `[aggregates]` `experiment_id_column`, `experiment_id` | no | keep only one experiment's rows in a file that holds several |
+| `[aggregates]` column names | aggregates | where the variant, metric, checkpoint, and each group's count, mean, and variance live |
+| `[[metrics]]` `name`, `kind` | yes | one entry per metric; `kind` is `binary` or `continuous` |
+| `[[metrics]]` `primary` | one metric | the metric the decisions are made on |
+| `[[metrics]]` `column` | no, the name | the metric's column in the file |
+| `[[metrics]]` `nonnegative` | no, user rows only | drops a row with a negative value |
+| `[[metrics]]` `pre_column` | no, user rows only | a value measured before assignment; turns on CUPED for that metric |
+| `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block |
 
 The tool needs Python 3.11 or newer. There is no install step, because the entry
 scripts put `src/` on the import path themselves, so a fresh clone runs
@@ -266,8 +331,9 @@ never on a hopeless run. It also cannot watch a running experiment. Each
 boundary depends on the final look's sample size, which is known only once
 the run has ended, so the replay reads a finished file. After a sequential stop the only interval
 is the adjusted one, which is built to hold at every look at once rather
-than for the stopping look alone. The bootstrap covers a difference in means
-only. The relative lift is a point estimate without an interval.
+than for the stopping look alone. The bootstrap covers a difference in means only. Every metric is one value per user. A ratio such as clicks per session or
+revenue per order has a denominator that varies by user, and its variance
+needs a method this tool does not have. The relative lift is a point estimate without an interval.
 
 The bootstrap interval is scipy's BCa, and on skewed data it still runs a
 little under its nominal coverage. Measured on 2026-10-07 with a one-off loop that is not in the repo, on
@@ -321,9 +387,6 @@ interval when an arm sits at 0% or 100%, both through statsmodels. The pooled va
 evaluates, and the unpooled one is right away from the null, where the
 interval lives.
 
-Results come back as frozen dataclasses because `result.p_value` reads
-better in a review than `result[3]`.
-
 ## How it is tested
 
 Statistical code can be wrong and still return plausible numbers, so the
@@ -349,17 +412,17 @@ outside a short allowed list.
 - `src/abkit/io.py`: the config, the two loaders, and the checks and repairs.
 - `src/abkit/readout_analysis.py`: every number the readout reports, computed once, no text.
 - `src/abkit/readout_text.py` and `readout_figures.py`: the lines and the figures.
-- `src/abkit/frequentist.py`, `power.py`, `resampling.py`, `cuped_adjustment.py`: thin wrappers over statsmodels and scipy that return the repo's result dataclasses.
+- `src/abkit/frequentist.py`, `power.py`, `resampling.py`, `cuped_adjustment.py`: thin wrappers over statsmodels and scipy; the tests among them return the repo's result dataclasses.
 - `src/abkit/sequential.py`: the spending boundaries and the adjusted intervals.
-- `src/abkit/results.py`: the frozen result dataclasses every public function returns.
+- `src/abkit/results.py`: the frozen result dataclasses the statistical functions return.
 - `src/abkit/generators.py`: the generated experiment the synthetic pipeline check runs on.
 - `scripts/`: the analyze, plan, synthetic, and fetch commands.
 - `analysis/`: the three committed readouts with their configs and figures.
 
 ## Conventions
 
-Every public function carries full type hints and returns a frozen
-dataclass rather than a tuple. Randomness always flows through an explicit
+Every public function carries full type hints, and every statistical test
+returns a frozen dataclass rather than a tuple. Randomness always flows through an explicit
 `numpy.random.Generator` parameter, with no module-level seeding. Inputs
 fail with an explicit `ValueError`. Two exceptions exist. The intake's
 coercion catch turns an unreadable value into a counted and reported row

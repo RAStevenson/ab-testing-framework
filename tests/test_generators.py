@@ -182,21 +182,46 @@ def test_pre_spend_shares_the_planted_link_with_spend():
     assert spent_before.mean() == pytest.approx(0.06, abs=0.003)
 
 
-def test_cuped_on_the_example_rows_removes_a_visible_share_of_the_noise():
+def _expected_cuped_share_without_whales(spend_rate: float, log_sigma: float, rho: float) -> float:
+    """The share of spend's variance a pre-experiment column removes, in closed form, for the
+    whale-free recipe: spend and pre_spend are each a spend decision (a normal latent below the
+    spend-rate quantile) times a lognormal amount, with both latents correlated at rho. The
+    squared correlation of the two products is the share; log_mean cancels out of it."""
+    from scipy import stats
+
+    cutoff = stats.norm.ppf(spend_rate)
+    both_spend = stats.multivariate_normal(mean=[0.0, 0.0], cov=[[1.0, rho], [rho, 1.0]]).cdf(  # pyright: ignore[reportArgumentType]
+        [cutoff, cutoff]
+    )
+    mean = spend_rate * np.exp(log_sigma**2 / 2.0)
+    second_moment = spend_rate * np.exp(2.0 * log_sigma**2)
+    cross_moment = both_spend * np.exp(log_sigma**2 * (1.0 + rho))
+    correlation = (cross_moment - mean**2) / (second_moment - mean**2)
+    return float(correlation**2)
+
+
+def test_cuped_share_matches_the_closed_form_without_whales_and_drops_with_them():
     from abkit.cuped_adjustment import cuped_mean_diff
 
-    rows = _example_rows(200_000, seed=17, whale_rate=0.008, pre_correlation=0.9)
-    treated = rows["group"] == "treatment"
-    result = cuped_mean_diff(
-        rows["spend"][~treated],
-        rows["spend"][treated],
-        rows["pre_spend"][~treated],
-        rows["pre_spend"][treated],
-    )
-    # the whale tail is unpredictable from the past and its weight varies by
-    # seed, so the share sits well below the planted 0.9 squared (measured
-    # 0.14 to 0.33 across seeds at the recipe); it must still be visible
-    assert 0.10 < result.variance_reduction < 0.60
+    def share(whale_rate: float) -> float:
+        rows = _example_rows(400_000, seed=17, whale_rate=whale_rate, pre_correlation=0.9)
+        treated = rows["group"] == "treatment"
+        return cuped_mean_diff(
+            rows["spend"][~treated],
+            rows["spend"][treated],
+            rows["pre_spend"][~treated],
+            rows["pre_spend"][treated],
+        ).variance_reduction
+
+    expected = _expected_cuped_share_without_whales(0.06, 1.3, 0.9)
+    assert expected == pytest.approx(0.296, abs=0.001)
+    # measured 2026-10-09 over eight seeds at 400,000 users: 0.273 to 0.337, standard
+    # deviation about 0.026, so 0.08 is three standard deviations; the lognormal amount
+    # itself is heavy enough that one sample's share wanders this much
+    assert share(0.0) == pytest.approx(expected, abs=0.08)
+    # whale purchases have no pre-period counterpart and infinite variance, so they can
+    # only pull the share down; across the same eight seeds it ran 0.12 to 0.18
+    assert 0.05 < share(0.008) < expected
 
 
 def test_example_rows_reject_bad_parameters():

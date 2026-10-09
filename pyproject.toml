@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "abkit"
 version = "0.1.0"
-description = "A command-line readout for an exported experiment file: data checks and repairs, the standard tests through statsmodels and scipy, CUPED, and daily-monitoring boundaries at the sizes reached"
+description = "A command-line readout for an exported experiment file: data checks and repairs, the standard tests through statsmodels and scipy, CUPED, and a look-by-look replay of a finished run with boundaries at the sizes reached"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

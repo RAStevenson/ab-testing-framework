@@ -5,8 +5,8 @@ analysis:
 
 - unequal allocation, and sample-ratio mismatch caused by asymmetric data
   loss (``treatment_loss_rate``),
-- novelty effects: a treatment lift that decays over the first days of the
-  experiment as the user base habituates to the change,
+- novelty effects: a treatment lift that is larger for users who enter in
+  the first days and smaller for those who enter later,
 - heavy-tailed continuous outcomes where a handful of very large
   purchases dominate the arm means.
 

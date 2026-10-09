@@ -4,7 +4,7 @@ Every number comes from an ``ExperimentReadout``; nothing is recomputed
 here. Each block is a heading carrying a few-word guide to reading it,
 then indented labeled lines, then a result phrase chosen from a fixed
 table. A marker with a one-line legend stands in for a sentence. The
-readout closes with a decision line and the figures' paths, and is saved
+readout closes with a decision line per treatment and the figures' paths, and is saved
 as readout.txt beside them.
 """
 
@@ -104,9 +104,12 @@ def _interval(comparison: RateComparison | MeanComparison) -> str:
     return f"{comparison.ci_low:+.3f} to {comparison.ci_high:+.3f}"
 
 
-def _primary_outcome(comparison: RateComparison | MeanComparison, alpha: float) -> str:
-    """Which phrase table entry a primary comparison lands on."""
-    if comparison.p_value >= alpha:
+def _primary_outcome(
+    comparison: RateComparison | MeanComparison, alpha: float, p_value: float
+) -> str:
+    """Which phrase table entry a primary comparison lands on, read at the given p-value (the
+    Holm-adjusted one when the primary has two or more contrasts)."""
+    if p_value >= alpha:
         return "not_detected"
     effect = (
         comparison.absolute_lift
@@ -202,6 +205,7 @@ def _group_split_block(readout: ExperimentReadout) -> list[str]:
             _INDENT + "intended split not on record; testing whether the share of new users "
             "per checkpoint is constant"
         )
+        lines += _first_treatment_note(readout)
         if np.isfinite(p_value):
             lines.append(
                 _INDENT + f"{treatment_arm} vs {control_arm}   {n_intervals} checkpoints   "
@@ -221,36 +225,59 @@ def _group_split_block(readout: ExperimentReadout) -> list[str]:
 
 
 def _sensitivity_block(readout: ExperimentReadout) -> list[str]:
-    """Block 4: the smallest effect the first contrast could detect."""
-    values = readout.sensitivity
+    """Block 4: the smallest effect each contrast could detect."""
     binary = readout.primary_metric in _binary_metrics(readout)
+    control_arm = readout.arm_sizes[0][0]
     lines = ["", "Sensitivity: smallest lift this sample could detect, 80% power"]
-    control = pct(values["control_mean"], 1) if binary else f"{values['control_mean']:.3f}"
-    mde = values["mde"]
-    if not np.isfinite(mde):
-        detectable = "none reachable"
-    else:
-        detectable = pp(mde) if binary else f"{mde:.3f}"
-        if np.isfinite(values["relative_mde"]):
-            detectable += f" ({pct(values['relative_mde'], 1)} of control)"
-    treatment_arm, control_arm = readout.primary[0][0], readout.arm_sizes[0][0]
-    lines += _wrapped(
-        f"{treatment_arm} vs {control_arm}   {values['n_treatment']:,.0f} vs "
-        f"{values['n_control']:,.0f} users   control {control}   detectable {detectable}"
-    )
+    if len(readout.sensitivity) >= 2:
+        lines.append(
+            _INDENT + f"each at alpha {readout.alpha:g}/{len(readout.sensitivity)}, the strictest "
+            "level the Holm correction applies"
+        )
+    for treatment_arm, values in readout.sensitivity:
+        control = pct(values["control_mean"], 1) if binary else f"{values['control_mean']:.3f}"
+        mde = values["mde"]
+        if not np.isfinite(mde):
+            detectable = "none reachable"
+        else:
+            detectable = pp(mde) if binary else f"{mde:.3f}"
+            if np.isfinite(values["relative_mde"]):
+                detectable += f" ({pct(values['relative_mde'], 1)} of control)"
+        lines += _wrapped(
+            f"{treatment_arm} vs {control_arm}   {values['n_treatment']:,.0f} vs "
+            f"{values['n_control']:,.0f} users   control {control}   detectable {detectable}"
+        )
     return lines
+
+
+def _decision_p(readout: ExperimentReadout, index: int) -> float:
+    """The p-value a contrast's result is read at: Holm-adjusted when the primary has two or more
+    contrasts, its own otherwise."""
+    if readout.primary_holm is not None:
+        return readout.primary_holm[index]
+    return readout.primary[index][1].p_value
 
 
 def _primary_block(readout: ExperimentReadout) -> list[str]:
     """Block 5: the primary metric per contrast, interval first, then CUPED where it ran."""
     control_arm = readout.arm_sizes[0][0]
     lines = ["", f"Primary {readout.primary_metric}: effect, 95% interval, p; interval first"]
-    for treatment_arm, comparison in readout.primary:
-        outcome = _primary_outcome(comparison, readout.alpha)
+    for index, (treatment_arm, comparison) in enumerate(readout.primary):
+        outcome = _primary_outcome(comparison, readout.alpha, _decision_p(readout, index))
+        holm_text = (
+            f"   Holm {fmt_p(readout.primary_holm[index])}"
+            if readout.primary_holm is not None
+            else ""
+        )
         lines += _wrapped(
             f"{treatment_arm} vs {control_arm}   {_effect(comparison)}   "
-            f"{_interval(comparison)}   p {fmt_p(comparison.p_value)}   "
+            f"{_interval(comparison)}   p {fmt_p(comparison.p_value)}{holm_text}   "
             + _PRIMARY_RESULTS[outcome]
+        )
+    if readout.primary_holm is not None:
+        lines.append(
+            _INDENT + f"Holm-corrected across the {len(readout.primary)} treatments; detection "
+            "judged on the Holm p; intervals unadjusted"
         )
     binary_metrics = _binary_metrics(readout)
     for metric in dict.fromkeys(metric for metric, _, _ in readout.cuped):
@@ -310,6 +337,7 @@ def _heavy_tail_block(readout: ExperimentReadout) -> list[str]:
         "",
         f"Cross-check on {check.metric}: three methods, same question "
         f"({check.treatment_arm} vs {control_arm})",
+        *_first_treatment_note(readout),
         _INDENT + f"Welch         {welch.difference:+.3f}   {welch.ci_low:+.3f} to "
         f"{welch.ci_high:+.3f}   p {fmt_p(welch.p_value)}",
         _INDENT + f"bootstrap     {bootstrap.estimate:+.3f}   {bootstrap.ci_low:+.3f} to "
@@ -360,7 +388,7 @@ def _novelty_block(readout: ExperimentReadout) -> list[str]:
 
 
 def _monitoring_block(readout: ExperimentReadout) -> list[str]:
-    """Block 8b: the daily-monitoring replay with the final look's adjusted interval."""
+    """Block 8b: the monitoring replay with the final look's adjusted interval."""
     replay = readout.monitoring
     if replay is None:
         return []
@@ -380,22 +408,34 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
     else:
         naive_line = f"fires at look {replay.naive_look}"
     last = n_looks - 1
+    level = f"{1.0 - replay.intervals.alpha:.0%}"
     estimate = replay.intervals.estimates[last]
     low, high = replay.intervals.ci_low[last], replay.intervals.ci_high[last]
     if binary:
-        final = f"effect {pp_signed(estimate)}   adjusted 95% {100 * low:+.2f} to {pp_signed(high)}"
+        final = (
+            f"effect {pp_signed(estimate)}   adjusted {level} {100 * low:+.2f} to {pp_signed(high)}"
+        )
     else:
-        final = f"effect {estimate:+.3f}   adjusted 95% {low:+.3f} to {high:+.3f}"
+        final = f"effect {estimate:+.3f}   adjusted {level} {low:+.3f} to {high:+.3f}"
     return [
         "",
         f"Monitoring replay: {n_looks} looks; {readout.alpha:.0%} budget spread across them; "
         "a boundary crossing = safe to stop",
         _INDENT + f"{replay.treatment_arm} vs {control_arm} on {replay.metric}, "
         "O'Brien-Fleming spending at the sizes reached",
+        *_first_treatment_note(readout),
         _INDENT + f"spending design   {design_line}",
         _INDENT + f"naive {replay.z_naive:.2f} rule   {naive_line}",
         _INDENT + f"final look   {final}   boundary |z| {replay.intervals.boundaries[last]:.2f}",
     ]
+
+
+def _first_treatment_note(readout: ExperimentReadout) -> list[str]:
+    """One line saying why a single-contrast block uses the first treatment, when there are
+    several to choose from."""
+    if len(readout.primary) < 2:
+        return []
+    return [_INDENT + "chosen   first treatment in the arm order, not by its result"]
 
 
 def _truth_block(readout: ExperimentReadout) -> list[str]:
@@ -462,16 +502,21 @@ def _planted(value: object) -> str:
     return str(value)
 
 
-def _decision_line(readout: ExperimentReadout) -> str:
-    """The closing line: a broken split first, then the primary result of the first contrast,
-    named, since a readout with several treatments decides one contrast at a time."""
+def _decision_lines(readout: ExperimentReadout) -> list[str]:
+    """The closing lines: a broken split stops everything; otherwise one decision per contrast,
+    read at the Holm-adjusted p when there are several treatments."""
     if any(limitation.code == "group_split" for limitation in readout.limitations):
-        return _DECISIONS["split_broken"]
-    treatment_arm, comparison = readout.primary[0]
+        return [_DECISIONS["split_broken"]]
+    return [_decision_line(readout, index) for index in range(len(readout.primary))]
+
+
+def _decision_line(readout: ExperimentReadout, index: int) -> str:
+    """One contrast's decision, named, with its interval or its smallest detectable effect."""
+    treatment_arm, comparison = readout.primary[index]
     control_arm = readout.arm_sizes[0][0]
-    outcome = _primary_outcome(comparison, readout.alpha)
+    outcome = _primary_outcome(comparison, readout.alpha, _decision_p(readout, index))
     if outcome == "not_detected":
-        mde = readout.sensitivity["mde"]
+        mde = readout.sensitivity[index][1]["mde"]
         if not np.isfinite(mde):
             mde_text = "no lift at all with this sample"
         elif isinstance(comparison, RateComparison):
@@ -510,7 +555,11 @@ def readout_lines(
         + _monitoring_block(readout)
         + _truth_block(readout)
         + [""]
-        + _wrapped(_decision_line(readout), indent="")
+        + [
+            wrapped_line
+            for line in _decision_lines(readout)
+            for wrapped_line in _wrapped(line, indent="")
+        ]
     )
     if figure_paths:
         lines.append("Figures:")

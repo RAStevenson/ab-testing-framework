@@ -8,8 +8,8 @@ Limitations (*): read every result below with these in view
       z-test's normal approximation is unreliable here
   * the top 1% of users carry 65% of spend, and 67% of users have none; the cross-check below
       compares three methods
-  * the smallest detectable effect on converted is 184.3% of the control level, above a modest 5%
-      lift; a 'not detected' result here rules out little
+  * the smallest detectable effect on converted is above a modest 5% lift for treatment vs control
+      (184.3% of control); a 'not detected' result there rules out little
   * no metric declares a pre-experiment column (pre_column in the config); CUPED is skipped
 
 Group split: does assignment match the plan?

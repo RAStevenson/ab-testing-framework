@@ -6,8 +6,9 @@ Data: what the intake did before any statistic
 Limitations (*): read every result below with these in view
   * the top 1% of users carry 100% of spend, because fewer than 1% have any spend at all; the
       cross-check below compares three methods
-  * the smallest detectable effect on visit is 8.0% of the control level, above a modest 5% lift; a
-      'not detected' result here rules out little
+  * the smallest detectable effect on visit is above a modest 5% lift for Mens E-Mail vs No E-Mail
+      (8.8% of control) and Womens E-Mail vs No E-Mail (8.8% of control); a 'not detected' result
+      there rules out little
 
 Group split: does assignment match the plan?
   Mens E-Mail vs No E-Mail   21,307 vs 21,306   chi-square 0.00   p 0.971
@@ -15,12 +16,18 @@ Group split: does assignment match the plan?
   result   consistent with the plan
 
 Sensitivity: smallest lift this sample could detect, 80% power
-  Mens E-Mail vs No E-Mail   21,307 vs 21,306 users   control 10.6%   detectable 0.85 pp (8.0% of
+  each at alpha 0.05/2, the strictest level the Holm correction applies
+  Mens E-Mail vs No E-Mail   21,307 vs 21,306 users   control 10.6%   detectable 0.94 pp (8.8% of
+      control)
+  Womens E-Mail vs No E-Mail   21,387 vs 21,306 users   control 10.6%   detectable 0.94 pp (8.8% of
       control)
 
 Primary visit: effect, 95% interval, p; interval first
-  Mens E-Mail vs No E-Mail   +7.66 pp   +6.99 to +8.32 pp   p 5.7e-112   detected, treatment higher
-  Womens E-Mail vs No E-Mail   +4.52 pp   +3.89 to +5.16 pp   p 3.2e-44   detected, treatment higher
+  Mens E-Mail vs No E-Mail   +7.66 pp   +6.99 to +8.32 pp   p 5.7e-112   Holm 1.1e-111   detected,
+      treatment higher
+  Womens E-Mail vs No E-Mail   +4.52 pp   +3.89 to +5.16 pp   p 3.2e-44   Holm 3.2e-44   detected,
+      treatment higher
+  Holm-corrected across the 2 treatments; detection judged on the Holm p; intervals unadjusted
 
 CUPED on spend: adjusted by its pre-experiment column; narrower interval = less noise
   Mens E-Mail vs No E-Mail   +0.767   +0.483 to +1.052   p 1.2e-07   noise removed 0%
@@ -34,6 +41,7 @@ Other metrics: corrected for 4 comparisons (Holm, and BH = Benjamini-Hochberg)
   result   unadjusted 4 of 4 below 0.05; after Holm 4 survive
 
 Cross-check on spend: three methods, same question (Mens E-Mail vs No E-Mail)
+  chosen   first treatment in the arm order, not by its result
   Welch         +0.770   +0.485 to +1.055   p 1.2e-07
   bootstrap     +0.770   +0.493 to +1.069   BCa, 10,000 resamples
   permutation   +0.770   p 0.0002, the floor for 10,000 relabelings
@@ -42,6 +50,7 @@ Cross-check on spend: three methods, same question (Mens E-Mail vs No E-Mail)
   trimmed row is not a tail check here: 99% of users sit at zero
 
 Decision for Mens E-Mail vs No E-Mail: higher on visit by +7.66 pp (+6.99 to +8.32 pp)
+Decision for Womens E-Mail vs No E-Mail: higher on visit by +4.52 pp (+3.89 to +5.16 pp)
 Figures:
   figures/corrections.png
   figures/revenue.png
