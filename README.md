@@ -126,7 +126,10 @@ conversion lift, a novelty boost that fades over the first days, a few
 users who spend far more than the rest (a whale tail), and a
 pre-experiment column. The planted
 end-of-run lift is +0.67 pp with the novelty averaged in, and the readout
-finds +0.67 pp with an interval of +0.39 to +0.95 pp.
+finds +0.67 pp with an interval of +0.39 to +0.95 pp. CUPED on the
+pre-experiment column removes 14% of the noise on spend, well below the
+planted correlation squared, because the whale tail is unpredictable from
+the past.
 
 ## Data checks and repairs
 

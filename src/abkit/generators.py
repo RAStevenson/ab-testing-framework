@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy import stats
 
 
 @dataclass(frozen=True)
@@ -224,11 +225,15 @@ def generate_example_rows(
     persistent ``absolute_lift`` plus a ``novelty_boost`` that has halved
     after ``novelty_half_life_days``) and ``spend`` follows
     ``generate_continuous``'s zero-inflated lognormal with a Pareto whale
-    tail, both on those users. ``pre_spend`` is a lognormal whose log
-    correlates with each user's log spend amount at ``pre_correlation``
-    (whales excepted), so CUPED on spend has a known amount of noise to
-    remove. Returns the columns ``user_id``, ``group``, ``day``,
-    ``converted``, ``spend``, and ``pre_spend``, aligned.
+    tail, both on those users. ``pre_spend`` is the same zero-inflated
+    lognormal for the period before the experiment, without the whale tail:
+    whether a user spent before and how much each share ``pre_correlation``
+    of the latent draws behind whether they spend now and how much, so a
+    past spender is likelier to spend now and a past big spender to spend
+    more. That planted link is on the raw outcome, which is what CUPED on
+    spend removes; the realized share is what the readout reports, and the
+    generator tests pin it. Returns the columns ``user_id``, ``group``,
+    ``day``, ``converted``, ``spend``, and ``pre_spend``, aligned.
     """
     _validate_common(n_users, 0.5, n_days)
     if not 0.0 <= base_rate <= 1.0:
@@ -255,20 +260,27 @@ def generate_example_rows(
     rate = np.where(treated, base_rate + absolute_lift + novelty_boost * decay, base_rate)
     converted = (random_generator.random(n_users) < rate).astype(np.float64)
 
+    # one latent draw decides whether a user spends and another how much; the
+    # pre-experiment column shares pre_correlation of each and the rest is
+    # independent noise. Thresholding the normal CDF keeps the planted spend
+    # rates exact in expectation.
+    spend_latent = random_generator.standard_normal(n_users)
+    amount_latent = random_generator.standard_normal(n_users)
+    pre_spend_latent = pre_correlation * spend_latent + np.sqrt(
+        1.0 - pre_correlation**2
+    ) * random_generator.standard_normal(n_users)
+    pre_amount_latent = pre_correlation * amount_latent + np.sqrt(
+        1.0 - pre_correlation**2
+    ) * random_generator.standard_normal(n_users)
     spend_probability = np.where(treated, spend_rate + spend_rate_lift, spend_rate)
-    spends = random_generator.random(n_users) < spend_probability
-    # the latent log amount is the user's spend propensity; pre_spend shares
-    # pre_correlation of it and the rest is independent noise
-    propensity = random_generator.standard_normal(n_users)
-    amount = np.exp(log_mean + log_sigma * propensity)
+    spends = stats.norm.cdf(spend_latent) < spend_probability
+    pre_spends = stats.norm.cdf(pre_spend_latent) < spend_rate
+    amount = np.exp(log_mean + log_sigma * amount_latent)
+    pre_amount = np.exp(log_mean + log_sigma * pre_amount_latent)
     whale_amount = whale_scale * (1.0 + random_generator.pareto(whale_shape, size=n_users))
     is_whale = random_generator.random(n_users) < whale_rate
     spend = np.where(spends, np.where(is_whale, whale_amount, amount), 0.0)
-    pre_noise = random_generator.standard_normal(n_users)
-    pre_spend = np.exp(
-        log_mean
-        + log_sigma * (pre_correlation * propensity + np.sqrt(1.0 - pre_correlation**2) * pre_noise)
-    )
+    pre_spend = np.where(pre_spends, pre_amount, 0.0)
 
     width = len(str(n_users))
     return {

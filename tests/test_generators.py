@@ -166,13 +166,37 @@ def test_example_rows_share_one_assignment_across_columns():
     assert np.all((rows["day"] >= 0) & (rows["day"] < 14))
 
 
-def test_pre_spend_correlates_with_the_spend_propensity_as_planted():
+def test_pre_spend_shares_the_planted_link_with_spend():
     rows = _example_rows(200_000, seed=16)
-    spenders = rows["spend"] > 0
-    correlation = np.corrcoef(np.log(rows["spend"][spenders]), np.log(rows["pre_spend"][spenders]))
+    spends_now, spent_before = rows["spend"] > 0, rows["pre_spend"] > 0
+    # the amounts: among users who spent in both periods, the log amounts
+    # correlate at the planted value (no whales in this call)
+    both = spends_now & spent_before
+    correlation = np.corrcoef(np.log(rows["spend"][both]), np.log(rows["pre_spend"][both]))
     assert correlation[0, 1] == pytest.approx(0.6, abs=0.02)
-    # everyone has a pre-period value, spenders or not
-    assert np.all(rows["pre_spend"] > 0)
+    # the decision: a past spender is far likelier to spend now, while the
+    # planted rates themselves hold (control 6%, pre-period 6%)
+    assert spends_now[spent_before].mean() > 3 * spends_now[~spent_before].mean()
+    control = rows["group"] == "control"
+    assert spends_now[control].mean() == pytest.approx(0.06, abs=0.003)
+    assert spent_before.mean() == pytest.approx(0.06, abs=0.003)
+
+
+def test_cuped_on_the_example_rows_removes_a_visible_share_of_the_noise():
+    from abkit.cuped_adjustment import cuped_mean_diff
+
+    rows = _example_rows(200_000, seed=17, whale_rate=0.008, pre_correlation=0.9)
+    treated = rows["group"] == "treatment"
+    result = cuped_mean_diff(
+        rows["spend"][~treated],
+        rows["spend"][treated],
+        rows["pre_spend"][~treated],
+        rows["pre_spend"][treated],
+    )
+    # the whale tail is unpredictable from the past and its weight varies by
+    # seed, so the share sits well below the planted 0.9 squared (measured
+    # 0.14 to 0.33 across seeds at the recipe); it must still be visible
+    assert 0.10 < result.variance_reduction < 0.60
 
 
 def test_example_rows_reject_bad_parameters():

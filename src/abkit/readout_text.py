@@ -417,14 +417,6 @@ def _truth_block(readout: ExperimentReadout) -> list[str]:
         found["pre_correlation"] = (
             f"found CUPED on {metric} removed {result.variance_reduction:.0%} of the noise"
         )
-        if result.variance_reduction < 0.05:
-            # the planted correlation is on the log scale among spenders; raw
-            # spend is mostly zeros and whales, which that correlation does
-            # not predict, so the readout says why the planted link barely shows
-            found["pre_correlation"] += (
-                " (the link is on the log scale among spenders; raw spend is mostly zeros and "
-                "whales)"
-            )
     width = max(len(name) for name in readout.truth)
     for name, value in sorted(readout.truth.items()):
         line = f"{name:<{width}}   planted {value}"
