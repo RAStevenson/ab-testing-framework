@@ -39,7 +39,7 @@ Early versus late: did the effect fade?
   treatment vs control   early +33.33 pp   late +0.00 pp   z 0.50   p 0.617   no change detected
     users   early 3 vs 3   late 3 vs 3
 
-Monitoring replay: 5 looks; 5% budget spread across them; a boundary crossing = safe to stop
+Monitoring replay: 5 looks; 5% budget spread across them; a crossing = a stop allowed at that look
   treatment vs control on converted, O'Brien-Fleming spending at the sizes reached
   spending design   never crosses in 5 looks; no early stop in either direction
   naive 1.96 rule   never fires

@@ -47,9 +47,11 @@ Limitations (*): read every result below with these in view
       blocks treat the checkpoints present as the whole run
   * the final checkpoint is internally inconsistent and left out of the time-based blocks; the
       variance implied for the users added there comes out negative, which no real accumulation of
-      users produces; the end-of-run results still use the final totals
-  * the time-based blocks assume earlier users' outcomes stay fixed between checkpoints; if the file
-      recomputes outcomes over all enrolled users at each checkpoint, those blocks are approximate
+      users produces; the end-of-run blocks use the final totals, which stand on their own; only the
+      step from the checkpoint before fails
+  * the time-based blocks treat each checkpoint's new users as a group whose outcomes then stay
+      fixed; a file that recomputes outcomes over all enrolled users at each checkpoint makes those
+      blocks approximate; the inconsistent final checkpoint is one sign of that here
   * the replay has 95 looks; the boundary calculation is checked for accuracy on 14 looks, so treat
       its boundaries as approximate
 
@@ -98,7 +100,7 @@ Early versus late: did the effect fade?
       run
     users   early 2,274,963 vs 2,275,261   late 449,234 vs 450,624
 
-Monitoring replay: 95 looks; 5% budget spread across them; a boundary crossing = safe to stop
+Monitoring replay: 95 looks; 5% budget spread across them; a crossing = a stop allowed at that look
   variant_0 vs control on metric_1, O'Brien-Fleming spending at the sizes reached
   chosen   first treatment in the arm order, not by its result
   spending design   never crosses in 95 looks; no early stop in either direction
@@ -118,8 +120,7 @@ Figures:
 
 How to read it, block by block:
 
-- **Data.** What the intake repaired or dropped, with counts. "None" means
-  the file passed every rule as delivered.
+- **Data.** What the intake repaired or dropped, with counts.
 - **Limitations.** What the checks flagged. A flag does not stop the run;
   every result below is read with these in view.
 - **Group split.** Whether users landed in the groups as planned. A broken
@@ -129,13 +130,11 @@ How to read it, block by block:
   new users per checkpoint stayed constant.
 - **Sensitivity.** The smallest lift this sample could have detected with
   80% power. A "not detected" result means an effect at least that large
-  would have been seen with 80% probability, which is what the heading's
-  power means, and says nothing about smaller ones. With several treatments
-  it is solved at alpha divided by their number, so it holds under the Holm
-  correction below.
+  would have been seen with 80% probability and says nothing about smaller
+  ones. With several treatments it is solved at alpha divided by their
+  number, so it holds under the Holm correction below.
 - **Primary metric.** The effect, its 95% interval, and p for each
-  treatment, interval first, since its width shows how precise the estimate
-  is.
+  treatment, interval first.
 - **CUPED** (user rows with a pre-experiment column only). That metric's
   effect after removing the part of each user's outcome their pre-experiment
   value already predicted. It runs on each metric with a pre-experiment
@@ -158,12 +157,18 @@ How to read it, block by block:
   window's users on the line beneath, since a small window gives a wide
   estimate. In ASOS the late window holds 14,188 of variant_0's 102,316
   users, so its -1.26 percentage points (pp) contributes about 0.18 pp to
-  the whole run's -0.07 pp, and the three figures are consistent. The
-  readout reports the fall and does not say why it happened.
+  the whole run's -0.07 pp. The ASOS totals also appear to be recomputed
+  over all enrolled users at each checkpoint, which the limitations block
+  flags, so a window's lift there mixes users maturing with the effect
+  changing. The readout reports the change and does not settle which it is.
 - **Monitoring replay.** The finished run checked look by look against the
-  spending boundary. "Never crosses" means no look would have justified
-  stopping early. The adjusted interval is built to hold at every look at
-  once, and the naive 1.96 line is printed for contrast.
+  spending boundary. A crossing means a stop at that look would have kept
+  the false-positive rate, and nothing more: the estimate at an early stop
+  runs high, and whether the effect lasted is the early-versus-late block's
+  question. "Never crosses" means no look allowed a stop. On a run that
+  ended on schedule, the primary block's interval is the result, and the
+  adjusted interval is what a stop at any look would have had to report. The
+  naive 1.96 line is printed for contrast.
 - **Planted versus found** (the synthetic check only). What the generator
   planted beside what the readout found.
 - **Decision.** One line per treatment, judged on the primary metric's p,
@@ -272,9 +277,9 @@ config does not name are ignored. These are the keys a config can carry.
 | `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
 | `[input]` `md5` | no | the data file's checksum, so a readout cannot quietly describe the wrong file; a different file stops the run |
 | `[columns]` `arm` | user rows | the column holding each user's group |
-| `[columns]` `day` | no | numeric time since the start; turns on the early-versus-late block and the replay, which per-group totals always have |
+| `[columns]` `day` | no | the day each user entered the experiment, as a number counted from its start; dates are not parsed; turns on the early-versus-late block and the replay, which per-group totals always have |
 | `[columns]` `user_id` | no | turns on the stop for a user appearing twice |
-| `[columns.aliases.<column>]` | no | value replacements for that column, old = new |
+| `[columns.aliases.<column>]` | no | value replacements for the group column or any extra categorical column, old = new; metric values are read as numbers and not aliased |
 | `[arms]` `labels` | user rows | the group labels, control first |
 | `[arms]` `intended_split` | no | the planned share per group; turns on the check against the plan |
 | `[aggregates]` `experiment_id_column`, `experiment_id` | no | keep only one experiment's rows in a file that holds several |
@@ -303,9 +308,12 @@ rather than committed and CI should not depend on a 2008 URL staying up.
 one experiment from the ASOS Digital Experiments Dataset, published as
 cumulative per-group totals at 96 checkpoints with no user rows. Three
 treatments ran against the control, and the dataset's authors flagged this
-experiment for a possible primacy effect, a lift confined to the first days,
-which is why it was chosen. The final checkpoint is internally inconsistent,
-so the time-based blocks leave it out and the limitations block says so.
+experiment for a possible primacy effect, an effect that grows over the run
+as users adjust, which is why it was chosen. The early-versus-late block
+shows one treatment rising over the run, which is that shape, under the
+caveat the limitations block states about recomputed totals. The final
+checkpoint is internally inconsistent, so the time-based blocks leave it out
+and the limitations block says so.
 
 [analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt) reads the
 2008 MineThatData e-mail experiment, user rows with three arms. Fewer than
@@ -325,10 +333,12 @@ is +0.67 pp, and the readout finds +0.67 pp with an interval of +0.39 to
 +0.95 pp. The planted fade in that lift shows in the early-versus-late
 block. The planted rise in spend, +0.32 per user, is too small for this
 sample to detect under its heavy tail, a few users spending far more than
-the rest. The readout reports it as not detected, with an interval that
-contains the planted value, rather than as found. CUPED removes 14% of the
-noise on spend. The settings are in the config beside the readout, and its
-last block prints each one beside what was found.
+the rest, which the planted block's whale settings produce. The readout
+reports it as not detected, with an interval that contains the planted
+value, rather than as found. CUPED removes 14% of the noise on spend at this
+seed, and 12% to 18% across the seeds in the notes. The settings are in the
+config beside the readout, and its last block prints each one beside what
+was found.
 
 ## What it does not do
 
@@ -339,13 +349,14 @@ draws no causal conclusion beyond the randomized comparison. The replay
 reads a finished file and cannot watch a running experiment, because each
 boundary depends on the final look's sample size. There are no futility
 boundaries, so the replay can show an early stop on a clear effect but never
-on a hopeless run. After a sequential stop the only interval is the adjusted
-one. Every metric is one value per user, and the bootstrap covers a
-difference in means only, so a ratio such as revenue per order, whose
-denominator varies by user, is out of scope. The relative lift is a point
-estimate without an interval. The bootstrap interval is scipy's BCa, which
-on skewed data runs a little under its nominal 95% coverage. The measurement
-is in the notes.
+on a hopeless run. On user rows each look holds the users enrolled by then
+with their final outcomes, so a live look would have known less than the
+replay shows. After a sequential stop the only interval is the adjusted one.
+Every metric is one value per user, and the bootstrap covers a difference in
+means only, so a ratio such as revenue per order, whose denominator varies
+by user, is out of scope. The relative lift is a point estimate without an
+interval. The bootstrap interval is scipy's BCa, which on skewed data runs a
+little under its nominal 95% coverage. The measurement is in the notes.
 
 ## For the technical reader
 
@@ -380,11 +391,13 @@ Two decisions are worth flagging. The permutation test calls scipy rather
 than the faster hand-built loop it replaced. Speed is not a concern at the
 sizes experiments run at, a scipy call is one less thing to defend, and the
 timing is in the notes. The monitoring boundaries are computed at the sample
-sizes the looks actually reached rather than on a planned schedule. The
-method is the recursive numerical integration of Armitage, McPherson, and
-Rowe, which carries forward the probability that no earlier look has crossed
-and solves each look's cutoff from it. The adjusted intervals are each
-look's estimate plus or minus that look's boundary times its standard error.
+sizes the looks actually reached rather than on a planned schedule, with the
+information at each look measured by user counts rather than by the observed
+variances. The method is the recursive numerical integration of Armitage,
+McPherson, and Rowe, which carries forward the probability that no earlier
+look has crossed and solves each look's cutoff from it. The adjusted
+intervals are each look's estimate plus or minus that look's boundary times
+its standard error.
 
 The dated measurements behind this section, the timings, and the history of
 the synthetic generator are in [docs/NOTES.md](docs/NOTES.md).

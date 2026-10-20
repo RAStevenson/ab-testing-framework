@@ -7,8 +7,9 @@ Limitations (*): read every result below with these in view
   * the smallest detectable effect on metric_1 is above a modest 5% lift for variant_2 vs control
       (68.7% of control); a 'not detected' result there rules out little
   * aggregate data carries no per-user pre-experiment values, so CUPED cannot run
-  * the time-based blocks assume earlier users' outcomes stay fixed between checkpoints; if the file
-      recomputes outcomes over all enrolled users at each checkpoint, those blocks are approximate
+  * the time-based blocks treat each checkpoint's new users as a group whose outcomes then stay
+      fixed; a file that recomputes outcomes over all enrolled users at each checkpoint makes those
+      blocks approximate
 
 Group split: does assignment match the plan?
   intended split not on record; testing whether the share of new users per checkpoint is constant
@@ -26,7 +27,7 @@ Early versus late: did the effect fade?
   variant_2 vs control   early +2.00 pp   late +1.96 pp   z 0.01   p 0.995   no change detected
     users   early 105 vs 100   late 140 vs 140
 
-Monitoring replay: 3 looks; 5% budget spread across them; a boundary crossing = safe to stop
+Monitoring replay: 3 looks; 5% budget spread across them; a crossing = a stop allowed at that look
   variant_2 vs control on metric_1, O'Brien-Fleming spending at the sizes reached
   spending design   never crosses in 3 looks; no early stop in either direction
   naive 1.96 rule   never fires

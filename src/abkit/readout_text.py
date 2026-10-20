@@ -405,7 +405,8 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
     n_looks = replay.n_usable
     stopped = replay.outcome.stopped_at_look
     design_line = (
-        f"crosses at look {stopped} of {n_looks}; stopping there keeps the full run's guarantee"
+        f"crosses at look {stopped} of {n_looks}; a stop there keeps the "
+        f"{readout.alpha:.0%} false-positive rate"
         if stopped is not None
         else f"never crosses in {n_looks} looks; no early stop in either direction"
     )
@@ -428,7 +429,7 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
     return [
         "",
         f"Monitoring replay: {n_looks} looks; {readout.alpha:.0%} budget spread across them; "
-        "a boundary crossing = safe to stop",
+        "a crossing = a stop allowed at that look",
         _INDENT + f"{replay.treatment_arm} vs {control_arm} on {replay.metric}, "
         "O'Brien-Fleming spending at the sizes reached",
         *_first_treatment_note(readout),

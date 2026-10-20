@@ -424,7 +424,9 @@ def test_cumulative_increments_flag_on_aggregates_with_a_time_axis():
         for limitation in readout.limitations
         if limitation.code == "cumulative_increments"
     )
-    assert "earlier users' outcomes stay fixed" in flag.detail
+    assert "outcomes then stay fixed" in flag.detail
+    # the fixture's final checkpoint is consistent, so the sign-of-recompute clause is absent
+    assert "inconsistent final checkpoint" not in flag.detail
 
 
 def test_many_looks_flag_past_the_pinned_schedule(tmp_path: Path):

@@ -940,8 +940,9 @@ def analyze_experiment(
                     )
                     + " internally inconsistent and left out of the time-based blocks; the "
                     "variance implied for the users added there comes out negative, which no "
-                    "real accumulation of users produces; the end-of-run results still use the "
-                    "final totals",
+                    "real accumulation of users produces; the end-of-run blocks use the final "
+                    "totals, which stand on their own; only the step from the checkpoint before "
+                    "fails",
                 )
             )
         novelty = _novelty(experiment, metric, usable)
@@ -950,9 +951,14 @@ def analyze_experiment(
             limitations.append(
                 Limitation(
                     "cumulative_increments",
-                    "the time-based blocks assume earlier users' outcomes stay fixed between "
-                    "checkpoints; if the file recomputes outcomes over all enrolled users at each "
-                    "checkpoint, those blocks are approximate",
+                    "the time-based blocks treat each checkpoint's new users as a group whose "
+                    "outcomes then stay fixed; a file that recomputes outcomes over all enrolled "
+                    "users at each checkpoint makes those blocks approximate"
+                    + (
+                        "; the inconsistent final checkpoint is one sign of that here"
+                        if excluded > 0
+                        else ""
+                    ),
                 )
             )
         if monitoring is not None and monitoring.n_usable > MANY_LOOKS:

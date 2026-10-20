@@ -36,9 +36,9 @@ Early versus late: did the effect fade?
       run
     users   early 17,082 vs 17,108   late 17,220 vs 17,062
 
-Monitoring replay: 14 looks; 5% budget spread across them; a boundary crossing = safe to stop
+Monitoring replay: 14 looks; 5% budget spread across them; a crossing = a stop allowed at that look
   treatment vs control on converted, O'Brien-Fleming spending at the sizes reached
-  spending design   crosses at look 4 of 14; stopping there keeps the full run's guarantee
+  spending design   crosses at look 4 of 14; a stop there keeps the 5% false-positive rate
   naive 1.96 rule   fires at look 1, on evidence the design does not accept
   final look   effect +0.67 pp   adjusted 95% +0.36 to +0.97 pp   boundary |z| 2.15
 
