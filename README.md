@@ -1,42 +1,39 @@
 # abkit
 
 abkit is a command-line program that reads an exported experiment file and
-prints a readout. The readout puts the data checks first and the result after them,
-which is the order an experiment has to be read.
+prints a readout. Its goal is to make the evaluation of an A/B test one
+ordered pass instead of one test at a time. The readout puts the data checks
+first and the result after. The standard tests come from statsmodels and
+scipy. The repo's own code is the intake that checks and repairs the file,
+and the order of the readout. It also replays a finished run checkpoint by
+checkpoint, as if the experiment were still being watched, which those
+libraries do not do. It is built for an analyst who has an exported file and
+no experimentation platform, or who wants a second opinion on a dashboard.
 
-I built it for an analyst who has an exported file and no experimentation
-platform, or who wants a second opinion on a dashboard. statsmodels and
-scipy give you one test at a time. This runs the checks a readout needs, in order, on the exported file. It
-also adds the one part those libraries lack, a replay of a finished run as
-if it had been checked at every checkpoint the file records. It calls statsmodels and scipy for the z-test,
-Welch's t-test, the multiple-comparison corrections, power, the bootstrap,
-the permutation test, and the CUPED regression, which removes the part of
-each user's outcome that their own pre-experiment value already predicted.
-The repo's own code is the intake with its checks and repairs, the
-ordering, the readout, and the monitoring boundaries with their adjusted
-intervals. Neither statsmodels nor scipy computes those boundaries.
-
-A look is one check of an experiment's running totals. The replay exists
-because checking a running experiment at every look against the fixed 5%
-cutoff, a |z| of 1.96, inflates the false-positive rate. Fourteen daily looks at a null effect reject 21.8% of runs, not 5%.
-An O'Brien-Fleming spending design is a preset rule that spreads the 5%
-false-positive budget across the looks. Built on those same fourteen
-looks, it rejects 4.9%, inside the budget. Both figures come from 50,000 simulated null runs at seed 42, pinned in
-`tests/test_sequential.py` by `test_naive_daily_peeking_inflates_type_i_error`.
+A look is one check of an experiment's running totals. Checking at every
+look against the usual cutoff, a z (the effect divided by its standard
+error) past 1.96, raises the false-positive rate well above the 5% it is
+meant to hold. On fourteen daily looks at a null effect, that rule rejects
+21.8% of runs. An O'Brien-Fleming spending design treats the 5% as a budget
+divided across the looks, spends almost none of it early and most of it at
+the end, and rejects 4.9% on the same fourteen looks. Where a file has
+checkpoints, the replay applies that design to the finished run. Both
+figures come from 50,000 simulated null runs at seed 42, pinned by a test in
+`tests/test_sequential.py`.
 
 ![The ASOS experiment replayed look by look](analysis/asos/figures/monitoring.png)
 
-*The ASOS experiment below, replayed look by look. Its observed |z| path
-stays below both the spending boundary and the naive 1.96 line, and its
-adjusted interval contains zero at every look.*
+*The ASOS experiment quoted below, replayed look by look. The observed |z|
+path stays under both the spending boundary and the naive 1.96 line at every
+look, so the run would not have stopped early under either rule.*
 
-## What the readout contains
+## The readout
 
-The readout is a text file of labeled blocks. Each heading carries a few
-words on how to read its block, results are short labeled lines, and the
-file closes with a decision line for each treatment and the figures' paths. There is no
-generated prose. This is the committed readout of a real ASOS.com
-experiment, [analysis/asos/readout.txt](analysis/asos/readout.txt), whole:
+The readout is a text file of labeled blocks, with no generated prose. Each
+heading carries a few words on how to read its block, and the file closes
+with one decision line per treatment and the figures' paths. The committed
+readout of a real ASOS.com experiment follows, whole. The file is
+[analysis/asos/readout.txt](analysis/asos/readout.txt).
 
 ```text
 ASOS experiment 54a85a: per-group totals
@@ -94,9 +91,12 @@ Early versus late: did the effect fade?
   first 31 checkpoints against the last 31, of 95 usable
   variant_0 vs control   early -0.01 pp   late -1.26 pp   z 2.88   p 0.004   effect fell over the
       run
+    users   early 69,687 vs 2,275,261   late 14,188 vs 450,624
   variant_1 vs control   early +0.09 pp   late +0.08 pp   z 0.09   p 0.924   no change detected
+    users   early 2,275,224 vs 2,275,261   late 449,029 vs 450,624
   variant_2 vs control   early -0.17 pp   late +0.23 pp   z -3.70   p 0.0002   effect rose over the
       run
+    users   early 2,274,963 vs 2,275,261   late 449,234 vs 450,624
 
 Monitoring replay: 95 looks; 5% budget spread across them; a boundary crossing = safe to stop
   variant_0 vs control on metric_1, O'Brien-Fleming spending at the sizes reached
@@ -116,92 +116,69 @@ Figures:
   figures/monitoring.png
 ```
 
-The blocks come in the order an experiment has to be read. The data block
-says what the intake did to the file. The limitations block lists what the
-checks flagged, and every result below is read with those in view. The
-group-split check comes before any result. A split that is off from the
-plan means users went missing or were assigned unevenly, and no result can
-repair that. When the intended split is not on record, as here, the check
-becomes a test that the share of new users per checkpoint stayed constant.
-Sensitivity states, for each
-treatment, the smallest effect this sample could have detected, so a "not
-detected" result says what it rules out. With several treatments it is
-solved at alpha divided by their number, the strictest level the Holm
-correction below can apply, so the figure holds under that correction.
+How to read it, block by block:
 
-The primary metric comes next, interval first. With two or more treatments, the
-primary metric is compared with the control once per treatment, so those comparisons are corrected with Holm. Whether each counts as detected is judged on the corrected
-p-value, while its interval stays unadjusted. A CUPED block follows for each metric
-that has a pre-experiment column, which in both committed user-level
-readouts is spend, not the primary. Secondary metrics are corrected two
-ways. Holm caps the chance of any false positive, which is what a ship
-decision needs, and Benjamini-Hochberg caps the share of false positives,
-which is enough for a screen of what to test next.
+- **Data.** What the intake repaired or dropped, with counts. "None" means
+  the file passed every rule as delivered.
+- **Limitations.** What the checks flagged. A flag does not stop the run;
+  every result below is read with these in view.
+- **Group split.** Whether users landed in the groups as planned. A broken
+  split means users went missing or were assigned unevenly, and no statistic
+  repairs that, so the decision lines are replaced by one stop line. When
+  the plan is not on record, as here, the check tests whether the share of
+  new users per checkpoint stayed constant.
+- **Sensitivity.** The smallest lift this sample could have detected with
+  80% power. A "not detected" result means an effect at least that large
+  would have been seen with 80% probability, which is what the heading's
+  power means, and says nothing about smaller ones. With several treatments
+  it is solved at alpha divided by their number, so it holds under the Holm
+  correction below.
+- **Primary metric.** The effect, its 95% interval, and p for each
+  treatment, interval first, since its width shows how precise the estimate
+  is.
+- **CUPED** (user rows with a pre-experiment column only). That metric's
+  effect after removing the part of each user's outcome their pre-experiment
+  value already predicted. It runs on each metric with a pre-experiment
+  column, which in both committed user-row readouts is spend, not the
+  primary. "Noise removed" is the share by which the adjustment shrank the
+  estimate's variance, so more removed means a narrower interval.
+- **Other metrics.** The secondary metrics, corrected two ways. Holm caps
+  the chance of any false positive among them, which a ship decision needs.
+  Benjamini-Hochberg caps the share of false positives, which is enough for
+  a screen of what to test next.
+- **Cross-check** (user rows with a continuous metric only). Welch's t-test,
+  scipy's BCa bootstrap, which corrects the interval for skew, and a
+  permutation test on the same contrast. Agreement means the result does not
+  depend on the method. The trimmed mean on the last line is a different
+  quantity, printed to show what the largest values are doing.
+- **Early versus late.** Whether the lift seen early in the run held to the
+  end. A novelty effect, a lift that fades as the feature stops being new,
+  does not hold. The treatment's lift over the first third of the usable
+  checkpoints is tested against its lift over the last third, with each
+  window's users on the line beneath, since a small window gives a wide
+  estimate. In ASOS the late window holds 14,188 of variant_0's 102,316
+  users, so its -1.26 percentage points (pp) contributes about 0.18 pp to
+  the whole run's -0.07 pp, and the three figures are consistent. The
+  readout reports the fall and does not say why it happened.
+- **Monitoring replay.** The finished run checked look by look against the
+  spending boundary. "Never crosses" means no look would have justified
+  stopping early. The adjusted interval is built to hold at every look at
+  once, and the naive 1.96 line is printed for contrast.
+- **Planted versus found** (the synthetic check only). What the generator
+  planted beside what the readout found.
+- **Decision.** One line per treatment, judged on the primary metric's p,
+  Holm-corrected when there are several treatments. A "no detectable effect"
+  line carries the sensitivity figure, so it says what was ruled out.
 
-With user-level rows and a continuous metric such as spend, a cross-check runs
-Welch, a BCa (bias-corrected and accelerated) bootstrap, a permutation
-test, and a trimmed mean on the same question. With a day
-column, the early-versus-late block tests whether the effect faded. The
-monitoring replay checks the finished run look by look against boundaries
-computed at the sample sizes each look reached. Its adjusted interval is
-built to contain the true effect at every look at once. With several treatments, the cross-check, the
-replay, and the split test across checkpoints run on the first treatment,
-meaning the first in `arms.labels` for user rows or the first variant in
-sorted order for per-group totals. That rule does not look at the results, so the choice cannot favor
-whichever treatment looks best. On the synthetic
-pipeline check described below, and only there, a final block prints what
-the generator planted beside what the readout found. The readout closes
-with one decision line per treatment, or a single stop line when the group
-split is broken.
+With several treatments, the split test across checkpoints, the cross-check,
+and the replay run on the first treatment in the arm order. That rule does
+not look at the results, so the choice cannot favor whichever treatment
+looks best.
 
-Two more readouts are committed. [analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt)
-reads the 2008 MineThatData e-mail experiment, user-level rows with three
-arms, a heavy-tailed spend metric, and a misspelled category value the
-intake normalizes and counts. CUPED adjusts spend by its past-spending
-column and removes none of the noise there.
+## What the intake does to a file
 
-[analysis/synthetic/readout.txt](analysis/synthetic/readout.txt) is not an
-example of analysis. It is a test of the tool, there to confirm that the
-pipeline finds effects of known size. I generated one experiment with
-planted effects and ran it through the same intake and readout as the real
-files. The generator plants a conversion lift and a
-novelty boost that fades over the first days. It also plants a small rise
-in the share of users who spend, a few users who spend far more than the
-rest (a whale tail), and a pre-experiment column. The planted end-of-run lift on conversion is +0.67
-percentage points (pp) with the novelty averaged in, and the readout finds
-+0.67 pp with an interval of +0.39 to +0.95 pp. The planted rise in spend
-works out to +0.32 per user. The readout estimates +0.43, and its interval
-of -0.31 to +1.17 contains the planted value. The whale tail makes spend
-too noisy for this sample to detect an effect that small (p 0.253), so the
-readout reports it as not detected rather than found, which is the other
-half of what the check confirms.
-
-
-CUPED on the pre-experiment column removes 14% of the noise on spend. The generator decides
-whether a user spends, and how much, from hidden random draws. The
-pre-experiment column comes from matching draws for the period before,
-each correlated with its present one at 0.9. Spend itself then correlates
-with past spend at only about 0.54. CUPED removes the square of that,
-about 30% when there are no whale purchases. The
-tests compute that value in closed form and check it against simulation.
-The whale purchases have no counterpart in the pre-experiment column, so
-they add noise CUPED cannot remove. The whale tail's variance is infinite,
-so how much they add depends on how large the sample's biggest purchases
-happen to be. Measured on 2026-10-09 with a one-off loop that is not in
-the repo, over eight seeds at 400,000 users, the share CUPED removed ran from 12% to 18%.
-
-The generator was revised once, on 2026-10-08. The first
-version tied past to present spend only through the log of the amount,
-among the few users who spend, so CUPED, which works on spend itself,
-removed 0%. The revision also ties whether a user spent before to whether they spend
-now, and the setting for the hidden draws' correlation rose from 0.6 to
-0.9.
-
-## Data checks and repairs
-
-The intake never cleans a file silently. Every repair and drop is counted
-in the data block, and a fault the intake cannot repair stops the run
-instead.
+The intake never cleans a file silently. A fault it cannot repair stops the
+run.
 
 Repaired and counted:
 
@@ -213,22 +190,29 @@ without a count.
 
 Dropped and counted, with a stop above 1% of rows:
 
-- a row whose metric value is blank, not a number, or infinite
+- a row whose metric value is blank, not a number, or infinite, and the same
+  for a pre-experiment column or the day column
+- a row whose group label is blank
 - a negative value where the config says the metric cannot be negative
 - a value other than 0 or 1 in a yes/no metric
 
-The 1% stop exists because a file past that share is not clean enough to
-read, and a readout of the survivors would describe a different experiment.
-Some exports leave a metric blank for users who never did the thing it
-counts, such as spend for a user who bought nothing. Fill those blanks with
-zero before running the tool. Otherwise each such row is dropped, and once the drops pass 1% of rows
-the run stops.
+A file past that share is not clean enough to read, and a readout of the
+remaining rows would describe a different experiment. Some exports leave a
+metric blank for users who never did the thing it counts, such as spend for
+a user who bought nothing. Fill those blanks with zero before running the
+tool, or the drops will pass 1% and stop the run. A blank day or
+pre-experiment cell drops its row the same way.
 
 Stops the run, naming what failed:
 
 - a required column missing, or a group label the config does not list
 - a user appearing twice, when the config names a user id column
-- cumulative totals going backwards, a count of zero or less, or a negative variance
+- cumulative totals going backwards, a count of zero or less, or a negative
+  variance
+- a per-group file whose rows disagree with each other: a non-integer count,
+  a non-finite mean or variance, control totals that differ across variants,
+  or checkpoints that differ across arms
+- a data file that does not match the md5 the config pins
 
 Flagged in the limitations block:
 
@@ -243,7 +227,7 @@ Flagged in the limitations block:
   the file recomputes earlier users' outcomes at each checkpoint
 - a replay with more looks than the 14 its boundary accuracy is checked on
 
-## How to run
+## Running it
 
 ```bash
 python -m venv .venv
@@ -259,33 +243,26 @@ python -m venv .venv
 The analyze command prints the readout and saves it as `readout.txt` beside
 the config, with the figures in a `figures/` folder. The `--out` flag
 chooses another directory and `--seed` fixes the resampling seed. The
-planning
-command prints the users needed per group for a baseline rate and the
-smallest lift worth detecting, or for a standard deviation and the smallest
-difference, at the chosen alpha and power. To read your own experiment,
-write a config and point the analyze command at your file:
+planning command prints the users needed per group for a baseline rate and
+the smallest lift worth detecting, or for a standard deviation and the
+smallest difference, at the chosen alpha and power.
+
+To read your own experiment, write a config and point the analyze command at
+your file:
 
 ```bash
 .venv/Scripts/python scripts/run_analyze_experiment.py --config my_experiment.toml --data my_data.csv
 ```
 
-The config names the group column and its labels, the metrics and which
-one is primary, the intended split if you know it, alpha, any value
-replacements, and any pre-experiment column. Two of the three committed
-configs, `analysis/hillstrom/config.toml` for user-level rows and
-`analysis/asos/config.toml` for per-group cumulative totals, are complete
-working examples of both input shapes. The totals must be in the layout the ASOS dataset uses. Each row holds one
-variant, metric, and checkpoint, with the control's count, mean, and
-variance beside the variant's. A few conventions matter when
-writing yours. The first label in `arms.labels` is the control, and
-ordering them the other way flips the sign of every effect. A `day`
-column under `[columns]`, numeric time since the experiment started, is
-what turns on the early-versus-late block and the monitoring replay (for
-per-group totals, the checkpoint column under `[aggregates]` does the
-same). A `pre_column` on a metric, a value measured before assignment, is what
-turns on CUPED for that metric. Columns the config does not name are
-ignored. A config may pin its data file's md5 so a readout cannot quietly
-describe the wrong file. These are the keys a config can carry.
+Two input shapes are read. User rows hold one row per user. Per-group totals
+hold one row per variant, metric, and checkpoint, with the control's count,
+mean, and variance beside the variant's, which is the layout the ASOS
+dataset uses. Two of the three committed configs are complete working
+examples of the two shapes, `analysis/hillstrom/config.toml` for user rows
+and `analysis/asos/config.toml` for per-group totals. Two conventions are
+not in the table below. The first label in `arms.labels` is the control, and
+ordering them the other way flips the sign of every effect. Columns the
+config does not name are ignored. These are the keys a config can carry.
 
 | Table and key | Needed | What it does |
 |---|---|---|
@@ -293,9 +270,9 @@ describe the wrong file. These are the keys a config can carry.
 | `[experiment]` `alpha` | no, 0.05 | the false-positive rate for the effect tests, the sensitivity, the corrections, and the replay, whose adjusted interval follows it; the other intervals stay 95% and the split check uses 0.001 |
 | `[input]` `shape` | yes | `user_rows` or `aggregates` |
 | `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
-| `[input]` `md5` | no | the data file's checksum; a different file stops the run |
+| `[input]` `md5` | no | the data file's checksum, so a readout cannot quietly describe the wrong file; a different file stops the run |
 | `[columns]` `arm` | user rows | the column holding each user's group |
-| `[columns]` `day` | no | numeric time since the start; turns on the time-based blocks |
+| `[columns]` `day` | no | numeric time since the start; turns on the early-versus-late block and the replay, which per-group totals always have |
 | `[columns]` `user_id` | no | turns on the stop for a user appearing twice |
 | `[columns.aliases.<column>]` | no | value replacements for that column, old = new |
 | `[arms]` `labels` | user rows | the group labels, control first |
@@ -309,126 +286,143 @@ describe the wrong file. These are the keys a config can carry.
 | `[[metrics]]` `pre_column` | no, user rows only | a value measured before assignment; turns on CUPED for that metric |
 | `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block |
 
-The tool needs Python 3.11 or newer. There is no install step, because the entry
-scripts put `src/` on the import path themselves, so a fresh clone runs
-once the dependencies are present. The library depends on numpy, scipy, and
-statsmodels. Matplotlib draws the figures and is pinned in `requirements.txt` with the
-dev tools. Rerunning a readout with the versions pinned there reproduces
-`readout.txt` byte for byte. CI regenerates the ASOS and synthetic
-readouts on every push to master, with the newest versions
-`pyproject.toml` allows, and fails if a committed copy has drifted. The Hillstrom readout is outside that
-check on purpose, since its data is fetched rather than committed and CI
-should not depend on a 2008 URL staying up.
+The tool needs Python 3.11 or newer. There is no install step, because the
+entry scripts put `src/` on the import path themselves, so a fresh clone
+runs once the dependencies in `requirements.txt` are present. The library
+depends on numpy, scipy, and statsmodels, and the figures need matplotlib,
+which that file pins with the dev tools. Rerunning a readout with the
+versions pinned there reproduces `readout.txt` byte for byte. CI regenerates
+the ASOS and synthetic readouts on every push to master, with the newest
+versions `pyproject.toml` allows, and fails if a committed copy has drifted.
+The Hillstrom readout is outside that check, since its data is fetched
+rather than committed and CI should not depend on a 2008 URL staying up.
+
+## The three committed readouts
+
+[analysis/asos/readout.txt](analysis/asos/readout.txt), quoted above, reads
+one experiment from the ASOS Digital Experiments Dataset, published as
+cumulative per-group totals at 96 checkpoints with no user rows. Three
+treatments ran against the control, and the dataset's authors flagged this
+experiment for a possible primacy effect, a lift confined to the first days,
+which is why it was chosen. The final checkpoint is internally inconsistent,
+so the time-based blocks leave it out and the limitations block says so.
+
+[analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt) reads the
+2008 MineThatData e-mail experiment, user rows with three arms. Fewer than
+1% of its users spent anything, which the limitations block flags, and a
+misspelled zip-code category is normalized and counted by the intake. Both
+e-mail arms raise visits, and the cross-check's three methods agree on the
+spend effect. CUPED on the past-spending column removes none of the noise,
+which is what a pre-experiment value that does not predict the outcome
+produces.
+
+[analysis/synthetic/readout.txt](analysis/synthetic/readout.txt) is not an
+example of analysis. It is a test of the tool. One generated experiment with
+planted effects runs through the same intake and readout as the real files,
+and the readout is checked against what was planted. The planted conversion
+lift is found where it was planted. The expected lift at the end of the run
+is +0.67 pp, and the readout finds +0.67 pp with an interval of +0.39 to
++0.95 pp. The planted fade in that lift shows in the early-versus-late
+block. The planted rise in spend, +0.32 per user, is too small for this
+sample to detect under its heavy tail, a few users spending far more than
+the rest. The readout reports it as not detected, with an interval that
+contains the planted value, rather than as found. CUPED removes 14% of the
+noise on spend. The settings are in the config beside the readout, and its
+last block prints each one beside what was found.
 
 ## What it does not do
 
 It assumes users were randomized one by one. An experiment that randomized
 groups of users, such as stores or communities, needs a variance estimate
 this tool does not have, and nothing in the file lets it detect that. It
-draws no causal conclusions beyond the randomized comparison. There are no
-futility boundaries, so the monitoring replay can show an early stop on a clear effect but
-never on a hopeless run. It also cannot watch a running experiment. Each
-boundary depends on the final look's sample size, which is known only once
-the run has ended, so the replay reads a finished file. After a sequential stop the only interval
-is the adjusted one, which is built to hold at every look at once rather
-than for the stopping look alone. The bootstrap covers a difference in means only. Every metric is one value per user. A ratio such as clicks per session or
-revenue per order has a denominator that varies by user, and its variance
-needs a method this tool does not have. The relative lift is a point estimate without an interval.
+draws no causal conclusion beyond the randomized comparison. The replay
+reads a finished file and cannot watch a running experiment, because each
+boundary depends on the final look's sample size. There are no futility
+boundaries, so the replay can show an early stop on a clear effect but never
+on a hopeless run. After a sequential stop the only interval is the adjusted
+one. Every metric is one value per user, and the bootstrap covers a
+difference in means only, so a ratio such as revenue per order, whose
+denominator varies by user, is out of scope. The relative lift is a point
+estimate without an interval. The bootstrap interval is scipy's BCa, which
+on skewed data runs a little under its nominal 95% coverage. The measurement
+is in the notes.
 
-The bootstrap interval is scipy's BCa, and on skewed data it still runs a
-little under its nominal coverage. Measured on 2026-10-07 with a one-off loop that is not in the repo, on
-lognormal arms of 400 users over 1,000 simulations at each of three seeds,
-BCa covered 92.6 to 93.7% against a nominal 95%. The percentile interval
-it replaced covered 93.9 to 94.7%. The figures are recorded in a comment
-on the coverage test. I kept BCa because
-it is scipy's default and the gap is about a point. The coverage test in
-`tests/test_resampling.py` holds the interval to a 90 to 98% band.
-
-## Related tools
-
-Spotify's confidence library covers the same ground. It takes summary
-statistics as input and includes sequential tests. I ran it on the same ASOS
-experiment on 2026-10-06 as a cross-check before deciding to call
-statsmodels directly. The primary metric's z-test p-value was 0.6345
-against this repo's 0.635. The Holm-adjusted p-values on the other three
-metrics were identical. Its sequential test over the 95 looks flagged no stop, and neither does
-this replay. Its final adjusted interval was -0.38 to
-+0.25 pp against this repo's -0.377 to +0.241 pp, which the readout prints
-as -0.38 to +0.24 pp. I have not traced the source of that gap. That library takes the planned
-final sample size as an input, so it can run on a live experiment. This tool reads the final size from the finished file, so it
-replays a run after it ends rather than monitoring one live. I did not take it as a dependency because version 4.1.0 installed 68
-packages on 2026-10-06, pins pandas below 3, and is marked beta, and because the
-readout's intake and ordering are the part I wanted to own.
-
-## Decisions worth flagging
-
-The permutation test calls scipy although the hand-built loop it replaced
-measured 2.8 times faster (7.5 s against 20.7 s for 10,000 permutations
-over 120,000 users, 2026-10-06, with a benchmark script since removed).
-Speed is not a concern at the sizes
-experiments run at, and a scipy call is one less thing to defend. The
-resampling on a real file costs a few seconds. On the Hillstrom spend
-contrast, 21,306 and 21,307 users, the bootstrap and the permutation test
-each took 7 seconds at 10,000 resamples, measured 2026-10-07.
-
-The monitoring boundaries are computed at the sample sizes the looks
-actually reached rather than on a planned schedule. The method is the
-standard recursive numerical integration of Armitage, McPherson, and Rowe,
-which carries forward the probability that no earlier look has crossed and
-solves each look's cutoff from it. Neither statsmodels nor scipy computes them, which is why they stay the
-repo's own code. The adjusted
-intervals are each look's estimate plus or minus that look's boundary
-times its standard error, which is what makes them hold at every look at
-once.
-
-The z-test uses the pooled standard error for the statistic and the
-unpooled Agresti-Caffo interval for the estimate, which stays a real
-interval when an arm sits at 0% or 100%, both through statsmodels. The pooled variance is the right one under the null the test
-evaluates, and the unpooled one is right away from the null, where the
-interval lives.
-
-## How it is tested
+## For the technical reader
 
 Statistical code can be wrong and still return plausible numbers, so the
-suite tests statistical properties. The false-positive rates of the
-z-test, the permutation test, and the spending boundaries are simulated at
-fixed seeds, interval coverage is measured rather than assumed, and the
-proportion power function is pinned against an exact binomial calculation. The boundary calculation, run with Lan and DeMets's Pocock-type spending,
-is checked against published values. The monitoring boundaries are also
-checked against
-exact bivariate and trivariate normal
-rectangle probabilities from scipy, against Monte Carlo crossing rates,
-and against a grid refinement. The adjusted intervals are checked for
-joint coverage over 20,000 simulated null paths. The intake has one test per rule on injected bad data and one per
-limitation code on data built to raise it. The readout text is pinned to
-two saved copies of the expected text that are read by eye when they
-change. Three standard checks also run: every
-script does its work inside `main()` with an argument parser, every
-definition has a docstring, and no variable name is one or two letters
-outside a short allowed list.
+suite tests statistical properties. The false-positive rates of the z-test,
+the permutation test, and the spending boundaries are simulated at fixed
+seeds, interval coverage is measured rather than assumed, and the proportion
+power function is pinned against an exact binomial calculation. The boundary
+calculation, run with Lan and DeMets's Pocock-type spending, is checked
+against published values. The boundaries are also checked against exact
+bivariate and trivariate normal rectangle probabilities from scipy, against
+Monte Carlo crossing rates, and against a grid refinement. The adjusted
+intervals are checked for joint coverage over 20,000 simulated null paths.
+The intake has one test per rule on injected bad data and one per limitation
+code on data built to raise it. The readout text is pinned to two saved
+copies of the expected text that are read by eye when they change.
+
+Spotify's confidence library covers the same ground, takes summary
+statistics as input, and includes sequential tests. Run on the same ASOS
+experiment as a cross-check, it gave the primary metric's z-test p-value as
+0.6345 against this repo's 0.635, and identical Holm-adjusted p-values on
+the other three metrics. Its sequential test over the 95 looks flagged no
+stop, and its final adjusted interval was -0.38 to +0.25 pp against this
+repo's -0.38 to +0.24 pp. The source of that last gap has not been traced.
+The library takes the planned final sample size as an input and so can run
+on a live experiment, which this tool cannot. It was not taken as a
+dependency because it installed 68 packages, pins pandas below 3, and is
+marked beta, and because the intake and the ordering are the part this repo
+is meant to own.
+
+Two decisions are worth flagging. The permutation test calls scipy rather
+than the faster hand-built loop it replaced. Speed is not a concern at the
+sizes experiments run at, a scipy call is one less thing to defend, and the
+timing is in the notes. The monitoring boundaries are computed at the sample
+sizes the looks actually reached rather than on a planned schedule. The
+method is the recursive numerical integration of Armitage, McPherson, and
+Rowe, which carries forward the probability that no earlier look has crossed
+and solves each look's cutoff from it. The adjusted intervals are each
+look's estimate plus or minus that look's boundary times its standard error.
+
+The dated measurements behind this section, the timings, and the history of
+the synthetic generator are in [docs/NOTES.md](docs/NOTES.md).
 
 ## Repo layout
 
-- `src/abkit/io.py`: the config, the two loaders, and the checks and repairs.
-- `src/abkit/readout_analysis.py`: every number the readout reports, computed once, no text.
-- `src/abkit/readout_text.py` and `readout_figures.py`: the lines and the figures.
-- `src/abkit/frequentist.py`, `power.py`, `resampling.py`, `cuped_adjustment.py`: thin wrappers over statsmodels and scipy; the tests among them return the repo's result dataclasses.
-- `src/abkit/sequential.py`: the spending boundaries and the adjusted intervals.
-- `src/abkit/results.py`: the frozen result dataclasses the statistical functions return.
-- `src/abkit/generators.py`: the generated experiment the synthetic pipeline check runs on.
+- `src/abkit/io.py`: the config, the two loaders, and the checks and
+  repairs.
+- `src/abkit/readout_analysis.py`: every number the readout reports,
+  computed once, no text.
+- `src/abkit/readout_text.py` and `readout_figures.py`: the lines and the
+  figures.
+- `src/abkit/frequentist.py`, `power.py`, `resampling.py`, and
+  `cuped_adjustment.py`: thin wrappers over statsmodels and scipy. The tests
+  among them return the repo's result dataclasses.
+- `src/abkit/sequential.py`: the spending boundaries and the adjusted
+  intervals.
+- `src/abkit/results.py`: the frozen result dataclasses the statistical
+  functions return.
+- `src/abkit/generators.py`: the generated experiment the synthetic pipeline
+  check runs on.
 - `scripts/`: the analyze, plan, synthetic, and fetch commands.
 - `analysis/`: the three committed readouts with their configs and figures.
+- `data/asos/`: the one committed dataset, the ASOS Digital Experiments
+  Dataset (CC BY 4.0), with its license notice beside it.
+- `tests/`: the suite, mostly one file per module.
+- `docs/NOTES.md`: dated measurements and decisions.
 
 ## Conventions
 
 Every public function carries full type hints, and every statistical test
-returns a frozen dataclass rather than a tuple. Randomness always flows through an explicit
-`numpy.random.Generator` parameter, with no module-level seeding. Inputs
-fail with an explicit `ValueError`. Two exceptions exist. The intake's
-coercion catch turns an unreadable value into a counted and reported row
-drop, and the two time-based blocks omit themselves on a data error after
-printing it in full. Tests are two-sided unless the
-function name says otherwise, p-value adjustments take and return arrays
-in the original order, and anything approximate states its accuracy in
-its docstring and has a test pinning it against a published or simulated
-value. Spelling is US throughout.
+returns a frozen dataclass rather than a tuple. Randomness always flows
+through an explicit `numpy.random.Generator` parameter, with no module-level
+seeding. Inputs fail with an explicit `ValueError`. Two exceptions exist.
+The intake's coercion catch turns an unreadable value into a counted and
+reported row drop, and the two time-based blocks omit themselves on a data
+error after printing it in full. Tests are two-sided unless the function
+name says otherwise, p-value adjustments take and return arrays in the
+original order, and anything approximate states its accuracy in its
+docstring and has a test pinning it against a published or simulated value.
+Spelling is US throughout.
