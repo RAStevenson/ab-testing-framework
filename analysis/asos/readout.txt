@@ -53,9 +53,12 @@ Early versus late: did the effect fade?
   first 31 checkpoints against the last 31, of 95 usable
   variant_0 vs control   early -0.01 pp   late -1.26 pp   z 2.88   p 0.004   effect fell over the
       run
+    users   early 69,687 vs 2,275,261   late 14,188 vs 450,624
   variant_1 vs control   early +0.09 pp   late +0.08 pp   z 0.09   p 0.924   no change detected
+    users   early 2,275,224 vs 2,275,261   late 449,029 vs 450,624
   variant_2 vs control   early -0.17 pp   late +0.23 pp   z -3.70   p 0.0002   effect rose over the
       run
+    users   early 2,274,963 vs 2,275,261   late 449,234 vs 450,624
 
 Monitoring replay: 95 looks; 5% budget spread across them; a boundary crossing = safe to stop
   variant_0 vs control on metric_1, O'Brien-Fleming spending at the sizes reached

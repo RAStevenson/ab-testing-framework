@@ -289,6 +289,14 @@ class TestAggregatesFixture:
         assert readout.novelty is not None
         assert readout.novelty.contrasts[0].treatment_arm == "variant_2"
 
+    def test_each_window_carries_its_user_counts(self, readout: ExperimentReadout) -> None:
+        assert readout.novelty is not None
+        contrast = readout.novelty.contrasts[0]
+        assert min(contrast.early_users + contrast.late_users) >= 2
+        sizes = dict(readout.arm_sizes)
+        assert contrast.early_users[0] + contrast.late_users[0] <= sizes["variant_2"]
+        assert contrast.early_users[1] + contrast.late_users[1] <= sizes[readout.arm_sizes[0][0]]
+
 
 class TestHillstromShapedFixture:
     """The Hillstrom readout's logic on a FABRICATED 30-row fixture with the

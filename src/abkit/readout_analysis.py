@@ -116,6 +116,9 @@ class NoveltyContrast:
     late: float
     decay_z: float
     decay_p: float
+    early_users: tuple[int, int]
+    late_users: tuple[int, int]
+    """Users in each window, treatment then control, so a thin window is visible on the line."""
 
 
 @dataclass(frozen=True)
@@ -760,7 +763,15 @@ def _novelty(
         decay_z = float((early - late) / np.hypot(early_standard_error, late_standard_error))
         decay_p = float(2.0 * stats.norm.sf(abs(decay_z)))
         contrasts.append(
-            NoveltyContrast(treatment_arm, float(early), float(late), decay_z, decay_p)
+            NoveltyContrast(
+                treatment_arm,
+                float(early),
+                float(late),
+                decay_z,
+                decay_p,
+                (early_treatment[0], early_control[0]),
+                (late_treatment[0], late_control[0]),
+            )
         )
     return NoveltyCheck(metric.name, window_size, n_usable, n_checkpoints, tuple(contrasts))
 

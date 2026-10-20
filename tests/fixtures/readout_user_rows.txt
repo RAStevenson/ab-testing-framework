@@ -37,6 +37,7 @@ Cross-check on spend: three methods, same question (treatment vs control)
 Early versus late: did the effect fade?
   first checkpoint against the last, of 5 usable
   treatment vs control   early +33.33 pp   late +0.00 pp   z 0.50   p 0.617   no change detected
+    users   early 3 vs 3   late 3 vs 3
 
 Monitoring replay: 5 looks; 5% budget spread across them; a boundary crossing = safe to stop
   treatment vs control on converted, O'Brien-Fleming spending at the sizes reached

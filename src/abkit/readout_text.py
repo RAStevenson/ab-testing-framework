@@ -384,6 +384,14 @@ def _novelty_block(readout: ExperimentReadout) -> list[str]:
             f"{contrast.treatment_arm} vs {control_arm}   early {early}   late {late}   "
             f"z {contrast.decay_z:.2f}   p {fmt_p(contrast.decay_p)}   " + _NOVELTY_RESULTS[outcome]
         )
+        # Each window's users, treatment then control, on a line of its own under the
+        # contrast, so a thin window is visible where the two effects disagree.
+        lines.append(
+            _INDENT
+            * 2
+            + f"users   early {contrast.early_users[0]:,} vs {contrast.early_users[1]:,}   "
+            f"late {contrast.late_users[0]:,} vs {contrast.late_users[1]:,}"
+        )
     return lines
 
 

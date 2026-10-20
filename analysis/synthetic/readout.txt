@@ -34,6 +34,7 @@ Early versus late: did the effect fade?
   first 4 checkpoints against the last 4, of 14 usable
   treatment vs control   early +1.03 pp   late +0.23 pp   z 2.13   p 0.033   effect fell over the
       run
+    users   early 17,082 vs 17,108   late 17,220 vs 17,062
 
 Monitoring replay: 14 looks; 5% budget spread across them; a boundary crossing = safe to stop
   treatment vs control on converted, O'Brien-Fleming spending at the sizes reached
