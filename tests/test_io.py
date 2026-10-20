@@ -582,3 +582,18 @@ def test_single_observation_interval_is_nan_without_any_warning() -> None:
     assert np.isnan(interval_variances[1])
     expected = [observations[:20].var(ddof=1), observations[21:40].var(ddof=1)]
     assert np.allclose(interval_variances[[0, 2]], expected, rtol=1e-8)
+
+
+def test_alias_table_on_a_numeric_column_stops_the_run(tmp_path: Path) -> None:
+    text = (
+        '[experiment]\nname = "aliases on spend"\n\n'
+        '[input]\nshape = "user_rows"\n\n'
+        '[columns]\narm = "group"\n\n'
+        '[columns.aliases.spend]\n"" = "0"\n\n'
+        '[arms]\nlabels = ["control", "treatment"]\n\n'
+        '[[metrics]]\nname = "spend"\nkind = "continuous"\nprimary = true\n'
+    )
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(text, encoding="utf-8")
+    with pytest.raises(ValueError, match="read as numbers"):
+        load_config(config_path)

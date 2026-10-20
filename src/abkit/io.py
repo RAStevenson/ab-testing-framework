@@ -278,6 +278,20 @@ def load_config(path: Path) -> dict:
     )
     if not alias_tables_ok:
         raise ValueError("[columns.aliases.<col>] tables must map strings to strings")
+    # Metric, pre-experiment, day, and user id cells are read as numbers and never
+    # pass through the alias tables, so a table on one of them would be accepted
+    # and do nothing; the README promises nothing is ignored silently.
+    numeric_columns = {str(metric["column"]) for metric in config["metrics"]}
+    numeric_columns |= {
+        metric["pre_column"] for metric in config["metrics"] if metric.get("pre_column")
+    }
+    numeric_columns |= {columns[key] for key in ("day", "user_id") if key in columns}
+    ignored = sorted(numeric_columns & set(aliases))
+    if ignored:
+        raise ValueError(
+            f"[columns.aliases] names {ignored}, which are read as numbers; aliases apply to "
+            "the group column and other text columns only"
+        )
 
     truth = config.get("truth")
     if truth is not None and not isinstance(truth, dict):
