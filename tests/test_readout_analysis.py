@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from abkit.frequentist import holm
 from abkit.io import Experiment, load_aggregates, load_config, load_user_rows
 from abkit.readout_analysis import (
     HEAVY_TAIL_TOP_SHARE,
@@ -477,3 +478,13 @@ def test_sensitivity_with_several_treatments_is_solved_at_alpha_over_their_numbe
     experiment = load_user_rows(load_config(config_path), FIXTURES / "hillstrom_shaped.csv")
     readout = _readout(experiment)
     assert [values["alpha"] for _, values in readout.sensitivity] == [0.025, 0.025]
+
+
+def test_early_versus_late_p_values_are_holm_corrected_across_treatments():
+    config = load_config(FIXTURES / "aggregates_config.toml")
+    readout = _readout(load_aggregates(config, FIXTURES / "aggregates_ok.csv"))
+    assert readout.novelty is not None
+    raw = [contrast.decay_p for contrast in readout.novelty.contrasts]
+    corrected = [contrast.decay_p_holm for contrast in readout.novelty.contrasts]
+    assert corrected == pytest.approx(holm(raw))
+    assert all(after >= before for before, after in zip(raw, corrected, strict=True))

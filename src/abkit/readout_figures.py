@@ -264,10 +264,7 @@ def _revenue_figure(
     for position, (_, center, ci_low, ci_high) in enumerate(intervals):
         interval_ax.plot([ci_low, ci_high], [position, position], color=COLOR_CONTROL, linewidth=2)
         interval_ax.plot(center, position, "o", color=COLOR_INK, markersize=7)
-    interval_ax.plot(
-        check.trimmed_difference, len(intervals), "D", color=COLOR_TREATMENT, markersize=7
-    )
-    labels = [label for label, *_ in intervals] + ["Trimmed diff (1%)\ndifferent estimand"]
+    labels = [label for label, *_ in intervals]
     interval_ax.set_yticks(np.arange(len(labels)), labels)
     interval_ax.set_xlabel(f"{check.metric} difference ({check.treatment_arm} minus control)")
     interval_ax.set_title(

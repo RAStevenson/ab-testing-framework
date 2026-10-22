@@ -64,8 +64,11 @@ quarter of its total fires on any metric most users have none of, because
 the few who have any carry all of it. On Hillstrom, fewer than 1% of users
 spent anything, so the top 1% carry 100% of spend. The flag's wording names
 that case ("because fewer than 1% have any spend at all") rather than
-calling the metric heavy-tailed, and the trimmed-mean row of the cross-check
-says it is not a tail check there.
+calling the metric heavy-tailed. Until 2026-10-21 the cross-check also
+printed a 1% trimmed-mean difference. It estimated a different quantity from
+the other three rows, and on a metric most users have none of, the trim
+removes the users who spent, so the row was dropped. The trimmed-mean
+function stays in the resampling module with its tests.
 
 ## The first-treatment rule (2026-10-09)
 

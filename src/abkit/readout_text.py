@@ -161,11 +161,17 @@ def _cuped_line(treatment_arm: str, control_arm: str, result: CupedResult, binar
 def _data_block(readout: ExperimentReadout) -> list[str]:
     """Block 1: source, data shape, arm sizes, and what the intake did."""
     shape = "user rows" if readout.data_shape == "user_rows" else "per-group totals"
+    total_users = sum(size for _, size in readout.arm_sizes)
     lines = [
         f"{readout.experiment_name}: {shape}",
         "Data: what the intake did before any statistic",
-        _INDENT + "users   " + "   ".join(f"{arm} {size:,}" for arm, size in readout.arm_sizes),
     ]
+    lines += _wrapped(
+        "users   "
+        + "   ".join(
+            f"{arm} {size:,} ({size / total_users:.1%})" for arm, size in readout.arm_sizes
+        )
+    )
     if readout.validation:
         for event in readout.validation:
             lines += _wrapped(f"{event.rule}   {event.count:,} rows   {event.detail}")
@@ -321,7 +327,7 @@ def _corrections_block(readout: ExperimentReadout) -> list[str]:
 
 
 def _heavy_tail_block(readout: ExperimentReadout) -> list[str]:
-    """Block 7: the revenue cross-check, four rows and a result."""
+    """Block 7: the revenue cross-check, three rows and a result."""
     check = readout.heavy_tail
     if check is None:
         return []
@@ -333,7 +339,7 @@ def _heavy_tail_block(readout: ExperimentReadout) -> list[str]:
         welch_significant == (permutation.p_value < readout.alpha)
         and boot_excludes_zero == welch_significant
     )
-    lines = [
+    return [
         "",
         f"Cross-check on {check.metric}: three methods, same question "
         f"({check.treatment_arm} vs {control_arm})",
@@ -343,16 +349,8 @@ def _heavy_tail_block(readout: ExperimentReadout) -> list[str]:
         _INDENT + f"bootstrap     {bootstrap.estimate:+.3f}   {bootstrap.ci_low:+.3f} to "
         f"{bootstrap.ci_high:+.3f}   BCa, {bootstrap.n_resamples:,} resamples",
         _INDENT + f"permutation   {permutation.observed:+.3f}   {fmt_perm_p(permutation)}",
-        _INDENT
-        + f"trimmed 1%    {check.trimmed_difference:+.3f}   a different quantity, not comparable",
         _INDENT + "result   " + _TAIL_RESULTS["agree" if agree else "disagree"],
     ]
-    if check.trim_degenerate:
-        lines.append(
-            _INDENT + f"trimmed row is not a tail check here: {pct(check.zero_share, 0)} of users "
-            "sit at zero"
-        )
-    return lines
 
 
 def _novelty_block(readout: ExperimentReadout) -> list[str]:
@@ -373,16 +371,24 @@ def _novelty_block(readout: ExperimentReadout) -> list[str]:
         )
         + f", of {check.n_usable} usable",
     ]
+    several = len(check.contrasts) >= 2
+    if several:
+        lines.append(
+            _INDENT + f"Holm-corrected across the {len(check.contrasts)} treatments; the change "
+            "is judged on the Holm p"
+        )
     for contrast in check.contrasts:
         early = pp_signed(contrast.early) if binary else f"{contrast.early:+.3f}"
         late = pp_signed(contrast.late) if binary else f"{contrast.late:+.3f}"
-        if contrast.decay_p >= readout.alpha:
+        if contrast.decay_p_holm >= readout.alpha:
             outcome = "steady"
         else:
             outcome = "fell" if contrast.decay_z > 0 else "rose"
+        holm_part = f"Holm {fmt_p(contrast.decay_p_holm)}   " if several else ""
         lines += _wrapped(
             f"{contrast.treatment_arm} vs {control_arm}   early {early}   late {late}   "
-            f"z {contrast.decay_z:.2f}   p {fmt_p(contrast.decay_p)}   " + _NOVELTY_RESULTS[outcome]
+            f"z {contrast.decay_z:.2f}   p {fmt_p(contrast.decay_p)}   {holm_part}"
+            + _NOVELTY_RESULTS[outcome]
         )
         # Each window's users, treatment then control, on a line of its own under the
         # contrast, so a thin window is visible where the two effects disagree.

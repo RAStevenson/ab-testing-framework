@@ -1,6 +1,6 @@
 fixture-aggregates: per-group totals
 Data: what the intake did before any statistic
-  users   control 360   variant_2 370
+  users   control 360 (49.3%)   variant_2 370 (50.7%)
   repairs and drops   none; the file passed every rule as delivered
 
 Limitations (*): read every result below with these in view

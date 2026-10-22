@@ -1,6 +1,6 @@
 Synthetic pipeline check (planted effects, a test of the tool): user rows
 Data: what the intake did before any statistic
-  users   control 60,156   treatment 59,844
+  users   control 60,156 (50.1%)   treatment 59,844 (49.9%)
   repairs and drops   none; the file passed every rule as delivered
 
 Limitations (*): read every result below with these in view
@@ -27,7 +27,6 @@ Cross-check on spend: three methods, same question (treatment vs control)
   Welch         +0.433   -0.309 to +1.174   p 0.253
   bootstrap     +0.433   -0.170 to +1.351   BCa, 10,000 resamples
   permutation   +0.433   p 0.268
-  trimmed 1%    +0.134   a different quantity, not comparable
   result   methods agree
 
 Early versus late: did the effect fade?

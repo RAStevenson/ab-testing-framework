@@ -39,7 +39,7 @@ from abkit.frequentist import (
 )
 from abkit.io import ArmAggregate, Experiment, MetricSpec, ValidationEvent, capabilities
 from abkit.power import mde_two_proportions, power_two_proportions
-from abkit.resampling import bootstrap_mean_diff, permutation_test_mean_diff, trimmed_mean_diff
+from abkit.resampling import bootstrap_mean_diff, permutation_test_mean_diff
 from abkit.results import (
     BootstrapResult,
     CupedResult,
@@ -95,16 +95,14 @@ class CorrectedComparison:
 
 @dataclass(frozen=True)
 class HeavyTailCheck:
-    """The revenue cross-check on the first contrast: four methods on one skewed metric."""
+    """The revenue cross-check on the first contrast: three methods on one skewed metric."""
 
     metric: str
     treatment_arm: str
     welch: MeanComparison
     bootstrap: BootstrapResult
     permutation: PermutationResult
-    trimmed_difference: float
     zero_share: float
-    trim_degenerate: bool
 
 
 @dataclass(frozen=True)
@@ -116,6 +114,8 @@ class NoveltyContrast:
     late: float
     decay_z: float
     decay_p: float
+    decay_p_holm: float
+    """Holm-corrected across the contrasts; equals decay_p with one treatment."""
     early_users: tuple[int, int]
     late_users: tuple[int, int]
     """Users in each window, treatment then control, so a thin window is visible on the line."""
@@ -693,24 +693,9 @@ def _heavy_tail(
         random_generator=random_generator,
         n_permutations=N_RESAMPLES,
     )
-    trimmed = trimmed_mean_diff(control_values, treatment_values, trim=0.01)
     zero_share = float(np.mean(pooled == 0.0))
-    # a 1% trim on a mostly-zero metric removes the nonzero values themselves,
-    # so the trimmed row stops being a tail check; the text says so when it happens
-    trim_degenerate = 2 * int(0.01 * control_values.size) >= int(
-        (control_values > 0).sum()
-    ) or 2 * int(0.01 * treatment_values.size) >= int((treatment_values > 0).sum())
     return (
-        HeavyTailCheck(
-            metric.name,
-            treatment_arm,
-            welch,
-            bootstrap,
-            permutation,
-            trimmed,
-            zero_share,
-            trim_degenerate,
-        ),
+        HeavyTailCheck(metric.name, treatment_arm, welch, bootstrap, permutation, zero_share),
         limitation,
     )
 
@@ -739,7 +724,7 @@ def _novelty(
         return None
     window_size = max(1, n_usable // 3)
     control_series = _series(experiment, experiment.arms[0], metric.name)
-    contrasts: list[NoveltyContrast] = []
+    partial: list[tuple[str, float, float, float, float, tuple[int, int], tuple[int, int]]] = []
     for _, treatment_arm in _contrasts(experiment):
         treatment_series = _series(experiment, treatment_arm, metric.name)
         try:
@@ -762,8 +747,8 @@ def _novelty(
             return None
         decay_z = float((early - late) / np.hypot(early_standard_error, late_standard_error))
         decay_p = float(2.0 * stats.norm.sf(abs(decay_z)))
-        contrasts.append(
-            NoveltyContrast(
+        partial.append(
+            (
                 treatment_arm,
                 float(early),
                 float(late),
@@ -773,7 +758,16 @@ def _novelty(
                 (late_treatment[0], late_control[0]),
             )
         )
-    return NoveltyCheck(metric.name, window_size, n_usable, n_checkpoints, tuple(contrasts))
+    # one change-over-time test per treatment, so the family is corrected the way
+    # the primary metric's contrasts are
+    corrected = holm([row[4] for row in partial])
+    contrasts = tuple(
+        NoveltyContrast(arm, early, late, z_value, p_value, float(p_holm), early_users, late_users)
+        for (arm, early, late, z_value, p_value, early_users, late_users), p_holm in zip(
+            partial, corrected, strict=True
+        )
+    )
+    return NoveltyCheck(metric.name, window_size, n_usable, n_checkpoints, contrasts)
 
 
 def _monitoring(

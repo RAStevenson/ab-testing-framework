@@ -32,13 +32,16 @@ look, so the run would not have stopped early under either rule.*
 The readout is a text file of labeled blocks, with no generated prose. Each
 heading carries a few words on how to read its block, and the file closes
 with one decision line per treatment and the figures' paths. The committed
-readout of a real ASOS.com experiment follows, whole. The file is
-[analysis/asos/readout.txt](analysis/asos/readout.txt).
+readout of a real ASOS.com experiment follows whole, with a key to its
+blocks after it.
+
+The file is [analysis/asos/readout.txt](analysis/asos/readout.txt).
 
 ```text
 ASOS experiment 54a85a: per-group totals
 Data: what the intake did before any statistic
-  users   control 3,320,536   variant_0 102,316   variant_1 3,316,730   variant_2 3,320,435
+  users   control 3,320,536 (33.0%)   variant_0 102,316 (1.0%)   variant_1 3,316,730 (33.0%)
+      variant_2 3,320,435 (33.0%)
   repairs and drops   none; the file passed every rule as delivered
 
 Limitations (*): read every result below with these in view
@@ -91,13 +94,15 @@ Other metrics: corrected for 9 comparisons (Holm, and BH = Benjamini-Hochberg)
 
 Early versus late: did the effect fade?
   first 31 checkpoints against the last 31, of 95 usable
-  variant_0 vs control   early -0.01 pp   late -1.26 pp   z 2.88   p 0.004   effect fell over the
-      run
+  Holm-corrected across the 3 treatments; the change is judged on the Holm p
+  variant_0 vs control   early -0.01 pp   late -1.26 pp   z 2.88   p 0.004   Holm 0.008   effect
+      fell over the run
     users   early 69,687 vs 2,275,261   late 14,188 vs 450,624
-  variant_1 vs control   early +0.09 pp   late +0.08 pp   z 0.09   p 0.924   no change detected
+  variant_1 vs control   early +0.09 pp   late +0.08 pp   z 0.09   p 0.924   Holm 0.924   no change
+      detected
     users   early 2,275,224 vs 2,275,261   late 449,029 vs 450,624
-  variant_2 vs control   early -0.17 pp   late +0.23 pp   z -3.70   p 0.0002   effect rose over the
-      run
+  variant_2 vs control   early -0.17 pp   late +0.23 pp   z -3.70   p 0.0002   Holm 0.0006   effect
+      rose over the run
     users   early 2,274,963 vs 2,275,261   late 449,234 vs 450,624
 
 Monitoring replay: 95 looks; 5% budget spread across them; a crossing = a stop allowed at that look
@@ -120,14 +125,19 @@ Figures:
 
 How to read it, block by block:
 
-- **Data.** What the intake repaired or dropped, with counts.
+- **Data.** Each group's user count and its share of the total, then what
+  the intake repaired or dropped, with counts.
 - **Limitations.** What the checks flagged. A flag does not stop the run;
   every result below is read with these in view.
 - **Group split.** Whether users landed in the groups as planned. A broken
   split means users went missing or were assigned unevenly, and no statistic
   repairs that, so the decision lines are replaced by one stop line. When
   the plan is not on record, as here, the check tests whether the share of
-  new users per checkpoint stayed constant.
+  new users per checkpoint stayed constant. A constant share means
+  assignment ran the same way from the first checkpoint to the last. It
+  cannot say whether the group sizes match a plan that is not on record. The
+  Data block prints each group's share for that, and here variant_0 holds
+  1.0% of the users.
 - **Sensitivity.** The smallest lift this sample could have detected with
   80% power. A "not detected" result means an effect at least that large
   would have been seen with 80% probability and says nothing about smaller
@@ -135,21 +145,21 @@ How to read it, block by block:
   number, so it holds under the Holm correction below.
 - **Primary metric.** The effect, its 95% interval, and p for each
   treatment. Read the interval before the p.
-- **CUPED** (user rows with a pre-experiment column only). That metric's
-  effect after removing the part of each user's outcome their pre-experiment
-  value already predicted. It runs on each metric with a pre-experiment
-  column, which in both committed user-row readouts is spend, not the
-  primary. "Noise removed" is the share by which the adjustment shrank the
-  estimate's variance, so more removed means a narrower interval.
+- **CUPED** (controlled-experiment using pre-experiment data). It runs on
+  user rows only, on each metric with a pre-experiment column, which in both
+  committed user-row readouts is spend, not the primary. It reports that
+  metric's effect after a regression adjustment removes the part of each
+  user's outcome their pre-experiment value already predicted. "Noise
+  removed" is the share by which the adjustment shrank the estimate's
+  variance, so more removed means a narrower interval.
 - **Other metrics.** The secondary metrics, corrected two ways. Holm caps
   the chance of any false positive among them, which a ship decision needs.
   Benjamini-Hochberg caps the share of false positives, which is enough for
   a screen of what to test next.
 - **Cross-check** (user rows with a continuous metric only). Welch's t-test,
-  scipy's BCa bootstrap, which corrects the interval for skew, and a
-  permutation test on the same contrast. Agreement means the result does not
-  depend on the method. The trimmed mean on the last line is a different
-  quantity, printed to show what the largest values are doing.
+  scipy's BCa (bias-corrected and accelerated) bootstrap, which corrects the
+  interval for skew, and a permutation test on the same contrast. Agreement
+  means the result does not depend on the method.
 - **Early versus late.** Whether the lift seen early in the run held to the
   end. A novelty effect, a lift that fades as the feature stops being new,
   does not hold. The treatment's lift over the first third of the usable
@@ -161,7 +171,8 @@ How to read it, block by block:
   enrolled users at each checkpoint, which the limitations block flags. A
   late window there mixes two things, earlier users' outcomes still changing
   and the treatment's effect changing, and the readout reports the change
-  without saying which.
+  without saying which. With several treatments the p-values are
+  Holm-corrected, as on the primary metric.
 - **Monitoring replay.** The finished run checked look by look against the
   spending boundary. A crossing means a stop at that look would have kept
   the false-positive rate, and nothing more. Whether the effect lasted is
