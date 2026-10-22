@@ -1,11 +1,10 @@
-Synthetic pipeline check (planted effects, a test of the tool): user rows
+Synthetic pipeline check (planted effects, a test of the tool)
 Data: what the intake did before any statistic
   users   control 60,156 (50.1%)   treatment 59,844 (49.9%)
   repairs and drops   none; the file passed every rule as delivered
 
 Limitations (*): read every result below with these in view
-  * the top 1% of users carry 67% of spend, and 94% of users have none; the cross-check below
-      compares three methods
+  * the top 1% of users carry 67% of spend, and 94% of users have none
   * the smallest detectable effect on converted is above a modest 5% lift for treatment vs control
       (6.5% of control); a 'not detected' result there rules out little
 
@@ -23,18 +22,6 @@ Primary converted: effect, 95% interval, p; interval first
 CUPED on spend: adjusted by its pre-experiment column; narrower interval = less noise
   treatment vs control   +0.286   -0.402 to +0.973   p 0.415   noise removed 14%
 
-Cross-check on spend: three methods, same question (treatment vs control)
-  Welch         +0.433   -0.309 to +1.174   p 0.253
-  bootstrap     +0.433   -0.170 to +1.351   BCa, 10,000 resamples
-  permutation   +0.433   p 0.268
-  result   methods agree
-
-Early versus late: did the effect fade?
-  first 4 checkpoints against the last 4, of 14 usable
-  treatment vs control   early +1.03 pp   late +0.23 pp   z 2.13   p 0.033   effect fell over the
-      run
-    users   early 17,082 vs 17,108   late 17,220 vs 17,062
-
 Monitoring replay: 14 looks; 5% budget spread across them; a crossing = a stop allowed at that look
   treatment vs control on converted, O'Brien-Fleming spending at the sizes reached
   spending design   crosses at look 4 of 14; a stop there keeps the 5% false-positive rate
@@ -49,20 +36,17 @@ Planted versus found (synthetic only)
   log_sigma                planted 1.3
   n_days                   planted 14
   n_users                  planted 120,000
-  novelty_boost            planted 0.008   found early +1.03 pp against late +0.23 pp, effect fell
-      over the run
+  novelty_boost            planted 0.008
   novelty_half_life_days   planted 3.0
   pre_correlation          planted 0.9   found CUPED on spend removed 14% of the noise
   seed                     planted 38
   spend_rate               planted 0.06
-  spend_rate_lift          planted 0.004   expected +0.315 per user on spend   found +0.433 (-0.309
-      to +1.174)   inside, too small to detect at this sample (p 0.253)
+  spend_rate_lift          planted 0.004   expected +0.315 per user on spend   found after CUPED
+      +0.286 (-0.402 to +0.973)   inside, too small to detect at this sample (p 0.415)
   whale_rate               planted 0.008
   whale_scale              planted 400.0
   whale_shape              planted 1.5
 
 Decision for treatment vs control: higher on converted by +0.67 pp (+0.39 to +0.95 pp)
 Figures:
-  figures/revenue.png
-  figures/early_late.png
   figures/monitoring.png

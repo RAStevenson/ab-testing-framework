@@ -59,7 +59,7 @@ class TestAnalyzeExperiment:
         analyze = _load_script("run_analyze_experiment")
         config = tmp_path / "config.toml"
         config.write_text(
-            (FIXTURES / "aggregates_config.toml").read_text(encoding="utf-8"), encoding="utf-8"
+            (FIXTURES / "experiment_ok.toml").read_text(encoding="utf-8"), encoding="utf-8"
         )
         out_dir = tmp_path / "out"
         monkeypatch.setattr(
@@ -76,11 +76,11 @@ class TestAnalyzeExperiment:
         assert _last_line(stderr).startswith("error: the analysis stopped before readout.txt")
         assert not out_dir.exists()
 
-    def test_aggregates_fixture_writes_the_readout_and_its_figures(
+    def test_user_rows_fixture_writes_the_readout_and_its_figures(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
         analyze = _load_script("run_analyze_experiment")
-        for name in ("aggregates_config.toml", "aggregates_ok.csv"):
+        for name in ("experiment_ok.toml", "user_rows_ok.csv"):
             (tmp_path / name).write_bytes((FIXTURES / name).read_bytes())
         out_dir = tmp_path / "out"
         monkeypatch.setattr(
@@ -89,7 +89,7 @@ class TestAnalyzeExperiment:
             [
                 "run_analyze_experiment.py",
                 "--config",
-                str(tmp_path / "aggregates_config.toml"),
+                str(tmp_path / "experiment_ok.toml"),
                 "--out",
                 str(out_dir),
             ],
@@ -97,13 +97,34 @@ class TestAnalyzeExperiment:
         analyze.main()
         printed = capsys.readouterr().out
         readout = (out_dir / "readout.txt").read_text(encoding="utf-8")
-        assert readout.startswith("fixture-aggregates: per-group totals\n")
+        assert readout.startswith("fixture-experiment\n")
         assert readout in printed
         assert "Decision for" in readout
-        assert sorted(path.name for path in (out_dir / "figures").iterdir()) == [
-            "early_late.png",
-            "monitoring.png",
-        ]
+        assert sorted(path.name for path in (out_dir / "figures").iterdir()) == ["monitoring.png"]
+
+    def test_md5_mismatch_stops_before_reading_the_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        analyze = _load_script("run_analyze_experiment")
+        (tmp_path / "user_rows_ok.csv").write_bytes((FIXTURES / "user_rows_ok.csv").read_bytes())
+        config_text = (FIXTURES / "experiment_ok.toml").read_text(encoding="utf-8")
+        config_text = config_text.replace(
+            'path = "user_rows_ok.csv"', 'path = "user_rows_ok.csv"\nmd5 = "' + "0" * 32 + '"'
+        )
+        config = tmp_path / "config.toml"
+        config.write_text(config_text, encoding="utf-8")
+        out_dir = tmp_path / "out"
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["run_analyze_experiment.py", "--config", str(config), "--out", str(out_dir)],
+        )
+        with pytest.raises(SystemExit) as stopped:
+            analyze.main()
+        assert stopped.value.code == 2
+        stderr = capsys.readouterr().err
+        assert "but the config pins" in stderr
+        assert not out_dir.exists()
 
     def test_missing_matplotlib_names_the_install_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

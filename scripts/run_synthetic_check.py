@@ -15,9 +15,8 @@ Run with:
     python scripts/run_synthetic_check.py
 
 Flags: --config picks another recipe (default analysis/synthetic/config.toml),
---out another output directory (default: the config's directory), and
---seed the resampling seed (default 0); the generation seed is the
-recipe's own.
+and --out another output directory (default: the config's directory). The
+generation seed is the recipe's own.
 """
 
 from __future__ import annotations
@@ -70,7 +69,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="recipe TOML")
     parser.add_argument("--out", type=Path, help="output directory (default: config's directory)")
-    parser.add_argument("--seed", type=int, default=0, help="resampling seed (default 0)")
     args = parser.parse_args()
 
     try:
@@ -99,9 +97,9 @@ def main() -> None:
         n_rows = write_rows(rows, data_path)
         print(f"wrote {n_rows:,} rows to {data_path}\n")
         experiment = load_user_rows(config, data_path)
-        readout = analyze_experiment(experiment, np.random.default_rng(args.seed))
+        readout = analyze_experiment(experiment)
         out_dir = args.out or args.config.parent
-        figure_paths = draw_figures(readout, experiment, out_dir / "figures")
+        figure_paths = draw_figures(readout, out_dir / "figures")
         lines = save_readout(readout, out_dir, figure_paths)
         print("\n".join(lines))
         print(f"\nsaved {out_dir / 'readout.txt'}")

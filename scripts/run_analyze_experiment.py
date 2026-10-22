@@ -1,19 +1,17 @@
 """Read an experiment from a config and a data file, and print its readout.
 
-Point it at a TOML experiment description and a CSV in either supported
-shape (user-level rows or per-group cumulative totals). It checks and
-gently repairs the data, runs every check and analysis the data can
-support, prints the readout, and saves it as readout.txt with the figures
-beside it. The committed example readouts under analysis/ are this script
-run on their committed configs; a user's own experiment goes through the
+Point it at a TOML experiment description and a CSV with one row per
+user. It checks and gently repairs the data, runs every check and analysis
+the data can support, prints the readout, and saves it as readout.txt with
+the figures beside it. The committed Hillstrom readout is this script run
+on its committed config; a user's own experiment goes through the
 identical path.
 
 Run with:
     python scripts/run_analyze_experiment.py --config <experiment.toml>
 
-Flags: --data overrides the config's input path, --out chooses the
-output directory (default: the config's directory), and --seed fixes the
-resampling seed (default 0).
+Flags: --data overrides the config's input path, and --out chooses the
+output directory (default: the config's directory).
 
 When the config declares `input.md5`, the data file's digest is checked
 before anything reads it, so a readout can never silently describe a
@@ -31,9 +29,7 @@ import argparse
 import hashlib
 import traceback
 
-import numpy as np
-
-from abkit.io import load_aggregates, load_config, load_user_rows
+from abkit.io import load_config, load_user_rows
 from abkit.readout_analysis import analyze_experiment
 from abkit.readout_figures import draw_figures
 from abkit.readout_text import save_readout
@@ -45,7 +41,6 @@ def main() -> None:
     parser.add_argument("--config", required=True, type=Path, help="experiment TOML")
     parser.add_argument("--data", type=Path, help="data file; overrides the config's input path")
     parser.add_argument("--out", type=Path, help="output directory (default: config's directory)")
-    parser.add_argument("--seed", type=int, default=0, help="resampling seed (default 0)")
     args = parser.parse_args()
 
     try:
@@ -70,11 +65,10 @@ def main() -> None:
                     f"pins {pinned}; refusing to read a file other than the "
                     "one the config was written against"
                 )
-        loader = load_user_rows if config["input"]["shape"] == "user_rows" else load_aggregates
-        experiment = loader(config, data_path)
-        readout = analyze_experiment(experiment, np.random.default_rng(args.seed))
+        experiment = load_user_rows(config, data_path)
+        readout = analyze_experiment(experiment)
         out_dir = args.out or args.config.parent
-        figure_paths = draw_figures(readout, experiment, out_dir / "figures")
+        figure_paths = draw_figures(readout, out_dir / "figures")
         lines = save_readout(readout, out_dir, figure_paths)
         print("\n".join(lines))
         print(f"\nsaved {out_dir / 'readout.txt'}")

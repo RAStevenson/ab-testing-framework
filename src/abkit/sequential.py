@@ -339,9 +339,9 @@ def z_from_cumulative_stats(
 ) -> NDArray[np.float64]:
     """Two-sample z-statistic at each look from cumulative summary stats.
 
-    The continuous-metric analogue of ``z_from_cumulative_counts`` for
-    aggregate-only monitoring data (the ASOS shape): per-look cumulative
-    count, mean and ddof=1 variance for each arm. The standard error is
+    The continuous-metric analogue of ``z_from_cumulative_counts``, used by
+    the replay on a continuous primary metric: per-look cumulative count,
+    mean and ddof=1 variance for each arm. The standard error is
     the UNPOOLED two-sample form. On binary data it therefore differs
     from the pooled statistic ``z_from_cumulative_counts`` computes: the
     gap grows with the observed rate difference and shrinks with n, and

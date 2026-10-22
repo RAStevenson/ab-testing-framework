@@ -1,23 +1,17 @@
-"""Experiment intake: config, loaders, validation, the Experiment object.
+"""Experiment intake: config, loader, validation, the Experiment object.
 
-Every analysis in the library can run on data from three origins - the
-synthetic generators, a committed demo dataset, or a user's own file -
-provided the data arrives in one of two shapes:
-
-- user-level rows: one row per user, with an arm column and one or more
-  metric columns, optionally a day column;
-- per-arm aggregates: count, mean and variance per arm, optionally per
-  checkpoint.
-
-Both shapes normalize into the ``Experiment`` object defined here.
-Aggregates are always derivable from user-level rows; the reverse is
-impossible, and that asymmetry is what decides which blocks the readout
-can compute: ``capabilities`` reports what a given Experiment can
-support, and the readout's analysis layer reads it.
+The readout reads one shape of file: one row per user, with a group
+column, one or more metric columns, and optionally a day column and a
+pre-experiment column per metric. The rows come from a user's own export,
+a fetched public dataset, or the synthetic generator, and normalize into
+the ``Experiment`` object defined here, which also carries per-group
+summary statistics at the end of the run and, with a day column, at each
+checkpoint. ``capabilities`` reports which readout blocks a given
+Experiment can support, and the readout's analysis layer reads it.
 
 The experiment description comes from a TOML config (stdlib ``tomllib``,
 so the library's dependencies stay numpy, scipy, and statsmodels).
-``load_config`` validates the config's shape; the loaders validate the
+``load_config`` validates the config's shape; ``load_user_rows`` validates the
 data, recording every cleaning action as a ``ValidationEvent`` that the
 readout's data block prints before any statistic.
 """
@@ -25,7 +19,6 @@ readout's data block prints before any statistic.
 from __future__ import annotations
 
 import csv
-import itertools
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,7 +27,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 _METRIC_KINDS = ("binary", "continuous")
-_INPUT_SHAPES = ("user_rows", "aggregates")
 _RESERVED_COLUMN_KEYS = ("arm", "day", "user_id")
 # share of data rows the drop rules may remove before the run stops: past
 # this the file is not cleaned-ish and the readout would describe the
@@ -51,7 +43,7 @@ class MetricSpec:
     kind: str  # "binary" | "continuous"
     primary: bool = False
     nonnegative: bool = False
-    pre_column: str | None = None  # a pre-experiment column for CUPED, user rows only
+    pre_column: str | None = None  # a pre-experiment column for CUPED
 
 
 @dataclass(frozen=True)
@@ -81,15 +73,14 @@ class ArmAggregate:
 
 @dataclass(frozen=True)
 class Experiment:
-    """A normalized experiment, whatever shape it arrived in.
+    """A normalized experiment.
 
-    ``arms[0]`` is the control. ``rows`` is None for aggregate-only data;
-    when present it maps each declared column to a numpy array aligned
-    across columns. ``pre_period`` maps each metric NAME that declared a
-    ``pre_column`` to that column's values, aligned with ``rows``, and is
-    None when no metric did or the data is aggregate-only. ``aggregates``
-    is always populated. ``truth`` carries a generator config verbatim for
-    synthetic data and is None otherwise.
+    ``arms[0]`` is the control. ``rows`` maps each declared column to a numpy
+    array aligned across columns. ``pre_period`` maps each metric NAME that
+    declared a ``pre_column`` to that column's values, aligned with ``rows``,
+    and is None when no metric did. ``aggregates`` holds the per-group summary
+    statistics built from the rows. ``truth`` carries a generator config
+    verbatim for synthetic data and is None otherwise.
     """
 
     name: str
@@ -97,7 +88,7 @@ class Experiment:
     intended_split: tuple[float, ...] | None
     metrics: tuple[MetricSpec, ...]
     alpha: float
-    rows: dict[str, NDArray] | None
+    rows: dict[str, NDArray]
     pre_period: dict[str, NDArray] | None
     aggregates: tuple[ArmAggregate, ...]
     checkpoints: tuple[float, ...] | None
@@ -108,15 +99,11 @@ class Experiment:
 def capabilities(experiment: Experiment) -> frozenset[str]:
     """The data properties this experiment can support a readout block with."""
     data_capabilities = set()
-    if experiment.rows is not None:
-        data_capabilities.add("user_rows")
     if experiment.checkpoints is not None and len(experiment.checkpoints) >= 3:
         data_capabilities.add("time_axis")
     if len(experiment.metrics) >= 2 or len(experiment.arms) > 2:
         data_capabilities.add("multi_metric")
-    if experiment.rows is not None and any(
-        metric.kind == "continuous" for metric in experiment.metrics
-    ):
+    if any(metric.kind == "continuous" for metric in experiment.metrics):
         data_capabilities.add("continuous_metric")
     if experiment.intended_split is not None:
         data_capabilities.add("intended_split")
@@ -132,7 +119,9 @@ def load_config(path: Path) -> dict:
     the offending key on any structural problem; nothing is silently
     defaulted except ``alpha`` (0.05), the optional tables, and each
     metric's ``column`` (its name), ``primary`` and ``nonnegative``
-    (False), and ``pre_column`` (None).
+    (False), and ``pre_column`` (None). ``input.shape`` is optional and
+    defaults to "user_rows"; any other value stops the run, so an old config
+    written for per-group totals fails loudly instead of being misread.
     """
     with open(path, "rb") as config_file:
         config = tomllib.load(config_file)
@@ -148,78 +137,39 @@ def load_config(path: Path) -> dict:
     if not isinstance(alpha, float) or not 0.0 < alpha < 1.0:
         raise ValueError(f"experiment.alpha must be a float in (0, 1), got {alpha!r}")
 
-    input_table = config.get("input")
-    if not isinstance(input_table, dict) or input_table.get("shape") not in _INPUT_SHAPES:
-        raise ValueError(f"config needs [input] with shape in {_INPUT_SHAPES}")
+    input_table = config.setdefault("input", {})
+    if not isinstance(input_table, dict):
+        raise ValueError("[input] must be a table when present")
+    if input_table.setdefault("shape", "user_rows") != "user_rows":
+        raise ValueError(
+            "input.shape must be 'user_rows' when present; the readout reads one row per user"
+        )
     if "md5" in input_table and not (
         isinstance(input_table["md5"], str) and len(input_table["md5"]) == 32
     ):
         raise ValueError("input.md5 must be a 32-character hex digest when present")
 
     arms = config.get("arms")
-    if input_table["shape"] == "user_rows":
-        # user-level data needs the arm labels declared up front; aggregate
-        # data derives its arms from the file (control plus each variant),
-        # so [arms] is optional there and intended_split is checked at load
-        if not isinstance(arms, dict) or not isinstance(arms.get("labels"), list):
-            raise ValueError("config needs [arms] with a 'labels' list, control first")
-        labels = arms["labels"]
-        if len(labels) < 2 or len(set(labels)) != len(labels):
-            raise ValueError(f"arms.labels needs at least 2 unique labels, got {labels!r}")
-        if not all(isinstance(value, str) and value for value in labels):
-            raise ValueError(f"arms.labels must be non-empty strings, got {labels!r}")
-        folded = [value.casefold() for value in labels]
-        if len(set(folded)) != len(folded):
-            # row arm values are matched casefolded, so labels differing only
-            # by case would collapse into one arm with no error
-            raise ValueError(f"arms.labels must be unique ignoring case, got {labels!r}")
-        split = arms.get("intended_split")
-        if split is not None and (
-            not isinstance(split, list)
-            or len(split) != len(labels)
-            or not all(isinstance(value, (int, float)) and value > 0 for value in split)
-            or abs(sum(split) - 1.0) > 1e-9
-        ):
-            raise ValueError(
-                "arms.intended_split must be positive shares, one per label, summing to 1"
-            )
-    else:
-        aggregate_columns = config.get("aggregates")
-        required = (
-            "variant",
-            "metric",
-            "checkpoint",
-            "count_control",
-            "mean_control",
-            "variance_control",
-            "count_treatment",
-            "mean_treatment",
-            "variance_treatment",
-        )
-        if not isinstance(aggregate_columns, dict):
-            raise ValueError("aggregates input needs an [aggregates] column-mapping table")
-        missing_keys = [key for key in required if not isinstance(aggregate_columns.get(key), str)]
-        if missing_keys:
-            raise ValueError(f"[aggregates] is missing column names for: {missing_keys}")
-        has_id_column = isinstance(aggregate_columns.get("experiment_id_column"), str)
-        has_id = "experiment_id" in aggregate_columns
-        if has_id_column != has_id:
-            raise ValueError(
-                "[aggregates] experiment_id_column and experiment_id must be set together"
-            )
-        arms_config = config.get("arms")
-        if arms_config is not None and not isinstance(arms_config, dict):
-            raise ValueError("[arms] must be a table when present")
-        split = (arms_config or {}).get("intended_split")
-        if split is not None and (
-            not isinstance(split, list)
-            or not all(isinstance(value, (int, float)) and value > 0 for value in split)
-            or abs(sum(split) - 1.0) > 1e-9
-        ):
-            raise ValueError(
-                "arms.intended_split must be positive shares summing to 1 "
-                "(one per arm in control-first, sorted-variant order)"
-            )
+    if not isinstance(arms, dict) or not isinstance(arms.get("labels"), list):
+        raise ValueError("config needs [arms] with a 'labels' list, control first")
+    labels = arms["labels"]
+    if len(labels) < 2 or len(set(labels)) != len(labels):
+        raise ValueError(f"arms.labels needs at least 2 unique labels, got {labels!r}")
+    if not all(isinstance(value, str) and value for value in labels):
+        raise ValueError(f"arms.labels must be non-empty strings, got {labels!r}")
+    folded = [value.casefold() for value in labels]
+    if len(set(folded)) != len(folded):
+        # row arm values are matched casefolded, so labels differing only
+        # by case would collapse into one arm with no error
+        raise ValueError(f"arms.labels must be unique ignoring case, got {labels!r}")
+    split = arms.get("intended_split")
+    if split is not None and (
+        not isinstance(split, list)
+        or len(split) != len(labels)
+        or not all(isinstance(value, (int, float)) and value > 0 for value in split)
+        or abs(sum(split) - 1.0) > 1e-9
+    ):
+        raise ValueError("arms.intended_split must be positive shares, one per label, summing to 1")
 
     metrics = config.get("metrics")
     if not isinstance(metrics, list) or not metrics:
@@ -248,15 +198,10 @@ def load_config(path: Path) -> dict:
         metric.setdefault("primary", False)
         metric.setdefault("nonnegative", False)
         pre_column = metric.setdefault("pre_column", None)
-        if pre_column is not None:
-            if not isinstance(pre_column, str) or not pre_column:
-                raise ValueError(
-                    f"metric {metric['name']!r} pre_column must be a non-empty column name"
-                )
-            if input_table["shape"] != "user_rows":
-                raise ValueError(
-                    f"metric {metric['name']!r} declares pre_column, which needs user-level rows"
-                )
+        if pre_column is not None and (not isinstance(pre_column, str) or not pre_column):
+            raise ValueError(
+                f"metric {metric['name']!r} pre_column must be a non-empty column name"
+            )
         n_primary += bool(metric["primary"])
     if n_primary != 1:
         raise ValueError(f"exactly one metric must set primary = true, found {n_primary}")
@@ -264,8 +209,8 @@ def load_config(path: Path) -> dict:
     columns = config.setdefault("columns", {})
     if not isinstance(columns, dict):
         raise ValueError("[columns] must be a table")
-    if input_table["shape"] == "user_rows" and not isinstance(columns.get("arm"), str):
-        raise ValueError("user_rows input needs [columns] with an 'arm' column name")
+    if not isinstance(columns.get("arm"), str):
+        raise ValueError("config needs [columns] with an 'arm' column name")
     for key in ("day", "user_id"):
         # an empty string here silently half-declares the column; normalize
         # to absent so every later check sees one representation
@@ -383,8 +328,9 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
       after trimming spaces or ignoring capitals.
     - ``null_row_dropped``: a row with an empty arm or an empty value in
       any declared metric or pre-experiment column is dropped. Where a
-      metric, pre-experiment, or day column caused a drop, the rule's first
-      occurrence records that column with its data row.
+      metric or pre-experiment column caused a drop, the rule's first
+      occurrence records that column with its data row. A blank day cell is
+      recorded as ``uncoercible_dropped`` instead.
     - ``negative_value_dropped``: a row with a negative value in a metric
       declared ``nonnegative`` (or its pre-experiment column) is dropped.
     - ``uncoercible_dropped``: a row whose metric, pre-experiment, or day
@@ -584,241 +530,3 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
         truth=config.get("truth"),
         validation=validation,
     )
-
-
-def load_aggregates(config: dict, data_path: Path) -> Experiment:
-    """Load per-arm cumulative summary statistics into an Experiment.
-
-    Expects the side-by-side shape the ASOS Digital Experiments Dataset
-    uses: one row per (variant, metric, checkpoint) carrying count, mean
-    and variance for the control group and for that treatment variant.
-    Arms are derived from the file as ``control`` plus each distinct
-    variant value, in sorted order; ``rows`` is None because no
-    user-level data exists in this shape.
-
-    Hard errors (the data is unusable, so these raise rather than log):
-    a nonpositive count, a negative variance, or a cumulative count that
-    decreases across checkpoints (``cumulative_regression_error``).
-    """
-    aggregate_columns = config["aggregates"]
-    metrics = _metric_specs(config)
-    filter_column = aggregate_columns.get("experiment_id_column")
-    filter_value = aggregate_columns.get("experiment_id")
-
-    with open(data_path, newline="", encoding="utf-8-sig") as data_file:
-        reader = csv.DictReader(data_file)
-        header = reader.fieldnames or []
-        needed = [
-            aggregate_columns[config_key] for config_key in ("variant", "metric", "checkpoint")
-        ] + [
-            aggregate_columns[config_key]
-            for config_key in (
-                "count_control",
-                "mean_control",
-                "variance_control",
-                "count_treatment",
-                "mean_treatment",
-                "variance_treatment",
-            )
-        ]
-        if filter_column:
-            needed.append(filter_column)
-        missing = [column for column in needed if column not in header]
-        if missing:
-            raise ValueError(f"data file {data_path.name} is missing declared columns: {missing}")
-        raw_rows = [
-            row
-            for row in reader
-            if not filter_column or (row[filter_column] or "").strip() == str(filter_value)
-        ]
-    if not raw_rows:
-        raise ValueError(
-            f"no rows in {data_path.name}"
-            + (f" for experiment_id {filter_value!r}" if filter_column else "")
-        )
-
-    metric_by_column = {metric.column: metric for metric in metrics}
-    variants = sorted({(row[aggregate_columns["variant"]] or "").strip() for row in raw_rows})
-    if any(not variant for variant in variants):
-        raise ValueError("empty variant value in aggregate data")
-    arms = ("control", *(f"variant_{variant}" for variant in variants))
-
-    # cells[(arm, metric_name)] -> list of (checkpoint, n, mean, variance)
-    cells: dict[tuple[str, str], list[tuple[float, int, float, float]]] = {}
-    control_seen: dict[tuple[str, float], tuple[int, float, float]] = {}
-
-    def _number(row: dict, key: str, index: int) -> float:
-        """Return one cell of the aggregate file as a float, raising with the row and column named
-        if it does not parse."""
-        raw = (row[aggregate_columns[key]] or "").strip()
-        try:
-            value = float(raw)
-        except ValueError as error:
-            raise ValueError(f"unparseable {key} value {raw!r} at data row {index}") from error
-        return value
-
-    for index, row in enumerate(raw_rows, start=2):
-        metric = metric_by_column.get((row[aggregate_columns["metric"]] or "").strip())
-        if metric is None:
-            continue  # metrics not declared in config are simply not analyzed
-        checkpoint = _number(row, "checkpoint", index)
-        variant_arm = f"variant_{(row[aggregate_columns['variant']] or '').strip()}"
-        for arm, prefix in ((("control"), "control"), ((variant_arm), "treatment")):
-            count_value = _number(row, f"count_{prefix}", index)
-            if count_value != int(count_value):
-                raise ValueError(f"non-integer count {count_value} at data row {index} ({arm})")
-            count = int(count_value)
-            mean = _number(row, f"mean_{prefix}", index)
-            variance = _number(row, f"variance_{prefix}", index)
-            if count <= 0:
-                raise ValueError(f"nonpositive count {count} at data row {index} ({arm})")
-            if not np.isfinite(mean) or not np.isfinite(variance):
-                # NaN answers False to every comparison, so without this it
-                # would sail through and detonate inside a test far away
-                raise ValueError(
-                    f"non-finite statistics at data row {index} ({arm}); "
-                    "clean or exclude the row before analysis"
-                )
-            if variance < 0.0:
-                raise ValueError(f"negative variance {variance} at data row {index} ({arm})")
-            if arm == "control":
-                # the control column repeats per variant; keep one copy and
-                # insist repeats agree, because a disagreement means the rows
-                # are not describing the same control group
-                key = (metric.name, checkpoint)
-                previous = control_seen.get(key)
-                if previous is not None:
-                    if previous != (count, mean, variance):
-                        raise ValueError(
-                            f"control stats disagree across variants at data row {index} "
-                            f"for metric {metric.name!r}, checkpoint {checkpoint}"
-                        )
-                    continue
-                control_seen[key] = (count, mean, variance)
-            cells.setdefault((arm, metric.name), []).append((checkpoint, count, mean, variance))
-
-    aggregates: list[ArmAggregate] = []
-    for (arm, metric_name), series in cells.items():
-        series.sort(key=lambda item: item[0])
-        counts = [count for _, count, _, _ in series]
-        if any(later < earlier for earlier, later in itertools.pairwise(counts)):
-            raise ValueError(
-                f"cumulative_regression_error: counts for ({arm}, {metric_name}) "
-                f"decrease across checkpoints: {counts}"
-            )
-        for checkpoint, count, mean, variance in series:
-            aggregates.append(ArmAggregate(arm, metric_name, checkpoint, count, mean, variance))
-        _, count, mean, variance = series[-1]
-        aggregates.append(ArmAggregate(arm, metric_name, None, count, mean, variance))
-
-    # every declared metric must actually be present for every arm, and every
-    # arm must share the same checkpoint grid per metric: the readout's blocks combine
-    # arm series positionally, so a missing metric or an offset grid would
-    # surface as a far-away crash or, worse, silently misaligned statistics
-    grids: dict[str, tuple[float, ...]] = {}
-    for metric in metrics:
-        for arm in arms:
-            cell_checkpoints = tuple(
-                sorted(
-                    cell.checkpoint
-                    for cell in aggregates
-                    if cell.arm == arm
-                    and cell.metric == metric.name
-                    and cell.checkpoint is not None
-                )
-            )
-            if not any(cell.arm == arm and cell.metric == metric.name for cell in aggregates):
-                raise ValueError(
-                    f"declared metric {metric.name!r} (column {metric.column!r}) has no "
-                    f"data for arm {arm!r}"
-                    + (f" in experiment {filter_value!r}" if filter_column else "")
-                )
-            reference = grids.setdefault(metric.name, cell_checkpoints)
-            if cell_checkpoints != reference:
-                raise ValueError(
-                    f"checkpoint grids differ across arms for metric {metric.name!r}: "
-                    f"{arm!r} has {len(cell_checkpoints)} checkpoints where "
-                    f"{arms[0]!r} has {len(reference)}; the file's rows are not "
-                    "aligned and positional analysis would be wrong"
-                )
-
-    checkpoints = tuple(
-        sorted({cell.checkpoint for cell in aggregates if cell.checkpoint is not None})
-    )
-    arms_config = config.get("arms") or {}
-    split = arms_config.get("intended_split")
-    if split is not None and len(split) != len(arms):
-        raise ValueError(
-            f"intended_split has {len(split)} shares but the data derives {len(arms)} arms"
-        )
-    return Experiment(
-        name=config["experiment"]["name"],
-        arms=arms,
-        intended_split=tuple(split) if split is not None else None,
-        metrics=metrics,
-        alpha=config["experiment"]["alpha"],
-        rows=None,
-        pre_period=None,
-        aggregates=tuple(aggregates),
-        checkpoints=checkpoints if checkpoints else None,
-        truth=config.get("truth"),
-        validation=(),
-    )
-
-
-def interval_from_cumulative(
-    count: NDArray, mean: NDArray, variance: NDArray
-) -> tuple[NDArray, NDArray, NDArray]:
-    """Recover per-interval n, mean and variance from cumulative statistics.
-
-    Inputs are aligned 1-d arrays of cumulative counts, means and ddof=1
-    sample variances at each checkpoint. Means are recovered exactly;
-    variances are recovered exactly UNDER THE ddof=1 CONVENTION via the
-    sum-of-squares identity ``SS_k = (n_k - 1) * var_k + n_k * mean_k**2``.
-    If the source computed variance with a different ddof the recovered
-    interval variances are approximate to O(1/n).
-
-    An interval with fewer than 2 observations gets a NaN variance. A
-    recovered variance that lands a hair negative from float cancellation
-    is clamped to 0.0; anything materially negative raises, because it
-    means the inputs were not really cumulative statistics.
-    """
-    counts = np.asarray(count, dtype=np.float64)
-    means = np.asarray(mean, dtype=np.float64)
-    variances = np.asarray(variance, dtype=np.float64)
-    if not (counts.shape == means.shape == variances.shape) or counts.ndim != 1:
-        raise ValueError("n, mean and variance must be 1-d arrays of the same length")
-    if counts.size == 0:
-        raise ValueError("need at least one checkpoint")
-    if np.any(counts <= 0) or np.any(np.diff(counts) < 0):
-        raise ValueError(f"counts must be positive and non-decreasing, got {counts.tolist()}")
-    if np.any(variances < 0.0):
-        raise ValueError("variances must be non-negative")
-
-    sums = counts * means
-    squares = (counts - 1.0) * variances + counts * means**2
-    interval_counts = np.diff(counts, prepend=0.0)
-    interval_sums = np.diff(sums, prepend=0.0)
-    interval_squares = np.diff(squares, prepend=0.0)
-    if np.any(interval_counts == 0):
-        raise ValueError("an interval has zero observations; drop repeated checkpoints first")
-    interval_means = interval_sums / interval_counts
-    interval_variances = np.divide(
-        interval_squares - interval_counts * interval_means**2,
-        interval_counts - 1.0,
-        out=np.full_like(interval_counts, np.nan),
-        where=interval_counts >= 2,
-    )
-    # float cancellation can push a true-zero variance slightly negative;
-    # a materially negative value means the inputs were inconsistent
-    bad = interval_variances < -1e-6 * np.maximum(variances, 1.0)
-    if np.any(bad):
-        where = np.nonzero(bad)[0].tolist()
-        raise ValueError(
-            f"recovered interval variance is negative at checkpoints {where}; "
-            "the cumulative statistics are inconsistent"
-        )
-    interval_variances = np.where(
-        np.isnan(interval_variances), np.nan, np.maximum(interval_variances, 0.0)
-    )
-    return interval_counts, interval_means, interval_variances

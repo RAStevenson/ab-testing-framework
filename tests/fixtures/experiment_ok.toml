@@ -6,7 +6,6 @@ name = "fixture-experiment"
 alpha = 0.05
 
 [input]
-shape = "user_rows"
 path = "user_rows_ok.csv"
 
 [columns]

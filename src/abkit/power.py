@@ -253,10 +253,9 @@ def simulate_power(
     get power for designs they do not cover (heavy tails, unequal arms).
 
     Rejection is ``p <= alpha``, not ``p < alpha``. The distinction is
-    invisible for continuous p-values but matters for the resampling tests
-    this exists to check: a permutation p-value with 999 permutations is a
-    multiple of 1/1000 and can land on 0.05 exactly, and a strict
-    comparison would discard that mass and understate power.
+    invisible for continuous p-values but matters for a discrete one: a
+    p-value that is a multiple of 1/1000 can land on 0.05 exactly, and a
+    strict comparison would discard that mass and understate power.
     """
     _validate_alpha_power(alpha)
     if n_sims < 1:

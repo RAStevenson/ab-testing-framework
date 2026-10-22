@@ -15,7 +15,6 @@ name = "Synthetic pipeline check (planted effects, a test of the tool)"
 alpha = 0.05
 
 [input]
-shape = "user_rows"
 path = "../../data/synthetic/synthetic_experiment.csv"
 
 [columns]

@@ -5,7 +5,7 @@
 # and dollars spent tracked for the following two weeks. The publisher never
 # stated a license, so the file is NOT in this repository; it is fetched
 # from its original URL by scripts/run_fetch_hillstrom.py (SHA-256 pinned
-# there). The data carries no per-day fields, so the time-based blocks do
+# there). The data carries no per-day fields, so the monitoring replay does
 # not appear. The history column (dollars spent in the year before the
 # e-mail) is the pre-experiment column for CUPED on spend. Reproduce with:
 #   python scripts/run_fetch_hillstrom.py
@@ -16,7 +16,6 @@ name = "Hillstrom e-mail experiment"
 alpha = 0.05
 
 [input]
-shape = "user_rows"
 path = "../../data/hillstrom/hillstrom.csv"
 md5 = "0af45f3c7ee495ed5654b398b1aab809"
 

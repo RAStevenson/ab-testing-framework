@@ -20,7 +20,7 @@ from abkit.readout_analysis import (
     planted_end_of_run_lift,
     planted_spend_difference,
 )
-from abkit.results import CupedResult, MeanComparison, PermutationResult, RateComparison
+from abkit.results import CupedResult, MeanComparison, RateComparison
 
 LINE_WIDTH = 100
 _INDENT = "  "
@@ -42,16 +42,6 @@ _DECISIONS = {
 _SPLIT_RESULTS = {
     "ok": "consistent with the plan",
     "fail": "FAILS; users went missing or were assigned unevenly",
-}
-_STABILITY_RESULTS = {"ok": "stable across checkpoints", "fail": "SHIFTS; assignment broke mid-run"}
-_TAIL_RESULTS = {
-    "agree": "methods agree",
-    "disagree": "methods DISAGREE at alpha; the estimate rests on the tail",
-}
-_NOVELTY_RESULTS = {
-    "fell": "effect fell over the run",
-    "rose": "effect rose over the run",
-    "steady": "no change detected",
 }
 
 
@@ -75,19 +65,6 @@ def fmt_p(p_value: float) -> str:
     if p_value < 1e-4:
         return f"{p_value:.1e}"
     return f"{p_value:.4f}" if p_value < 0.001 else f"{p_value:.3f}"
-
-
-def fmt_perm_p(permutation: PermutationResult) -> str:
-    """The permutation p-value, naming the floor when it sits there.
-
-    scipy's two-sided p-value cannot go below 2 / (n_permutations + 1), reached
-    when no relabeling is as extreme as the observed difference; printed bare
-    that reads as a measurement rather than as the resolution limit.
-    """
-    text = f"p {fmt_p(permutation.p_value)}"
-    if permutation.p_value <= 2.0 / (permutation.n_permutations + 1):
-        text += f", the floor for {permutation.n_permutations:,} relabelings"
-    return text
 
 
 def _effect(comparison: RateComparison | MeanComparison) -> str:
@@ -159,11 +136,10 @@ def _cuped_line(treatment_arm: str, control_arm: str, result: CupedResult, binar
 
 
 def _data_block(readout: ExperimentReadout) -> list[str]:
-    """Block 1: source, data shape, arm sizes, and what the intake did."""
-    shape = "user rows" if readout.data_shape == "user_rows" else "per-group totals"
+    """Block 1: the experiment's name, each group's size and share, and what the intake did."""
     total_users = sum(size for _, size in readout.arm_sizes)
     lines = [
-        f"{readout.experiment_name}: {shape}",
+        readout.experiment_name,
         "Data: what the intake did before any statistic",
     ]
     lines += _wrapped(
@@ -191,7 +167,7 @@ def _limitations_block(readout: ExperimentReadout) -> list[str]:
 
 
 def _group_split_block(readout: ExperimentReadout) -> list[str]:
-    """Block 3: the split check in whichever form the data allowed."""
+    """Block 3: the split check against the intended split, when one is on record."""
     control_arm = readout.arm_sizes[0][0]
     sizes = dict(readout.arm_sizes)
     lines = ["", "Group split: does assignment match the plan?"]
@@ -204,29 +180,9 @@ def _group_split_block(readout: ExperimentReadout) -> list[str]:
                 f"{sizes[control_arm]:,}   chi-square {srm.statistic:.2f}   p {fmt_p(srm.p_value)}"
             )
         lines.append(_INDENT + "result   " + _SPLIT_RESULTS["ok" if worst >= 1e-3 else "fail"])
-    elif readout.ratio_stability is not None:
-        statistic, degrees_of_freedom, p_value, n_intervals = readout.ratio_stability
-        treatment_arm = readout.arm_sizes[1][0]
-        lines.append(
-            _INDENT + "intended split not on record; testing whether the share of new users "
-            "per checkpoint is constant"
-        )
-        lines += _first_treatment_note(readout)
-        if np.isfinite(p_value):
-            lines.append(
-                _INDENT + f"{treatment_arm} vs {control_arm}   {n_intervals} checkpoints   "
-                f"chi-square {statistic:.2f}   df {degrees_of_freedom}   p {fmt_p(p_value)}"
-            )
-            lines.append(
-                _INDENT + "result   " + _STABILITY_RESULTS["ok" if p_value >= 1e-3 else "fail"]
-            )
-        else:
-            lines.append(_INDENT + "result   not testable; one arm never gained a user")
     else:
-        lines.append(
-            _INDENT + "no intended split on record and no day column, so no check is possible"
-        )
-        lines.append(_INDENT + "result   sizes above are for the reader's own judgment")
+        lines.append(_INDENT + "no intended split on record (arms.intended_split), so no check")
+        lines.append(_INDENT + "result   the Data block's shares are for the reader's own judgment")
     return lines
 
 
@@ -326,83 +282,8 @@ def _corrections_block(readout: ExperimentReadout) -> list[str]:
     return lines
 
 
-def _heavy_tail_block(readout: ExperimentReadout) -> list[str]:
-    """Block 7: the revenue cross-check, three rows and a result."""
-    check = readout.heavy_tail
-    if check is None:
-        return []
-    control_arm = readout.arm_sizes[0][0]
-    welch, bootstrap, permutation = check.welch, check.bootstrap, check.permutation
-    boot_excludes_zero = (bootstrap.ci_low > 0.0) == (bootstrap.ci_high > 0.0)
-    welch_significant = welch.p_value < readout.alpha
-    agree = (
-        welch_significant == (permutation.p_value < readout.alpha)
-        and boot_excludes_zero == welch_significant
-    )
-    return [
-        "",
-        f"Cross-check on {check.metric}: three methods, same question "
-        f"({check.treatment_arm} vs {control_arm})",
-        *_first_treatment_note(readout),
-        _INDENT + f"Welch         {welch.difference:+.3f}   {welch.ci_low:+.3f} to "
-        f"{welch.ci_high:+.3f}   p {fmt_p(welch.p_value)}",
-        _INDENT + f"bootstrap     {bootstrap.estimate:+.3f}   {bootstrap.ci_low:+.3f} to "
-        f"{bootstrap.ci_high:+.3f}   BCa, {bootstrap.n_resamples:,} resamples",
-        _INDENT + f"permutation   {permutation.observed:+.3f}   {fmt_perm_p(permutation)}",
-        _INDENT + "result   " + _TAIL_RESULTS["agree" if agree else "disagree"],
-    ]
-
-
-def _novelty_block(readout: ExperimentReadout) -> list[str]:
-    """Block 8a: early against late, per contrast."""
-    check = readout.novelty
-    if check is None:
-        return []
-    control_arm = readout.arm_sizes[0][0]
-    binary = check.metric in _binary_metrics(readout)
-    lines = [
-        "",
-        "Early versus late: did the effect fade?",
-        _INDENT
-        + (
-            f"first {check.window_size} checkpoints against the last {check.window_size}"
-            if check.window_size != 1
-            else "first checkpoint against the last"
-        )
-        + f", of {check.n_usable} usable",
-    ]
-    several = len(check.contrasts) >= 2
-    if several:
-        lines.append(
-            _INDENT + f"Holm-corrected across the {len(check.contrasts)} treatments; the change "
-            "is judged on the Holm p"
-        )
-    for contrast in check.contrasts:
-        early = pp_signed(contrast.early) if binary else f"{contrast.early:+.3f}"
-        late = pp_signed(contrast.late) if binary else f"{contrast.late:+.3f}"
-        if contrast.decay_p_holm >= readout.alpha:
-            outcome = "steady"
-        else:
-            outcome = "fell" if contrast.decay_z > 0 else "rose"
-        holm_part = f"Holm {fmt_p(contrast.decay_p_holm)}   " if several else ""
-        lines += _wrapped(
-            f"{contrast.treatment_arm} vs {control_arm}   early {early}   late {late}   "
-            f"z {contrast.decay_z:.2f}   p {fmt_p(contrast.decay_p)}   {holm_part}"
-            + _NOVELTY_RESULTS[outcome]
-        )
-        # Each window's users, treatment then control, on a line of its own under the
-        # contrast, so a thin window is visible where the two effects disagree.
-        lines.append(
-            _INDENT
-            * 2
-            + f"users   early {contrast.early_users[0]:,} vs {contrast.early_users[1]:,}   "
-            f"late {contrast.late_users[0]:,} vs {contrast.late_users[1]:,}"
-        )
-    return lines
-
-
 def _monitoring_block(readout: ExperimentReadout) -> list[str]:
-    """Block 8b: the monitoring replay with the final look's adjusted interval."""
+    """Block 7: the monitoring replay with the final look's adjusted interval."""
     replay = readout.monitoring
     if replay is None:
         return []
@@ -454,7 +335,7 @@ def _first_treatment_note(readout: ExperimentReadout) -> list[str]:
 
 
 def _truth_block(readout: ExperimentReadout) -> list[str]:
-    """Block 9, synthetic runs only: what the generator planted beside what the readout found."""
+    """Block 8, synthetic runs only: what the generator planted beside what the readout found."""
     if readout.truth is None:
         return []
     lines = ["", "Planted versus found (synthetic only)"]
@@ -472,29 +353,24 @@ def _truth_block(readout: ExperimentReadout) -> list[str]:
                     f"found {_effect(comparison)} ({_interval(comparison)})   "
                     + ("inside" if inside else "OUTSIDE")
                 )
-    if readout.novelty is not None and readout.novelty.contrasts:
-        first = readout.novelty.contrasts[0]
-        found["novelty_boost"] = (
-            f"found early {pp_signed(first.early)} against late {pp_signed(first.late)}, "
-            + _NOVELTY_RESULTS[
-                "steady"
-                if first.decay_p >= readout.alpha
-                else ("fell" if first.decay_z > 0 else "rose")
-            ]
-        )
     expected_spend = planted_spend_difference(readout.truth)
-    if expected_spend is not None and readout.heavy_tail is not None:
-        welch = readout.heavy_tail.welch
-        inside = welch.ci_low <= expected_spend <= welch.ci_high
-        detected = welch.p_value < readout.alpha
+    spend_results = [
+        (metric, result) for metric, _, result in readout.cuped if metric != readout.primary_metric
+    ]
+    if expected_spend is not None and spend_results:
+        # the CUPED estimate is the same difference in means as the unadjusted one, with less
+        # noise, so it is the comparison the planted value is checked against
+        metric, result = spend_results[0]
+        inside = result.ci_low <= expected_spend <= result.ci_high
+        detected = result.p_value < readout.alpha
         found["spend_rate_lift"] = (
-            f"expected {expected_spend:+.3f} per user on {readout.heavy_tail.metric}   found "
-            f"{welch.difference:+.3f} ({welch.ci_low:+.3f} to {welch.ci_high:+.3f})   "
+            f"expected {expected_spend:+.3f} per user on {metric}   found after CUPED "
+            f"{result.difference:+.3f} ({result.ci_low:+.3f} to {result.ci_high:+.3f})   "
             + ("inside" if inside else "OUTSIDE")
             + (
                 ", detected"
                 if detected
-                else f", too small to detect at this sample (p {fmt_p(welch.p_value)})"
+                else f", too small to detect at this sample (p {fmt_p(result.p_value)})"
             )
         )
     for metric, _, result in readout.cuped:
@@ -565,8 +441,6 @@ def readout_lines(
         + _sensitivity_block(readout)
         + _primary_block(readout)
         + _corrections_block(readout)
-        + _heavy_tail_block(readout)
-        + _novelty_block(readout)
         + _monitoring_block(readout)
         + _truth_block(readout)
         + [""]

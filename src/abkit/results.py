@@ -58,26 +58,6 @@ class SrmResult:
 
 
 @dataclass(frozen=True)
-class BootstrapResult:
-    """Point estimate with a bootstrap confidence interval (scipy's BCa method)."""
-
-    estimate: float
-    ci_low: float
-    ci_high: float
-    confidence: float
-    n_resamples: int
-
-
-@dataclass(frozen=True)
-class PermutationResult:
-    """Observed statistic and its permutation p-value."""
-
-    observed: float
-    p_value: float
-    n_permutations: int
-
-
-@dataclass(frozen=True)
 class SequentialDesign:
     """Group-sequential boundaries produced by an alpha-spending design.
 

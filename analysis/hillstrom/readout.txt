@@ -1,11 +1,10 @@
-Hillstrom e-mail experiment: user rows
+Hillstrom e-mail experiment
 Data: what the intake did before any statistic
   users   No E-Mail 21,306 (33.3%)   Mens E-Mail 21,307 (33.3%)   Womens E-Mail 21,387 (33.4%)
   alias_normalized   28,776 rows   zip_code 'Surburban' to 'Suburban', first at data row 2
 
 Limitations (*): read every result below with these in view
-  * the top 1% of users carry 100% of spend, because fewer than 1% have any spend at all; the
-      cross-check below compares three methods
+  * the top 1% of users carry 100% of spend, because fewer than 1% have any spend at all
   * the smallest detectable effect on visit is above a modest 5% lift for Mens E-Mail vs No E-Mail
       (8.8% of control) and Womens E-Mail vs No E-Mail (8.8% of control); a 'not detected' result
       there rules out little
@@ -40,15 +39,7 @@ Other metrics: corrected for 4 comparisons (Holm, and BH = Benjamini-Hochberg)
   spend   Womens E-Mail vs No E-Mail   +0.424   p 0.001   Holm 0.001   BH 0.001
   result   unadjusted 4 of 4 below 0.05; after Holm 4 survive
 
-Cross-check on spend: three methods, same question (Mens E-Mail vs No E-Mail)
-  chosen   first treatment in the arm order, not by its result
-  Welch         +0.770   +0.485 to +1.055   p 1.2e-07
-  bootstrap     +0.770   +0.493 to +1.069   BCa, 10,000 resamples
-  permutation   +0.770   p 0.0002, the floor for 10,000 relabelings
-  result   methods agree
-
 Decision for Mens E-Mail vs No E-Mail: higher on visit by +7.66 pp (+6.99 to +8.32 pp)
 Decision for Womens E-Mail vs No E-Mail: higher on visit by +4.52 pp (+3.89 to +5.16 pp)
 Figures:
   figures/corrections.png
-  figures/revenue.png

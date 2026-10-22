@@ -1,9 +1,8 @@
-"""Intake tests: config shape-checking, the user-rows loader, aggregates,
+"""Intake tests: config shape-checking, the user-rows loader,
 capabilities, and every validator rule proven on injected bad data."""
 
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 
 import numpy as np
@@ -12,8 +11,6 @@ import pytest
 from abkit.io import (
     Experiment,
     capabilities,
-    interval_from_cumulative,
-    load_aggregates,
     load_config,
     load_user_rows,
 )
@@ -25,7 +22,7 @@ def _config_text(**overrides: str) -> str:
     """The ok fixture config with named sections replaced verbatim."""
     base = {
         "experiment": '[experiment]\nname = "t"\nalpha = 0.05\n',
-        "input": '[input]\nshape = "user_rows"\npath = "user_rows_ok.csv"\n',
+        "input": '[input]\npath = "user_rows_ok.csv"\n',
         "columns": '[columns]\narm = "group"\nday = "day"\nuser_id = "user_id"\n',
         "arms": '[arms]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.5]\n',
         "metrics": (
@@ -101,7 +98,7 @@ class TestConfig:
 class TestCleanLoad:
     def test_capabilities(self, ok_experiment: Experiment) -> None:
         assert capabilities(ok_experiment) == frozenset(
-            {"user_rows", "time_axis", "multi_metric", "continuous_metric", "intended_split"}
+            {"time_axis", "multi_metric", "continuous_metric", "intended_split"}
         )
 
     def test_checkpoints_are_sorted_unique_days(self, ok_experiment: Experiment) -> None:
@@ -265,12 +262,6 @@ class TestValidatorRules:
         assert experiment.pre_period is not None
         assert experiment.pre_period["spend"].size == 300
 
-    def test_pre_column_rejected_without_user_rows(self, tmp_path: Path) -> None:
-        text = (FIXTURES / "aggregates_config.toml").read_text(encoding="utf-8")
-        text = text.replace("primary = true", 'primary = true\npre_column = "x"', 1)
-        with pytest.raises(ValueError, match="pre_column, which needs user-level rows"):
-            load_config(_write_config(tmp_path, text))
-
     def test_rows_use_canonical_keys(self, dirty: Experiment) -> None:
         assert dirty.rows is not None
         assert set(dirty.rows) == {"arm", "day", "user_id", "converted", "spend"}
@@ -283,91 +274,6 @@ class TestValidatorRules:
     def test_events_carry_example_row(self, dirty: Experiment) -> None:
         by_rule = {event.rule: event.detail for event in dirty.validation}
         assert by_rule["negative_value_dropped"] == "column 'spend', first at data row 7"
-
-
-class TestAggregates:
-    @pytest.fixture()
-    def agg_experiment(self) -> Experiment:
-        config = load_config(FIXTURES / "aggregates_config.toml")
-        return load_aggregates(config, FIXTURES / "aggregates_ok.csv")
-
-    def test_arms_derived_from_data(self, agg_experiment: Experiment) -> None:
-        assert agg_experiment.arms == ("control", "variant_2")
-
-    def test_capabilities(self, agg_experiment: Experiment) -> None:
-        # no user rows, so no user_rows and no continuous_metric even though
-        # a continuous metric is declared; time axis and multi-metric hold
-        assert capabilities(agg_experiment) == frozenset({"time_axis", "multi_metric"})
-
-    def test_checkpoints(self, agg_experiment: Experiment) -> None:
-        assert agg_experiment.checkpoints == (1.0, 2.0, 3.0)
-
-    def test_experiment_filter_applied(self, agg_experiment: Experiment) -> None:
-        cells = {
-            (cell.arm, cell.metric, cell.checkpoint): cell for cell in agg_experiment.aggregates
-        }
-        assert cells[("control", "metric_1", 1.0)].n == 100  # expA, not expB's 50
-
-    def test_end_of_run_equals_last_checkpoint(self, agg_experiment: Experiment) -> None:
-        cells = {
-            (cell.arm, cell.metric, cell.checkpoint): cell for cell in agg_experiment.aggregates
-        }
-        final = cells[("variant_2", "metric_4", None)]
-        last = cells[("variant_2", "metric_4", 3.0)]
-        assert (final.n, final.mean, final.variance) == (last.n, last.mean, last.variance)
-
-    @pytest.mark.parametrize(
-        ("bad_row", "match"),
-        [
-            ("expA,2,1,4.0,0,0.1,0.09,400,0.12,0.11", "nonpositive count"),
-            ("expA,2,1,4.0,400,0.1,-0.09,400,0.12,0.11", "negative variance"),
-            ("expA,2,1,4.0,300,0.1,0.09,400,0.12,0.11", "cumulative_regression_error"),
-        ],
-    )
-    def test_hard_errors(self, tmp_path: Path, bad_row: str, match: str) -> None:
-        source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
-        bad = tmp_path / "bad.csv"
-        bad.write_text(source + bad_row + "\n", encoding="utf-8")
-        config = load_config(FIXTURES / "aggregates_config.toml")
-        with pytest.raises(ValueError, match=match):
-            load_aggregates(config, bad)
-
-
-class TestIntervalFromCumulative:
-    def test_recovery_is_exact_under_ddof1(self) -> None:
-        random_generator = np.random.default_rng(7)
-        observations = random_generator.lognormal(1.0, 0.8, size=200)
-        splits = [60, 140, 200]
-        cumulative_counts, cumulative_means, cumulative_variances = [], [], []
-        for end in splits:
-            chunk = observations[:end]
-            cumulative_counts.append(chunk.size)
-            cumulative_means.append(chunk.mean())
-            cumulative_variances.append(chunk.var(ddof=1))
-        interval_counts, interval_means, interval_variances = interval_from_cumulative(
-            np.array(cumulative_counts), np.array(cumulative_means), np.array(cumulative_variances)
-        )
-        expected = [observations[:60], observations[60:140], observations[140:200]]
-        assert np.allclose(interval_counts, [60, 80, 60])
-        assert np.allclose(interval_means, [chunk.mean() for chunk in expected], rtol=1e-10)
-        assert np.allclose(interval_variances, [chunk.var(ddof=1) for chunk in expected], rtol=1e-8)
-
-    def test_repeated_checkpoint_rejected(self) -> None:
-        with pytest.raises(ValueError, match="zero observations"):
-            interval_from_cumulative(np.array([10, 10]), np.array([1.0, 1.0]), np.array([0.5, 0.5]))
-
-    def test_decreasing_counts_rejected(self) -> None:
-        with pytest.raises(ValueError, match="non-decreasing"):
-            interval_from_cumulative(np.array([10, 5]), np.array([1.0, 1.0]), np.array([0.5, 0.5]))
-
-    def test_inconsistent_stats_rejected(self) -> None:
-        # second cumulative mean jumps while variance shrinks to zero, which
-        # no real cumulative series can do; the recovered interval variance
-        # goes materially negative and must raise
-        with pytest.raises(ValueError, match="inconsistent"):
-            interval_from_cumulative(
-                np.array([10, 12]), np.array([1.0, 5.0]), np.array([100.0, 0.0])
-            )
 
 
 class TestBatteryRegressions:
@@ -479,64 +385,6 @@ class TestBatteryRegressions:
         assert experiment.rows is not None
         assert experiment.rows["arm"].size == 2
 
-    def test_aggregates_missing_declared_metric_rejected(self, tmp_path: Path) -> None:
-        config = load_config(FIXTURES / "aggregates_config.toml")
-        config["metrics"].append(
-            {
-                "name": "metric_9",
-                "column": "9",
-                "kind": "binary",
-                "primary": False,
-                "nonnegative": False,
-            }
-        )
-        with pytest.raises(ValueError, match="has no data for arm"):
-            load_aggregates(config, FIXTURES / "aggregates_ok.csv")
-
-    def test_aggregates_misaligned_checkpoints_rejected(self, tmp_path: Path) -> None:
-        source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
-        # second variant for expA whose metric-1 grid misses checkpoint 1.0
-        extra = (
-            "expA,3,1,2.0,220,0.11,0.0983,110,0.14,0.1204\n"
-            "expA,3,1,3.0,360,0.105,0.0942,180,0.13,0.1131\n"
-            "expA,3,4,1.0,100,5.2,3.1,50,5.4,3.3\n"
-            "expA,3,4,2.0,220,5.3,3.2,110,5.5,3.4\n"
-            "expA,3,4,3.0,360,5.25,3.15,180,5.6,3.5\n"
-        )
-        bad = tmp_path / "misaligned.csv"
-        bad.write_text(source + extra, encoding="utf-8")
-        config = load_config(FIXTURES / "aggregates_config.toml")
-        with pytest.raises(ValueError, match="checkpoint grids differ across arms"):
-            load_aggregates(config, bad)
-
-    def test_aggregates_nan_statistic_rejected(self, tmp_path: Path) -> None:
-        source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
-        bad = tmp_path / "nanstat.csv"
-        bad.write_text(source + "expA,2,1,4.0,400,NaN,0.09,400,0.12,0.11\n", encoding="utf-8")
-        config = load_config(FIXTURES / "aggregates_config.toml")
-        with pytest.raises(ValueError, match="non-finite statistics at data row"):
-            load_aggregates(config, bad)
-
-    def test_aggregates_noninteger_count_rejected(self, tmp_path: Path) -> None:
-        source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
-        bad = tmp_path / "fraccount.csv"
-        bad.write_text(source + "expA,2,1,4.0,400.9,0.1,0.09,400,0.12,0.11\n", encoding="utf-8")
-        config = load_config(FIXTURES / "aggregates_config.toml")
-        with pytest.raises(ValueError, match="non-integer count"):
-            load_aggregates(config, bad)
-
-    def test_aggregates_filter_keys_must_pair(self, tmp_path: Path) -> None:
-        text = (FIXTURES / "aggregates_config.toml").read_text(encoding="utf-8")
-        text = text.replace('experiment_id = "expA"\n', "")
-        with pytest.raises(ValueError, match="must be set together"):
-            load_config(_write_config(tmp_path, text))
-
-    def test_aggregates_intended_split_validated(self, tmp_path: Path) -> None:
-        text = (FIXTURES / "aggregates_config.toml").read_text(encoding="utf-8")
-        text += "\n[arms]\nintended_split = [3, 7]\n"
-        with pytest.raises(ValueError, match="positive shares summing to 1"):
-            load_config(_write_config(tmp_path, text))
-
     def test_arm_case_normalization_is_counted(self, tmp_path: Path) -> None:
         config = load_config(_write_config(tmp_path, _config_text()))
         data_path = tmp_path / "cased.csv"
@@ -558,36 +406,10 @@ class TestBatteryRegressions:
         assert experiment.rows["arm"].size == 4
 
 
-def test_unparseable_aggregate_keeps_the_parse_error(tmp_path: Path) -> None:
-    source = (FIXTURES / "aggregates_ok.csv").read_text(encoding="utf-8")
-    bad = tmp_path / "bad.csv"
-    bad.write_text(source + "expA,2,1,4.0,abc,0.1,0.09,400,0.12,0.11\n", encoding="utf-8")
-    config = load_config(FIXTURES / "aggregates_config.toml")
-    with pytest.raises(ValueError, match="unparseable") as raised:
-        load_aggregates(config, bad)
-    assert isinstance(raised.value.__cause__, ValueError)
-
-
-def test_single_observation_interval_is_nan_without_any_warning() -> None:
-    # no warning is blocked here: the division is skipped where it has no answer
-    observations = np.random.default_rng(5).lognormal(1.0, 0.8, size=40)
-    splits = [20, 21, 40]
-    counts = np.array([float(end) for end in splits])
-    means = np.array([observations[:end].mean() for end in splits])
-    variances = np.array([observations[:end].var(ddof=1) for end in splits])
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", RuntimeWarning)
-        interval_counts, _, interval_variances = interval_from_cumulative(counts, means, variances)
-    assert interval_counts[1] == 1.0
-    assert np.isnan(interval_variances[1])
-    expected = [observations[:20].var(ddof=1), observations[21:40].var(ddof=1)]
-    assert np.allclose(interval_variances[[0, 2]], expected, rtol=1e-8)
-
-
 def test_alias_table_on_a_numeric_column_stops_the_run(tmp_path: Path) -> None:
     text = (
         '[experiment]\nname = "aliases on spend"\n\n'
-        '[input]\nshape = "user_rows"\n\n'
+        ""
         '[columns]\narm = "group"\n\n'
         '[columns.aliases.spend]\n"" = "0"\n\n'
         '[arms]\nlabels = ["control", "treatment"]\n\n'
@@ -597,3 +419,9 @@ def test_alias_table_on_a_numeric_column_stops_the_run(tmp_path: Path) -> None:
     config_path.write_text(text, encoding="utf-8")
     with pytest.raises(ValueError, match="read as numbers"):
         load_config(config_path)
+
+
+def test_aggregates_shape_is_refused(tmp_path: Path) -> None:
+    text = _config_text(input='[input]\nshape = "aggregates"\npath = "x.csv"\n')
+    with pytest.raises(ValueError, match="reads one row per user"):
+        load_config(_write_config(tmp_path, text))

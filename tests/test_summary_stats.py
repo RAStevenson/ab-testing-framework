@@ -1,5 +1,5 @@
-"""Property tests for the summary-statistic variants: given the statistics
-of the same data, each must agree with its raw-array twin. Statistical code
+"""Property tests for the summary-statistic variant of the replay's z: given the
+statistics of the same data, it must agree with its raw-count twin. Statistical code
 can be wrong and still return plausible numbers, so the agreement is pinned
 across many seeded draws, not spot-checked once."""
 
@@ -8,60 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from abkit.frequentist import welch_ttest, welch_ttest_from_stats
 from abkit.sequential import z_from_cumulative_counts, z_from_cumulative_stats
-
-FIELDS = (
-    "n_control",
-    "n_treatment",
-    "mean_control",
-    "mean_treatment",
-    "difference",
-    "statistic",
-    "df",
-    "p_value",
-    "ci_low",
-    "ci_high",
-)
-
-
-class TestWelchFromStats:
-    @pytest.mark.parametrize("seed", range(50))
-    def test_agrees_with_array_twin(self, seed: int) -> None:
-        random_generator = np.random.default_rng(seed)
-        n_control = int(random_generator.integers(5, 400))
-        n_treatment = int(random_generator.integers(5, 400))
-        control = random_generator.lognormal(
-            1.0, random_generator.uniform(0.2, 1.5), size=n_control
-        )
-        treatment = random_generator.lognormal(
-            1.1, random_generator.uniform(0.2, 1.5), size=n_treatment
-        )
-        from_arrays = welch_ttest(control, treatment)
-        from_stats = welch_ttest_from_stats(
-            n_control,
-            float(control.mean()),
-            float(control.var(ddof=1)),
-            n_treatment,
-            float(treatment.mean()),
-            float(treatment.var(ddof=1)),
-        )
-        for field in FIELDS:
-            assert getattr(from_stats, field) == pytest.approx(
-                getattr(from_arrays, field), rel=1e-12, abs=1e-12
-            ), field
-
-    def test_rejects_single_observation_arm(self) -> None:
-        with pytest.raises(ValueError, match="at least 2"):
-            welch_ttest_from_stats(1, 0.0, 0.0, 10, 1.0, 1.0)
-
-    def test_rejects_negative_variance(self) -> None:
-        with pytest.raises(ValueError, match="non-negative"):
-            welch_ttest_from_stats(10, 0.0, -1.0, 10, 1.0, 1.0)
-
-    def test_rejects_constant_arms(self) -> None:
-        with pytest.raises(ValueError, match="constant"):
-            welch_ttest_from_stats(10, 1.0, 0.0, 10, 1.0, 0.0)
 
 
 class TestZFromCumulativeStats:
