@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from abkit.frequentist import srm_check
-from abkit.generators import generate_binary, generate_continuous, generate_example_rows
+from abkit.significance_tests import srm_check
+from abkit.synthetic_data import generate_binary, generate_continuous, generate_example_rows
 
 
 def test_binary_rates_match_configuration():

@@ -7,7 +7,7 @@ import dataclasses
 import re
 from pathlib import Path
 
-from abkit.io import load_config, load_user_rows
+from abkit.experiment_intake import load_config, load_user_rows
 from abkit.readout_analysis import Limitation, analyze_experiment
 from abkit.readout_text import readout_lines, save_readout
 
@@ -57,7 +57,7 @@ def test_user_rows_readout_has_every_block_in_order(tmp_path: Path) -> None:
         "Limitations (*):",
         "Group split:",
         "Sensitivity:",
-        "Primary converted:",
+        "Primary metric, converted:",
         "Other metrics:",
         "Monitoring replay:",
         "Planted versus found",

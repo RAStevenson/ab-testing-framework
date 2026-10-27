@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from abkit.readout_analysis import ExperimentReadout, MonitoringReplay
-from abkit.results import RateComparison
+from abkit.result_types import RateComparison
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes

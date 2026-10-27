@@ -1,8 +1,8 @@
 # Notes: measurements and decisions
 
 Dated measurements and history the README refers to but does not carry. Each
-entry names its date, its conditions, and whether the loop that produced it
-is in the repo.
+measurement names its date, its conditions, and whether the loop that
+produced it is in the repo.
 
 ## Scope reduced (2026-10-21)
 
@@ -26,7 +26,7 @@ The generator decides whether a user spends, and how much, from hidden
 random draws. The pre-experiment column comes from matching draws for the
 period before, each correlated with its present one at 0.9. Spend itself
 then correlates with past spend at only about 0.54, and CUPED removes the
-square of that, about 30% when there are no whale purchases. That value,
+square of that, about 30% when there are no whale purchases. That share,
 0.296, is computed in closed form and checked against simulation by the
 generator's tests. The whale purchases, a few users who spend far more than
 the rest, have no counterpart in the pre-experiment column, so they add
@@ -61,18 +61,20 @@ calling the metric heavy-tailed.
 With several treatments, the monitoring replay runs on one contrast, and the
 readout names which. The rule is the first treatment in `arms.labels`. It
 does not look at the results, so the choice cannot favor whichever treatment
-looks best, and the readout prints "chosen first treatment in the arm order,
-not by its result" in the replay block. Until 2026-10-21 the same rule also
-chose the contrast for the cross-check and for a split test across
-checkpoints on per-group totals.
+looks best, and the replay block prints the value "first treatment in the
+arm order, not by its result" on its "chosen" line. Until 2026-10-21 the
+same rule also chose the contrast for the cross-check and for a split test
+across checkpoints on per-group totals.
 
 ## The z-test's two standard errors (a design decision, 2026-10-07)
 
-The z-test uses the pooled standard error for the statistic and the unpooled
-Agresti-Caffo interval for the estimate, which stays a real interval when an
-arm sits at 0% or 100%, both through statsmodels. The pooled variance is the
-right one under the null the test evaluates, and the unpooled one is right
-away from the null, where the interval lives.
+The z-test uses the pooled standard error for the statistic, through
+statsmodels. The pooled variance is the right one under the null the test
+evaluates. The interval for the estimate is the unpooled Agresti-Caffo
+interval, also through statsmodels, because the unpooled variance is right
+away from the null, where the interval lives. It also stays wide enough when
+an arm sits at or near 0% or 100%, where the plain unpooled interval comes
+out too narrow.
 
 ## Removed code and the ASOS example (history)
 
@@ -93,7 +95,8 @@ times faster, measured 2026-10-06 with a benchmark script since removed. The
 scipy call was kept because speed was not a concern at experiment sizes and
 it is one less thing to defend. On the Hillstrom spend contrast, 21,306 and
 21,307 users, the bootstrap and the permutation test each took 7 seconds at
-10,000 resamples, measured 2026-10-07.
+10,000 resamples, measured 2026-10-07 with a one-off loop that is not in the
+repo.
 
 ### The Spotify confidence trial (2026-10-06)
 
@@ -104,8 +107,8 @@ The Holm-adjusted p-values on the other three metrics were identical. Its
 sequential test over the 95 looks flagged no stop, and neither did this
 repo's replay. Its final adjusted interval was -0.38 to +0.25 pp against
 this repo's -0.377 to +0.241 pp. The source of that gap was not traced. The
-install brought 68 packages, pinned pandas below 3, and the package is
-marked beta.
+run was made in a separate environment, not in the repo. The install brought
+68 packages, pinned pandas below 3, and the package is marked beta.
 
 ### The early-versus-late users line (2026-10-20)
 

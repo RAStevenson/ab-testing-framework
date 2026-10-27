@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from abkit.sequential import z_from_cumulative_counts, z_from_cumulative_stats
+from abkit.group_sequential import z_from_cumulative_counts, z_from_cumulative_stats
 
 
 class TestZFromCumulativeStats:

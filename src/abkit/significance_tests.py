@@ -13,7 +13,7 @@ from scipy import stats
 from statsmodels.stats.multitest import multipletests
 from statsmodels.stats.proportion import confint_proportions_2indep, proportions_ztest
 
-from abkit.results import MeanComparison, RateComparison, SrmResult
+from abkit.result_types import MeanComparison, RateComparison, SrmResult
 
 
 def two_proportion_ztest(

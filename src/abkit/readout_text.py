@@ -20,7 +20,7 @@ from abkit.readout_analysis import (
     planted_end_of_run_lift,
     planted_spend_difference,
 )
-from abkit.results import CupedResult, MeanComparison, RateComparison
+from abkit.result_types import CupedResult, MeanComparison, RateComparison
 
 LINE_WIDTH = 100
 _INDENT = "  "
@@ -45,22 +45,22 @@ _SPLIT_RESULTS = {
 }
 
 
-def pct(fraction: float, digits: int = 2) -> str:
+def format_percent(fraction: float, digits: int = 2) -> str:
     """Format a fraction as a percentage."""
     return f"{100 * fraction:.{digits}f}%"
 
 
-def pp(difference: float, digits: int = 2) -> str:
+def format_points(difference: float, digits: int = 2) -> str:
     """Format a difference in proportions as percentage points."""
     return f"{100 * difference:.{digits}f} pp"
 
 
-def pp_signed(difference: float, digits: int = 2) -> str:
+def format_points_signed(difference: float, digits: int = 2) -> str:
     """Signed percentage-point difference, so effect columns read one way."""
     return f"{100 * difference:+.{digits}f} pp"
 
 
-def fmt_p(p_value: float) -> str:
+def format_p_value(p_value: float) -> str:
     """Format a p-value with a precision that fits its size."""
     if p_value < 1e-4:
         return f"{p_value:.1e}"
@@ -70,14 +70,14 @@ def fmt_p(p_value: float) -> str:
 def _effect(comparison: RateComparison | MeanComparison) -> str:
     """A comparison's effect in its own unit: percentage points for rates, plain for means."""
     if isinstance(comparison, RateComparison):
-        return pp_signed(comparison.absolute_lift)
+        return format_points_signed(comparison.absolute_lift)
     return f"{comparison.difference:+.3f}"
 
 
 def _interval(comparison: RateComparison | MeanComparison) -> str:
     """A comparison's interval in its own unit."""
     if isinstance(comparison, RateComparison):
-        return f"{100 * comparison.ci_low:+.2f} to {pp_signed(comparison.ci_high)}"
+        return f"{100 * comparison.ci_low:+.2f} to {format_points_signed(comparison.ci_high)}"
     return f"{comparison.ci_low:+.3f} to {comparison.ci_high:+.3f}"
 
 
@@ -124,14 +124,14 @@ def _binary_metrics(readout: ExperimentReadout) -> set[str]:
 def _cuped_line(treatment_arm: str, control_arm: str, result: CupedResult, binary: bool) -> str:
     """One CUPED contrast: adjusted effect, interval, p, and the share of noise removed."""
     if binary:
-        effect = pp_signed(result.difference)
-        interval = f"{100 * result.ci_low:+.2f} to {pp_signed(result.ci_high)}"
+        effect = format_points_signed(result.difference)
+        interval = f"{100 * result.ci_low:+.2f} to {format_points_signed(result.ci_high)}"
     else:
         effect = f"{result.difference:+.3f}"
         interval = f"{result.ci_low:+.3f} to {result.ci_high:+.3f}"
     return (
-        f"{treatment_arm} vs {control_arm}   {effect}   {interval}   p {fmt_p(result.p_value)}"
-        f"   noise removed {result.variance_reduction:.0%}"
+        f"{treatment_arm} vs {control_arm}   {effect}   {interval}   "
+        f"p {format_p_value(result.p_value)}   noise removed {result.variance_reduction:.0%}"
     )
 
 
@@ -150,7 +150,8 @@ def _data_block(readout: ExperimentReadout) -> list[str]:
     )
     if readout.validation:
         for event in readout.validation:
-            lines += _wrapped(f"{event.rule}   {event.count:,} rows   {event.detail}")
+            label = event.rule.replace("_", " ")
+            lines += _wrapped(f"{label}   {event.count:,} rows   {event.detail}")
     else:
         lines.append(_INDENT + "repairs and drops   none; the file passed every rule as delivered")
     return lines
@@ -177,7 +178,8 @@ def _group_split_block(readout: ExperimentReadout) -> list[str]:
             worst = min(worst, srm.p_value)
             lines.append(
                 _INDENT + f"{treatment_arm} vs {control_arm}   {sizes[treatment_arm]:,} vs "
-                f"{sizes[control_arm]:,}   chi-square {srm.statistic:.2f}   p {fmt_p(srm.p_value)}"
+                f"{sizes[control_arm]:,}   chi-square {srm.statistic:.2f}   "
+                f"p {format_p_value(srm.p_value)}"
             )
         lines.append(_INDENT + "result   " + _SPLIT_RESULTS["ok" if worst >= 1e-3 else "fail"])
     else:
@@ -197,14 +199,16 @@ def _sensitivity_block(readout: ExperimentReadout) -> list[str]:
             "level the Holm correction applies"
         )
     for treatment_arm, values in readout.sensitivity:
-        control = pct(values["control_mean"], 1) if binary else f"{values['control_mean']:.3f}"
+        control = (
+            format_percent(values["control_mean"], 1) if binary else f"{values['control_mean']:.3f}"
+        )
         mde = values["mde"]
         if not np.isfinite(mde):
             detectable = "none reachable"
         else:
-            detectable = pp(mde) if binary else f"{mde:.3f}"
+            detectable = format_points(mde) if binary else f"{mde:.3f}"
             if np.isfinite(values["relative_mde"]):
-                detectable += f" ({pct(values['relative_mde'], 1)} of control)"
+                detectable += f" ({format_percent(values['relative_mde'], 1)} of control)"
         lines += _wrapped(
             f"{treatment_arm} vs {control_arm}   {values['n_treatment']:,.0f} vs "
             f"{values['n_control']:,.0f} users   control {control}   detectable {detectable}"
@@ -223,17 +227,20 @@ def _decision_p(readout: ExperimentReadout, index: int) -> float:
 def _primary_block(readout: ExperimentReadout) -> list[str]:
     """Block 5: the primary metric per contrast, interval first, then CUPED where it ran."""
     control_arm = readout.arm_sizes[0][0]
-    lines = ["", f"Primary {readout.primary_metric}: effect, 95% interval, p; interval first"]
+    lines = [
+        "",
+        f"Primary metric, {readout.primary_metric}: effect, 95% interval, p; interval first",
+    ]
     for index, (treatment_arm, comparison) in enumerate(readout.primary):
         outcome = _primary_outcome(comparison, readout.alpha, _decision_p(readout, index))
         holm_text = (
-            f"   Holm {fmt_p(readout.primary_holm[index])}"
+            f"   Holm {format_p_value(readout.primary_holm[index])}"
             if readout.primary_holm is not None
             else ""
         )
         lines += _wrapped(
             f"{treatment_arm} vs {control_arm}   {_effect(comparison)}   "
-            f"{_interval(comparison)}   p {fmt_p(comparison.p_value)}{holm_text}   "
+            f"{_interval(comparison)}   p {format_p_value(comparison.p_value)}{holm_text}   "
             + _PRIMARY_RESULTS[outcome]
         )
     if readout.primary_holm is not None:
@@ -270,8 +277,8 @@ def _corrections_block(readout: ExperimentReadout) -> list[str]:
     for corrected in family:
         lines += _wrapped(
             f"{corrected.metric}   {corrected.treatment_arm} vs {control_arm}   "
-            f"{_effect(corrected.comparison)}   p {fmt_p(corrected.comparison.p_value)}   "
-            f"Holm {fmt_p(corrected.holm_p)}   BH {fmt_p(corrected.bh_q)}"
+            f"{_effect(corrected.comparison)}   p {format_p_value(corrected.comparison.p_value)}   "
+            f"Holm {format_p_value(corrected.holm_p)}   BH {format_p_value(corrected.bh_q)}"
         )
     n_naive = sum(corrected.comparison.p_value < readout.alpha for corrected in family)
     n_holm = sum(corrected.holm_p < readout.alpha for corrected in family)
@@ -309,7 +316,8 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
     low, high = replay.intervals.ci_low[last], replay.intervals.ci_high[last]
     if binary:
         final = (
-            f"effect {pp_signed(estimate)}   adjusted {level} {100 * low:+.2f} to {pp_signed(high)}"
+            f"effect {format_points_signed(estimate)}   "
+            f"adjusted {level} {100 * low:+.2f} to {format_points_signed(high)}"
         )
     else:
         final = f"effect {estimate:+.3f}   adjusted {level} {low:+.3f} to {high:+.3f}"
@@ -349,7 +357,8 @@ def _truth_block(readout: ExperimentReadout) -> list[str]:
                 inside = comparison.ci_low <= expected <= comparison.ci_high
                 novelty_note = ", novelty averaged in" if "novelty_boost" in readout.truth else ""
                 found["absolute_lift"] = (
-                    f"expected {pp_signed(expected)} at the end of the run{novelty_note}   "
+                    f"expected {format_points_signed(expected)} "
+                    f"at the end of the run{novelty_note}   "
                     f"found {_effect(comparison)} ({_interval(comparison)})   "
                     + ("inside" if inside else "OUTSIDE")
                 )
@@ -370,16 +379,20 @@ def _truth_block(readout: ExperimentReadout) -> list[str]:
             + (
                 ", detected"
                 if detected
-                else f", too small to detect at this sample (p {fmt_p(result.p_value)})"
+                else f", too small to detect at this sample (p {format_p_value(result.p_value)})"
             )
         )
     for metric, _, result in readout.cuped:
         found["pre_correlation"] = (
-            f"found CUPED on {metric} removed {result.variance_reduction:.0%} of the noise"
+            f"found CUPED on {metric} removed {result.variance_reduction:.0%} of the noise "
+            "(the setting correlates hidden draws, not spend itself; see docs/NOTES.md)"
         )
     width = max(len(name) for name in readout.truth)
     for name, value in sorted(readout.truth.items()):
         line = f"{name:<{width}}   planted {_planted(value)}"
+        if name == "absolute_lift" and isinstance(value, float):
+            # The other found values are in pp, so the planted lift gets its pp form beside it.
+            line += f" ({format_points_signed(value)})"
         if name in found:
             line += f"   {found[name]}"
         lines += _wrapped(line)
@@ -411,12 +424,12 @@ def _decision_line(readout: ExperimentReadout, index: int) -> str:
         if not np.isfinite(mde):
             mde_text = "no lift at all with this sample"
         elif isinstance(comparison, RateComparison):
-            mde_text = pp(mde)
+            mde_text = format_points(mde)
         else:
             mde_text = f"{mde:.3f}"
         return _DECISIONS[outcome].format(arm=treatment_arm, control=control_arm, mde=mde_text)
     if isinstance(comparison, RateComparison):
-        low, high = f"{100 * comparison.ci_low:+.2f}", pp_signed(comparison.ci_high)
+        low, high = f"{100 * comparison.ci_low:+.2f}", format_points_signed(comparison.ci_high)
     else:
         low, high = f"{comparison.ci_low:+.3f}", f"{comparison.ci_high:+.3f}"
     return _DECISIONS[outcome].format(

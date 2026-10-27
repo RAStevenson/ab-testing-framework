@@ -9,14 +9,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from abkit.io import Experiment, load_config, load_user_rows
+from abkit.experiment_intake import Experiment, load_config, load_user_rows
 from abkit.readout_analysis import (
     HEAVY_TAIL_TOP_SHARE,
     ExperimentReadout,
     analyze_experiment,
     planted_spend_difference,
 )
-from abkit.results import RateComparison
+from abkit.result_types import RateComparison
 
 FIXTURES = Path(__file__).parent / "fixtures"
 HEADER = "user_id,group,day,converted,spend\n"

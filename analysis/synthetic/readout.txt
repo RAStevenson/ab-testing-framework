@@ -6,7 +6,7 @@ Data: what the intake did before any statistic
 Limitations (*): read every result below with these in view
   * the top 1% of users carry 67% of spend, and 94% of users have none
   * the smallest detectable effect on converted is above a modest 5% lift for treatment vs control
-      (6.5% of control); a 'not detected' result there rules out little
+      (6.5% of control); a 'not detected' result there would rule out little
 
 Group split: does assignment match the plan?
   treatment vs control   59,844 vs 60,156   chi-square 0.81   p 0.368
@@ -16,7 +16,7 @@ Sensitivity: smallest lift this sample could detect, 80% power
   treatment vs control   59,844 vs 60,156 users   control 6.1%   detectable 0.39 pp (6.5% of
       control)
 
-Primary converted: effect, 95% interval, p; interval first
+Primary metric, converted: effect, 95% interval, p; interval first
   treatment vs control   +0.67 pp   +0.39 to +0.95 pp   p 2.3e-06   detected, treatment higher
 
 CUPED on spend: adjusted by its pre-experiment column; narrower interval = less noise
@@ -29,8 +29,8 @@ Monitoring replay: 14 looks; 5% budget spread across them; a crossing = a stop a
   final look   effect +0.67 pp   adjusted 95% +0.36 to +0.97 pp   boundary |z| 2.15
 
 Planted versus found (synthetic only)
-  absolute_lift            planted 0.004   expected +0.67 pp at the end of the run, novelty averaged
-      in   found +0.67 pp (+0.39 to +0.95 pp)   inside
+  absolute_lift            planted 0.004 (+0.40 pp)   expected +0.67 pp at the end of the run,
+      novelty averaged in   found +0.67 pp (+0.39 to +0.95 pp)   inside
   base_rate                planted 0.06   found 0.0608 (control rate)
   log_mean                 planted 3.4
   log_sigma                planted 1.3
@@ -38,7 +38,8 @@ Planted versus found (synthetic only)
   n_users                  planted 120,000
   novelty_boost            planted 0.008
   novelty_half_life_days   planted 3.0
-  pre_correlation          planted 0.9   found CUPED on spend removed 14% of the noise
+  pre_correlation          planted 0.9   found CUPED on spend removed 14% of the noise (the setting
+      correlates hidden draws, not spend itself; see docs/NOTES.md)
   seed                     planted 38
   spend_rate               planted 0.06
   spend_rate_lift          planted 0.004   expected +0.315 per user on spend   found after CUPED

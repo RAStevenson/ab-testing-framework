@@ -1,6 +1,6 @@
 """The readout's analysis layer: every number the readout reports, computed once, no text.
 
-``analyze_experiment`` turns an ``abkit.io.Experiment`` into an
+``analyze_experiment`` turns an ``abkit.experiment_intake.Experiment`` into an
 ``ExperimentReadout``, a frozen record of results in the order the
 readout prints them: the data and its validation events, the limitations
 the checks raised, the group-split check, the sensitivity of the sample,
@@ -28,16 +28,22 @@ from numpy.typing import NDArray
 from scipy import stats
 
 from abkit.cuped_adjustment import cuped_mean_diff
-from abkit.frequentist import (
-    benjamini_hochberg,
-    holm,
-    srm_check,
-    two_proportion_ztest,
-    welch_ttest,
+from abkit.experiment_intake import (
+    ArmAggregate,
+    Experiment,
+    MetricSpec,
+    ValidationEvent,
+    experiment_capabilities,
 )
-from abkit.io import ArmAggregate, Experiment, MetricSpec, ValidationEvent, capabilities
-from abkit.power import mde_two_proportions, power_two_proportions
-from abkit.results import (
+from abkit.group_sequential import (
+    design_boundaries,
+    monitor_boundaries,
+    repeated_intervals,
+    z_from_cumulative_counts,
+    z_from_cumulative_stats,
+)
+from abkit.power_analysis import mde_two_proportions, power_two_proportions
+from abkit.result_types import (
     CupedResult,
     MeanComparison,
     RateComparison,
@@ -46,12 +52,12 @@ from abkit.results import (
     SequentialOutcome,
     SrmResult,
 )
-from abkit.sequential import (
-    design,
-    monitor,
-    repeated_intervals,
-    z_from_cumulative_counts,
-    z_from_cumulative_stats,
+from abkit.significance_tests import (
+    benjamini_hochberg,
+    holm,
+    srm_check,
+    two_proportion_ztest,
+    welch_ttest,
 )
 
 # the flag thresholds, accepted 2026-10-06
@@ -62,7 +68,7 @@ MODEST_RELATIVE_LIFT = 0.05  # a 5% relative lift; a smallest detectable effect 
 TARGET_POWER = 0.8
 MIN_LOOKS = 3  # fewer looks than this and the replay can say nothing
 # the boundary integration's grid convergence is pinned on a 14-look schedule
-# (tests/test_sequential.py); past that the boundaries are unchecked, so flagged
+# (tests/test_group_sequential.py); past that the boundaries are unchecked, so flagged
 MANY_LOOKS = 14
 # a gap in the day sequence this many times the typical spacing counts as missing days
 MISSING_DAY_GAP_FACTOR = 1.5
@@ -139,7 +145,7 @@ _Field = TypeVar("_Field")
 
 def _present(value: _Field | None, what: str) -> _Field:
     """Return an optional Experiment field, raising if it is missing. Callers
-    use this only where capabilities() has already promised the field."""
+    use this only where experiment_capabilities() has already promised the field."""
     if value is None:
         raise ValueError(f"this block needs the experiment's {what}, which it does not have")
     return value
@@ -283,7 +289,7 @@ def _sensitivities(
         "low_sensitivity",
         f"the smallest detectable effect on {metric.name} is above a modest "
         f"{MODEST_RELATIVE_LIFT:.0%} lift for " + _joined(weak) + "; a 'not detected' result "
-        "there rules out little",
+        "there would rule out little",
     )
 
 
@@ -420,8 +426,8 @@ def _cuped(
 
 
 def _corrections(experiment: Experiment) -> tuple[CorrectedComparison, ...]:
-    """Holm and Benjamini-Hochberg over the non-primary family (or the primary metric's contrasts
-    when there is no other metric); empty when the family has fewer than two members."""
+    """Holm and Benjamini-Hochberg over the non-primary metrics' contrasts; empty when that family
+    has fewer than two members."""
     family: list[tuple[MetricSpec, str]] = [
         (metric, treatment_arm)
         for metric in experiment.metrics
@@ -500,7 +506,7 @@ def _usable_checkpoints(experiment: Experiment, metric: MetricSpec) -> tuple[int
     """(usable, total) checkpoints of the primary metric across every arm, or None without a time
     axis. Prints and returns None when an arm has no per-checkpoint cells. Cells built from user
     rows are consistent by construction, so every checkpoint is usable."""
-    if "time_axis" not in capabilities(experiment):
+    if "time_axis" not in experiment_capabilities(experiment):
         return None
     try:
         for arm in experiment.arms:
@@ -558,10 +564,10 @@ def _monitoring(
             treatment_means,
             treatment_variances,
         )
-    sequential_design = design(
+    sequential_design = design_boundaries(
         fractions.tolist(), alpha=experiment.alpha, spending="obrien-fleming"
     )
-    outcome = monitor(z_path.tolist(), sequential_design)
+    outcome = monitor_boundaries(z_path.tolist(), sequential_design)
     # the adjusted intervals use each look's unpooled standard error, the
     # one that describes the difference that is there
     standard_errors = np.sqrt(

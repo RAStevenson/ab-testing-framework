@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from abkit.frequentist import (
+from abkit.significance_tests import (
     benjamini_hochberg,
     bonferroni,
     holm,

@@ -6,8 +6,9 @@ pre-experiment column per metric. The rows come from a user's own export,
 a fetched public dataset, or the synthetic generator, and normalize into
 the ``Experiment`` object defined here, which also carries per-group
 summary statistics at the end of the run and, with a day column, at each
-checkpoint. ``capabilities`` reports which readout blocks a given
-Experiment can support, and the readout's analysis layer reads it.
+checkpoint. ``experiment_capabilities`` reports which data properties a given
+Experiment has; the readout's analysis layer reads its ``time_axis`` flag to
+decide whether the replay runs.
 
 The experiment description comes from a TOML config (stdlib ``tomllib``,
 so the library's dependencies stay numpy, scipy, and statsmodels).
@@ -96,7 +97,7 @@ class Experiment:
     validation: tuple[ValidationEvent, ...]
 
 
-def capabilities(experiment: Experiment) -> frozenset[str]:
+def experiment_capabilities(experiment: Experiment) -> frozenset[str]:
     """The data properties this experiment can support a readout block with."""
     data_capabilities = set()
     if experiment.checkpoints is not None and len(experiment.checkpoints) >= 3:
@@ -223,9 +224,10 @@ def load_config(path: Path) -> dict:
     )
     if not alias_tables_ok:
         raise ValueError("[columns.aliases.<col>] tables must map strings to strings")
-    # Metric, pre-experiment, day, and user id cells are read as numbers and never
-    # pass through the alias tables, so a table on one of them would be accepted
-    # and do nothing; the README promises nothing is ignored silently.
+    # Metric, pre-experiment, and day cells are read as numbers and user id cells are
+    # kept as text, but none of them pass through the alias tables, so a table on one
+    # of them would be accepted and do nothing; the README promises nothing is ignored
+    # silently.
     numeric_columns = {str(metric["column"]) for metric in config["metrics"]}
     numeric_columns |= {
         metric["pre_column"] for metric in config["metrics"] if metric.get("pre_column")
@@ -234,8 +236,9 @@ def load_config(path: Path) -> dict:
     ignored = sorted(numeric_columns & set(aliases))
     if ignored:
         raise ValueError(
-            f"[columns.aliases] names {ignored}, which are read as numbers; aliases apply to "
-            "the group column and other text columns only"
+            f"[columns.aliases] names {ignored}, which the alias tables never reach (metric, "
+            "pre-experiment, day, and user id columns); aliases apply to the group column and "
+            "other text columns only"
         )
 
     truth = config.get("truth")

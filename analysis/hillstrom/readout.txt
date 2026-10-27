@@ -1,13 +1,13 @@
 Hillstrom e-mail experiment
 Data: what the intake did before any statistic
   users   No E-Mail 21,306 (33.3%)   Mens E-Mail 21,307 (33.3%)   Womens E-Mail 21,387 (33.4%)
-  alias_normalized   28,776 rows   zip_code 'Surburban' to 'Suburban', first at data row 2
+  alias normalized   28,776 rows   zip_code 'Surburban' to 'Suburban', first at data row 2
 
 Limitations (*): read every result below with these in view
   * the top 1% of users carry 100% of spend, because fewer than 1% have any spend at all
   * the smallest detectable effect on visit is above a modest 5% lift for Mens E-Mail vs No E-Mail
       (8.8% of control) and Womens E-Mail vs No E-Mail (8.8% of control); a 'not detected' result
-      there rules out little
+      there would rule out little
 
 Group split: does assignment match the plan?
   Mens E-Mail vs No E-Mail   21,307 vs 21,306   chi-square 0.00   p 0.971
@@ -21,7 +21,7 @@ Sensitivity: smallest lift this sample could detect, 80% power
   Womens E-Mail vs No E-Mail   21,387 vs 21,306 users   control 10.6%   detectable 0.94 pp (8.8% of
       control)
 
-Primary visit: effect, 95% interval, p; interval first
+Primary metric, visit: effect, 95% interval, p; interval first
   Mens E-Mail vs No E-Mail   +7.66 pp   +6.99 to +8.32 pp   p 5.7e-112   Holm 1.1e-111   detected,
       treatment higher
   Womens E-Mail vs No E-Mail   +4.52 pp   +3.89 to +5.16 pp   p 3.2e-44   Holm 3.2e-44   detected,

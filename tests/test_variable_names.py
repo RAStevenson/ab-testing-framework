@@ -15,10 +15,10 @@ ALLOWED_SHORT = {"X", "y", "ax", "i", "j"}
 # scope). Each is listed by file and name with the reason; the list is
 # closed. Robert ruled both kept on 2026-10-05.
 KEPT_DATA_KEYS = {
-    # ArmAggregate.n, the cell's user count, read as `.n` across io and sections
-    ("src/abkit/io.py", "n"),
+    # ArmAggregate.n, the cell's user count, read as `.n` across the intake and readout modules
+    ("src/abkit/experiment_intake.py", "n"),
     # MeanComparison.df, the Welch degrees of freedom on a public result
-    ("src/abkit/results.py", "df"),
+    ("src/abkit/result_types.py", "df"),
 }
 
 

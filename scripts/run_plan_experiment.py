@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import argparse
 import traceback
 
-from abkit.power import sample_size_two_means, sample_size_two_proportions
+from abkit.power_analysis import sample_size_two_means, sample_size_two_proportions
 
 
 def plan_lines(args: argparse.Namespace) -> list[str]:

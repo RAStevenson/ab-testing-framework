@@ -2,8 +2,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from abkit.frequentist import two_proportion_ztest, welch_ttest
-from abkit.power import (
+from abkit.power_analysis import (
     mde_two_proportions,
     power_two_means,
     power_two_proportions,
@@ -11,6 +10,7 @@ from abkit.power import (
     sample_size_two_proportions,
     simulate_power,
 )
+from abkit.significance_tests import two_proportion_ztest, welch_ttest
 
 
 def test_sample_size_proportions_near_textbook_value():
@@ -40,7 +40,7 @@ def _exact_power_two_proportions(
 ):
     """Rejection probability of the pooled z-test, summed over the binomial grid.
 
-    No Monte Carlo error and no shared code with power.py, so this pins the
+    No Monte Carlo error and no shared code with power_analysis.py, so this pins the
     specific variance placement the module documents (pooled under the null,
     unpooled under the alternative) rather than merely the right ballpark.
     """

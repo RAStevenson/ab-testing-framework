@@ -8,9 +8,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from abkit.io import (
+from abkit.experiment_intake import (
     Experiment,
-    capabilities,
+    experiment_capabilities,
     load_config,
     load_user_rows,
 )
@@ -97,7 +97,7 @@ class TestConfig:
 
 class TestCleanLoad:
     def test_capabilities(self, ok_experiment: Experiment) -> None:
-        assert capabilities(ok_experiment) == frozenset(
+        assert experiment_capabilities(ok_experiment) == frozenset(
             {"time_axis", "multi_metric", "continuous_metric", "intended_split"}
         )
 
@@ -417,7 +417,7 @@ def test_alias_table_on_a_numeric_column_stops_the_run(tmp_path: Path) -> None:
     )
     config_path = tmp_path / "config.toml"
     config_path.write_text(text, encoding="utf-8")
-    with pytest.raises(ValueError, match="read as numbers"):
+    with pytest.raises(ValueError, match="alias tables never reach"):
         load_config(config_path)
 
 

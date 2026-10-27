@@ -29,21 +29,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import argparse
 import csv
 import traceback
+from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
-from abkit.generators import generate_example_rows
-from abkit.io import load_config, load_user_rows
+from abkit.experiment_intake import load_config, load_user_rows
 from abkit.readout_analysis import analyze_experiment
 from abkit.readout_figures import draw_figures
 from abkit.readout_text import save_readout
+from abkit.synthetic_data import generate_example_rows
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = REPO_ROOT / "analysis" / "synthetic" / "config.toml"
 COLUMNS = ("user_id", "group", "day", "converted", "spend", "pre_spend")
 
 
-def write_rows(rows: dict[str, np.ndarray], data_path: Path) -> int:
+def write_rows(rows: dict[str, NDArray[Any]], data_path: Path) -> int:
     """Write the generated columns as a CSV with fixed formatting and return the row count."""
     data_path.parent.mkdir(parents=True, exist_ok=True)
     n_rows = int(rows["user_id"].size)

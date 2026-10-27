@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from abkit.io import load_config, load_user_rows
+from abkit.experiment_intake import load_config, load_user_rows
 from abkit.readout_analysis import analyze_experiment
 from abkit.readout_figures import draw_figures
 from abkit.readout_text import readout_lines

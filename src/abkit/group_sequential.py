@@ -28,7 +28,7 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from scipy import optimize, stats
 
-from abkit.results import RepeatedIntervals, SequentialDesign, SequentialOutcome
+from abkit.result_types import RepeatedIntervals, SequentialDesign, SequentialOutcome
 
 # below this spending increment the boundary exceeds 6.4 sigma; treat the
 # look as unspendable rather than chase integration noise
@@ -54,7 +54,7 @@ _SPENDING = {
 }
 
 
-def design(
+def design_boundaries(
     information_fractions: Sequence[float],
     *,
     alpha: float = 0.05,
@@ -210,7 +210,9 @@ def _propagate(
     return new_grid, kernel @ weights
 
 
-def monitor(z_values: Sequence[float], sequential_design: SequentialDesign) -> SequentialOutcome:
+def monitor_boundaries(
+    z_values: Sequence[float], sequential_design: SequentialDesign
+) -> SequentialOutcome:
     """Compare observed z-statistics to the design's boundaries, in order.
 
     ``z_values`` may be shorter than the design (experiment still in

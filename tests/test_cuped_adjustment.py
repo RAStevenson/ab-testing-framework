@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from abkit.cuped_adjustment import cuped_mean_diff
-from abkit.frequentist import welch_ttest
+from abkit.significance_tests import welch_ttest
 
 
 def _planted_arms(random_generator: np.random.Generator, n_per_arm: int, slope: float):

@@ -19,7 +19,7 @@ import numpy as np
 import statsmodels.api as sm
 from numpy.typing import ArrayLike, NDArray
 
-from abkit.results import CupedResult
+from abkit.result_types import CupedResult
 
 
 def _finite_column(values: ArrayLike, name: str) -> NDArray[np.float64]:

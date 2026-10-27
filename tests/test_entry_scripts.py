@@ -165,7 +165,7 @@ class TestPlanExperiment:
     def test_rate_plan_matches_the_library_function(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from abkit.power import sample_size_two_proportions
+        from abkit.power_analysis import sample_size_two_proportions
 
         plan = _load_script("run_plan_experiment")
         monkeypatch.setattr(
@@ -183,7 +183,7 @@ class TestPlanExperiment:
     def test_mean_plan_matches_the_library_function(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from abkit.power import sample_size_two_means
+        from abkit.power_analysis import sample_size_two_means
 
         plan = _load_script("run_plan_experiment")
         monkeypatch.setattr(

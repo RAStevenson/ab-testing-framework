@@ -8,7 +8,7 @@ Limitations (*): read every result below with these in view
       z-test's normal approximation is unreliable here
   * the top 1% of users carry 65% of spend, and 67% of users have none
   * the smallest detectable effect on converted is above a modest 5% lift for treatment vs control
-      (184.3% of control); a 'not detected' result there rules out little
+      (184.3% of control); a 'not detected' result there would rule out little
   * no metric declares a pre-experiment column (pre_column in the config); CUPED is skipped
 
 Group split: does assignment match the plan?
@@ -18,7 +18,7 @@ Group split: does assignment match the plan?
 Sensitivity: smallest lift this sample could detect, 80% power
   treatment vs control   15 vs 15 users   control 26.7%   detectable 49.15 pp (184.3% of control)
 
-Primary converted: effect, 95% interval, p; interval first
+Primary metric, converted: effect, 95% interval, p; interval first
   treatment vs control   +13.33 pp   -20.12 to +43.65 pp   p 0.439   not detected
 
 Other metrics: corrected for 2 comparisons (Holm, and BH = Benjamini-Hochberg)
@@ -33,8 +33,8 @@ Monitoring replay: 5 looks; 5% budget spread across them; a crossing = a stop al
   final look   effect +13.33 pp   adjusted 95% -23.06 to +49.73 pp   boundary |z| 2.06
 
 Planted versus found (synthetic only)
-  absolute_lift   planted 0.13   expected +13.00 pp at the end of the run   found +13.33 pp (-20.12
-      to +43.65 pp)   inside
+  absolute_lift   planted 0.13 (+13.00 pp)   expected +13.00 pp at the end of the run   found +13.33
+      pp (-20.12 to +43.65 pp)   inside
   base_rate       planted 0.27   found 0.2667 (control rate)
 
 Decision for treatment vs control: no detectable effect; that contrast could have seen 49.15 pp or
