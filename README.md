@@ -222,7 +222,7 @@ Flagged in the limitations block:
 - gaps in the day sequence
 - a replay with more looks than the 14 its boundary accuracy is checked on
 
-## Running it
+## Setup and run
 
 ```bash
 python -m venv .venv
@@ -305,7 +305,7 @@ suite, described under the section "For the technical reader". The readout's
 block headed "Planted versus found" lists the generation settings, with what
 the readout found beside the ones it can compare.
 
-## What it does not do
+## Limitations
 
 It reads one row per user, so a file of per-group summary totals is not
 read. It assumes users were randomized one by one. An experiment that
