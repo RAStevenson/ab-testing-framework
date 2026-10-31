@@ -300,9 +300,10 @@ def _aggregates_from_rows(
     return tuple(aggregates)
 
 
-def _coercion_failure(metric: MetricSpec, raw: str) -> str | None:
-    """Return the drop rule a raw cell of this metric (or its pre-experiment column) breaks, or None
-    when it parses to a usable value."""
+def _coercion_failure(raw: str, metric: MetricSpec | None = None) -> str | None:
+    """Return the drop rule a raw numeric cell breaks, or None when it is usable. With a metric,
+    the cell must also satisfy that metric's nonnegative and binary rules; a pre-experiment cell
+    is passed without one."""
     if not raw:
         return "null_row_dropped"
     try:
@@ -313,6 +314,8 @@ def _coercion_failure(metric: MetricSpec, raw: str) -> str | None:
         # float("nan") and float("inf") parse without error and would
         # poison every mean while validation reported a clean load
         return "uncoercible_dropped"
+    if metric is None:
+        return None
     if metric.nonnegative and value < 0.0:
         return "negative_value_dropped"
     if metric.kind == "binary" and value not in (0.0, 1.0):
@@ -335,7 +338,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
       occurrence records that column with its data row. A blank day cell is
       recorded as ``uncoercible_dropped`` instead.
     - ``negative_value_dropped``: a row with a negative value in a metric
-      declared ``nonnegative`` (or its pre-experiment column) is dropped.
+      declared ``nonnegative`` is dropped.
     - ``uncoercible_dropped``: a row whose metric, pre-experiment, or day
       value does not parse as a finite number is dropped.
     - ``nonbinary_dropped``: a row whose binary metric is not 0 or 1.
@@ -350,9 +353,9 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     that share is not cleaned-ish, and a readout of its survivors would
     describe a different experiment.
 
-    A metric's ``pre_column`` (its pre-experiment value, for CUPED) is read
-    under the same coercion rules as the metric and returned in
-    ``pre_period`` keyed by metric name.
+    A metric's ``pre_column`` (its pre-experiment value, for CUPED) must be
+    a finite number and is returned in ``pre_period`` keyed by metric name.
+    The metric's nonnegative and binary rules do not reach it.
 
     The returned ``rows`` dict uses CANONICAL keys, not the file's column
     names: ``"arm"``, ``"day"`` and ``"user_id"`` for the structural
@@ -436,11 +439,14 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
         values: dict[str, float] = {}
         drop = False
         for metric in metrics:
-            columns_to_coerce = [metric.column]
+            columns_to_coerce: list[tuple[str, MetricSpec | None]] = [(metric.column, metric)]
             if metric.pre_column is not None:
-                columns_to_coerce.append(metric.pre_column)
-            for column in columns_to_coerce:
-                rule = _coercion_failure(metric, (row[column] or "").strip())
+                # a past value can fall outside the metric's own range: spend
+                # that cannot be negative now can have a past that nets refunds,
+                # and a yes/no metric can be adjusted by a past count
+                columns_to_coerce.append((metric.pre_column, None))
+            for column, range_rules in columns_to_coerce:
+                rule = _coercion_failure((row[column] or "").strip(), range_rules)
                 if rule is not None:
                     event(rule, index, f"column {column!r}")
                     drop = True

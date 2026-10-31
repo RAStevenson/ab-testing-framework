@@ -21,8 +21,7 @@ blocks after it. The experiment's data was published by MineThatData
 in 2008. In the experiment, 64,000 customers of a retailer were split in thirds
 between a men's e-mail, a women's e-mail, and no e-mail.
 
-The file is
-[analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt).
+The file is [analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt).
 
 ```text
 Hillstrom e-mail experiment
@@ -124,7 +123,8 @@ How to read it, block by block:
   That is enough for a screen of what to test next.
 - **Decision.** One line per treatment, judged on the primary metric's p,
   Holm-corrected when there are several treatments. A "no detectable effect"
-  line carries the sensitivity figure, so it says what was ruled out.
+  line carries the sensitivity figure, so it says what size of effect the
+  run could have seen.
 
 ## The monitoring replay
 
@@ -132,21 +132,21 @@ The replay shows where a finished run could have been stopped early while
 holding the false-positive rate. The quoted readout has no replay block,
 because the Hillstrom file has no day column. A file whose day column holds
 at least three distinct days gets the block, printed after the other
-results. When a day cannot be tested, such as a first day with no
-conversions in either group, the readout leaves the block out and the
-console prints the error.
+results. When the data cannot support a test on one of those days, such as a
+first day with no conversions in either group, the readout leaves the block
+out and the console prints the error.
 
-A look is one check of the primary metric's running totals. The z-test
-divides the effect by its standard error to get a score called z, and the
-replay computes that score for a continuous metric too. The test calls the
-effect detected when z passes 1.96 in either direction, the same as p below
-0.05. On a single check, that cutoff holds the false-positive rate at 5%.
-Checking that cutoff at every look raises the rate well above 5%. A spending
-design treats the 5% as a budget divided across the looks. That gives each
-look its own cutoff, called the spending boundary. The O'Brien-Fleming
-design used here spends almost none of the budget early and most of it at
-the end. The replay applies that design to the finished run, checking it
-look by look against the spending boundary.
+A look is one check of the primary metric's running totals, one per day in
+the file. The z-test divides the effect by its standard error to get a score
+called z. The replay computes that score for a continuous metric too. The
+test calls the effect detected when z passes 1.96 in either direction, the
+same as p below 0.05. On a single check, that cutoff holds the
+false-positive rate at 5%. Checking that cutoff at every look raises the
+rate well above 5%. A spending design treats the 5% as a budget divided
+across the looks. That gives each look its own cutoff, called the spending
+boundary. The O'Brien-Fleming design used here spends almost none of the
+budget early and most of it at the end. The replay applies that design to
+the finished run, checking it look by look against the spending boundary.
 
 The block prints the look where z first crosses the spending boundary, if it
 does, and the final look's effect with its adjusted interval, an interval
@@ -193,9 +193,9 @@ Dropped and counted, with a stop above 1% of rows:
 - a row whose metric value is blank, not a number, or infinite, and the same
   for a pre-experiment column or the day column
 - a row whose group label is blank
-- a negative value where the config says the metric cannot be negative,
-  in the metric or its pre-experiment column
-- a value other than 0 or 1 in a binary metric or its pre-experiment column
+- a row with a negative value where the config says the metric cannot be
+  negative
+- a row with a value other than 0 or 1 in a binary metric
 
 A file past that share is not clean enough to read, and a readout of the
 remaining rows would describe a different experiment. Some exports leave a
@@ -268,7 +268,7 @@ uses.
 | `[[metrics]]` `primary` | one metric | the metric the decisions are made on |
 | `[[metrics]]` `column` | no, the name | the metric's column in the file |
 | `[[metrics]]` `nonnegative` | no | drops a row with a negative value; set it for a metric that cannot go below zero, such as a count, and leave it off where negatives are real, such as revenue net of refunds |
-| `[[metrics]]` `pre_column` | no | a value measured before assignment; turns on CUPED for that metric |
+| `[[metrics]]` `pre_column` | no | a column measured before assignment; turns on CUPED for that metric; a row whose cell there is not a number is dropped, and the metric's `nonnegative` and binary rules do not apply to that column |
 | `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block, labels the closing lines as check output, and marks the replay figure as synthetic |
 
 The tool needs Python 3.11 or newer. There is no package install step,
@@ -293,7 +293,7 @@ readout reads that column, so the config's alias for it is there to show the
 repair on real data. Both e-mail arms raise visits. Both also raise spend
 after the Holm correction, though that result rests on the fewer than 1% of
 users who spent. CUPED on the past-spending column removes under 1% of the
-noise, because spend in the year before the e-mail does not predict spend in
+noise, because spend in the year before the e-mail barely predicts spend in
 the two weeks after it.
 
 [analysis/synthetic/readout.txt](analysis/synthetic/readout.txt) is a purely

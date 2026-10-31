@@ -562,7 +562,10 @@ def _monitoring(
     # count only when the arm ratio is constant across looks
     information = 1.0 / (1.0 / control_counts + 1.0 / treatment_counts)
     if information[-1] <= 0 or np.any(np.diff(information) <= 0):
-        return None
+        raise ValueError(
+            f"{treatment_arm} against {control_arm} gained no users at a look, so the "
+            "boundaries cannot be computed"
+        )
     fractions = information / information[-1]
     sequential_design = design_boundaries(
         fractions.tolist(), alpha=experiment.alpha, spending="obrien-fleming"

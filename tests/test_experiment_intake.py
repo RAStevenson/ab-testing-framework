@@ -235,7 +235,9 @@ class TestValidatorRules:
         assert "pre_spend" not in experiment.rows
         assert experiment.validation == ()
 
-    def test_pre_column_follows_the_metric_coercion_rules(self, tmp_path: Path) -> None:
+    def test_pre_column_must_be_a_number_but_takes_no_metric_range_rule(
+        self, tmp_path: Path
+    ) -> None:
         text = _config_text(
             metrics=(
                 '[[metrics]]\nname = "converted"\ncolumn = "converted"\nkind = "binary"\n'
@@ -252,15 +254,38 @@ class TestValidatorRules:
         data_path = tmp_path / "pre_dirty.csv"
         data_path.write_text(
             "user_id,group,day,converted,spend,pre_spend\n"
-            + "\n".join([*clean, "x1,control,0,1,5,-1", "x2,control,0,1,5,"])
+            + "\n".join(
+                [*clean, "x1,control,0,1,5,-1", "x2,control,0,1,5,", "x3,control,0,1,5,abc"]
+            )
             + "\n",
             encoding="utf-8",
         )
         experiment = load_user_rows(config, data_path)
-        assert self._count(experiment, "negative_value_dropped") == 1
+        assert self._count(experiment, "negative_value_dropped") == 0
         assert self._count(experiment, "null_row_dropped") == 1
+        assert self._count(experiment, "uncoercible_dropped") == 1
         assert experiment.pre_period is not None
-        assert experiment.pre_period["spend"].size == 300
+        assert experiment.pre_period["spend"].size == 301
+        assert experiment.pre_period["spend"][-1] == -1.0
+
+    def test_a_binary_metric_keeps_a_count_in_its_pre_column(self, tmp_path: Path) -> None:
+        text = _config_text(
+            metrics=(
+                '[[metrics]]\nname = "converted"\ncolumn = "converted"\nkind = "binary"\n'
+                'primary = true\npre_column = "past_orders"\n'
+            )
+        )
+        config = load_config(_write_config(tmp_path, text))
+        data_path = tmp_path / "pre_count.csv"
+        data_path.write_text(
+            "user_id,group,day,converted,past_orders\n"
+            "u1,control,0,1,3\nu2,control,0,0,0\nu3,treatment,1,1,7\nu4,treatment,1,0,1\n",
+            encoding="utf-8",
+        )
+        experiment = load_user_rows(config, data_path)
+        assert experiment.validation == ()
+        assert experiment.pre_period is not None
+        np.testing.assert_array_equal(experiment.pre_period["converted"], [3.0, 0.0, 7.0, 1.0])
 
     def test_rows_use_canonical_keys(self, dirty: Experiment) -> None:
         assert dirty.rows is not None

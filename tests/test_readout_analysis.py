@@ -291,6 +291,36 @@ class TestOmittedBlocks:
         assert expected_error in error_output
         assert "omits the block 'Monitoring replay'" in error_output
 
+    def test_a_look_adding_no_users_to_the_first_contrast_omits_the_replay_and_says_so(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        data_path = tmp_path / "rows.csv"
+        rows = "".join(
+            f"{arm},{day},{1 if user < 5 else 0}\n"
+            for day, arms in (
+                (1, ("control", "treatment", "other")),
+                (2, ("other",)),
+                (3, ("control", "treatment", "other")),
+                (4, ("control", "treatment", "other")),
+            )
+            for arm in arms
+            for user in range(20)
+        )
+        data_path.write_text("group,day,converted\n" + rows, encoding="utf-8")
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(
+            '[experiment]\nname = "t"\n\n[columns]\narm = "group"\nday = "day"\n\n'
+            '[arms]\nlabels = ["control", "treatment", "other"]\n\n'
+            '[[metrics]]\nname = "converted"\nkind = "binary"\nprimary = true\n',
+            encoding="utf-8",
+        )
+        readout = analyze_experiment(load_user_rows(load_config(config_path), data_path))
+        assert readout.monitoring is None
+        assert readout.primary
+        error_output = capsys.readouterr().err
+        assert "treatment against control gained no users at a look" in error_output
+        assert "omits the block 'Monitoring replay'" in error_output
+
     def test_missing_series_omits_the_replay_and_says_so(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
