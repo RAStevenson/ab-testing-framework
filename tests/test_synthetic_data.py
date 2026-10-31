@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from abkit.significance_tests import srm_check
-from abkit.synthetic_data import generate_binary, generate_continuous, generate_example_rows
+from abkit.synthetic_data import generate_binary, generate_check_rows, generate_continuous
 
 
 def test_binary_rates_match_configuration():
@@ -131,7 +131,7 @@ def test_continuous_rejects_bad_parameters(kwargs):
         generate_continuous(100, random_generator=np.random.default_rng(0), **kwargs)
 
 
-def _example_rows(n_users: int, seed: int, **overrides: float) -> dict:
+def _check_rows(n_users: int, seed: int, **overrides: float) -> dict:
     settings = {
         "base_rate": 0.06,
         "absolute_lift": 0.004,
@@ -148,11 +148,11 @@ def _example_rows(n_users: int, seed: int, **overrides: float) -> dict:
         "pre_correlation": 0.6,
     }
     settings.update(overrides)
-    return generate_example_rows(n_users, np.random.default_rng(seed), **settings)
+    return generate_check_rows(n_users, np.random.default_rng(seed), **settings)
 
 
-def test_example_rows_share_one_assignment_across_columns():
-    rows = _example_rows(200_000, seed=15, absolute_lift=0.03)
+def test_check_rows_share_one_assignment_across_columns():
+    rows = _check_rows(200_000, seed=15, absolute_lift=0.03)
     assert set(rows) == {"user_id", "group", "day", "converted", "spend", "pre_spend"}
     assert len({column.size for column in rows.values()}) == 1
     assert len(set(rows["user_id"])) == rows["user_id"].size
@@ -167,7 +167,7 @@ def test_example_rows_share_one_assignment_across_columns():
 
 
 def test_pre_spend_shares_the_planted_link_with_spend():
-    rows = _example_rows(200_000, seed=16)
+    rows = _check_rows(200_000, seed=16)
     spends_now, spent_before = rows["spend"] > 0, rows["pre_spend"] > 0
     # the amounts: among users who spent in both periods, the log amounts
     # correlate at the planted value (no whales in this call)
@@ -204,7 +204,7 @@ def test_cuped_share_matches_the_closed_form_without_whales_and_drops_with_them(
     from abkit.cuped_adjustment import cuped_mean_diff
 
     def share(whale_rate: float) -> float:
-        rows = _example_rows(400_000, seed=17, whale_rate=whale_rate, pre_correlation=0.9)
+        rows = _check_rows(400_000, seed=17, whale_rate=whale_rate, pre_correlation=0.9)
         treated = rows["group"] == "treatment"
         return cuped_mean_diff(
             rows["spend"][~treated],
@@ -224,10 +224,10 @@ def test_cuped_share_matches_the_closed_form_without_whales_and_drops_with_them(
     assert 0.05 < share(0.008) < expected
 
 
-def test_example_rows_reject_bad_parameters():
+def test_check_rows_reject_bad_parameters():
     with pytest.raises(ValueError):
-        _example_rows(100, seed=0, pre_correlation=1.0)
+        _check_rows(100, seed=0, pre_correlation=1.0)
     with pytest.raises(ValueError):
-        _example_rows(100, seed=0, absolute_lift=0.95)
+        _check_rows(100, seed=0, absolute_lift=0.95)
     with pytest.raises(ValueError):
-        _example_rows(0, seed=0)
+        _check_rows(0, seed=0)

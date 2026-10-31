@@ -1,17 +1,16 @@
 # The synthetic pipeline check, not an example of analysis. One generated
-# experiment with effects of known size runs through the real intake, and
-# the readout's planted-versus-found block confirms the pipeline finds the
-# effects large enough to detect and reports the rest as not detected, with
-# intervals that contain the planted values.
-# This file is both
-# the generation recipe ([truth]) and the intake config the readout reads;
+# experiment runs through the real intake and readout, to show the pipeline
+# works from start to finish. This one run is not evidence that the statistics
+# are right; the test suite is that evidence.
+# This file is both the generation recipe ([truth]) and the intake config the
+# readout reads;
 # scripts/run_synthetic_check.py writes the rows to data/synthetic/ (never
 # committed) and then runs the same path as run_analyze_experiment.py.
 # Reproduce with:
 #   python scripts/run_synthetic_check.py
 
 [experiment]
-name = "Synthetic pipeline check (planted effects, a test of the tool)"
+name = "Synthetic pipeline check (generated data, not a real experiment)"
 alpha = 0.05
 
 [input]
@@ -40,17 +39,7 @@ kind = "continuous"
 nonnegative = true
 pre_column = "pre_spend"
 
-# the planted values: a persistent lift on
-# conversion plus a transient novelty boost that has halved after three
-# days, a lift on the share of users who spend, and a Pareto whale tail with
-# finite mean but infinite variance. pre_spend is the same zero-inflated
-# spend for the period before: whether a user spent before and how much each
-# share pre_correlation of the latent draws behind their spend now, so CUPED
-# has a planted link to find. pre_correlation links the hidden draws, not
-# spend itself, so spend
-# correlates with past spend at about 0.54 and CUPED removes about 30%
-# without whales; the whale tail, which the past does not predict, pulls the
-# share lower.
+# the planted values, and the settings for the pre_spend column CUPED reads
 [truth]
 seed = 38
 n_users = 120000

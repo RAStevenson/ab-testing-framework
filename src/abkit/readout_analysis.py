@@ -541,13 +541,6 @@ def _monitoring(
     treatment_counts, treatment_means, treatment_variances = (
         values[:n_usable] for values in _series(experiment, treatment_arm, metric.name)
     )
-    # statistical information for a two-sample z is the inverse summed
-    # variance scale 1/(1/n_c + 1/n_t), which equals a share of the total
-    # count only when the arm ratio is constant across looks
-    information = 1.0 / (1.0 / control_counts + 1.0 / treatment_counts)
-    if information[-1] <= 0 or np.any(np.diff(information) <= 0):
-        return None
-    fractions = information / information[-1]
     if metric.kind == "binary":
         z_path = z_from_cumulative_counts(
             np.round(control_means * control_counts),
@@ -564,6 +557,13 @@ def _monitoring(
             treatment_means,
             treatment_variances,
         )
+    # statistical information for a two-sample z is the inverse summed
+    # variance scale 1/(1/n_c + 1/n_t), which equals a share of the total
+    # count only when the arm ratio is constant across looks
+    information = 1.0 / (1.0 / control_counts + 1.0 / treatment_counts)
+    if information[-1] <= 0 or np.any(np.diff(information) <= 0):
+        return None
+    fractions = information / information[-1]
     sequential_design = design_boundaries(
         fractions.tolist(), alpha=experiment.alpha, spending="obrien-fleming"
     )
@@ -647,7 +647,10 @@ def analyze_experiment(experiment: Experiment) -> ExperimentReadout:
     monitoring = None
     usable = _usable_checkpoints(experiment, metric)
     if usable is not None:
-        monitoring = _monitoring(experiment, metric, usable)
+        try:
+            monitoring = _monitoring(experiment, metric, usable)
+        except ValueError:
+            _report_skipped_block("Monitoring replay")
         if monitoring is not None and monitoring.n_usable > MANY_LOOKS:
             limitations.append(
                 Limitation(

@@ -1,7 +1,7 @@
 # Notes: measurements and decisions
 
-Dated measurements and history the README refers to but does not carry. Each
-measurement names its date, its conditions, and whether the loop that
+Dated measurements, decisions, and history that do not belong in the README.
+Each measurement names its date, its conditions, and whether the loop that
 produced it is in the repo.
 
 ## Scope reduced (2026-10-21)
@@ -19,33 +19,6 @@ which compared Welch's t-test with a bootstrap and a permutation test, is
 gone with the resampling module. Git history keeps all of it. The entries in
 the history section below record measurements from that code and stay as
 history.
-
-## CUPED on the synthetic check (2026-10-08 and 2026-10-09)
-
-The generator decides whether a user spends, and how much, from hidden
-random draws. The pre-experiment column comes from matching draws for the
-period before, each correlated with its present one at 0.9. Spend itself
-then correlates with past spend at only about 0.54, and CUPED removes the
-square of that, about 30% when there are no whale purchases. That share,
-0.296, is computed in closed form and checked against simulation by the
-generator's tests. The whale purchases, a few users who spend far more than
-the rest, have no counterpart in the pre-experiment column, so they add
-noise CUPED cannot remove. The whale tail's variance is infinite, so how
-much they add depends on how large the sample's biggest purchases happen to
-be. Measured on 2026-10-09 with a one-off loop that is not in the repo, over
-eight seeds at 400,000 users, the share CUPED removed ran from 12% to 18%.
-The committed readout, seed 38 at 120,000 users, shows 14%.
-
-The generator was revised once, on 2026-10-08. The first version tied past
-to present spend only through the log of the amount, among the few users who
-spend, so CUPED, which works on spend itself, removed 0%. The revision also
-ties whether a user spent before to whether they spend now, and the setting
-for the hidden draws' correlation rose from 0.6 to 0.9.
-
-Since 2026-10-21 the planted-versus-found block checks the planted spend
-effect against the CUPED estimate, because the cross-check that held the
-unadjusted comparison was removed. CUPED estimates the same difference in
-means with less noise.
 
 ## The heavy-tail flag on zero-inflated metrics (2026-10-09)
 

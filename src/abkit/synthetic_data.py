@@ -201,7 +201,7 @@ def generate_continuous(
     return ExperimentData(assignment, outcome, day)
 
 
-def generate_example_rows(
+def generate_check_rows(
     n_users: int,
     random_generator: np.random.Generator,
     *,

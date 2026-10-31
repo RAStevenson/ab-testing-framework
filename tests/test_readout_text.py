@@ -61,7 +61,7 @@ def test_user_rows_readout_has_every_block_in_order(tmp_path: Path) -> None:
         "Other metrics:",
         "Monitoring replay:",
         "Planted versus found",
-        "Decision for",
+        "Synthetic check output for",
         "Figures:",
     ]
     positions = [
@@ -94,6 +94,12 @@ def test_save_readout_writes_the_same_lines_with_unix_endings(tmp_path: Path) ->
     raw = (tmp_path / "out" / "readout.txt").read_bytes()
     assert b"\r\n" not in raw
     assert raw.decode("utf-8") == "\n".join(lines) + "\n"
+
+
+def test_a_synthetic_run_prints_check_output_never_decisions(tmp_path: Path) -> None:
+    lines = _user_rows_lines(tmp_path)
+    assert not any(line.startswith("Decision") for line in lines)
+    assert any(line.startswith("Synthetic check output for") for line in lines)
 
 
 def test_several_treatments_get_a_decision_and_sensitivity_each(tmp_path: Path) -> None:

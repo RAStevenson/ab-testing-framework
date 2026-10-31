@@ -37,7 +37,7 @@ Planted versus found (synthetic only)
       pp (-20.12 to +43.65 pp)   inside
   base_rate       planted 0.27   found 0.2667 (control rate)
 
-Decision for treatment vs control: no detectable effect; that contrast could have seen 49.15 pp or
-    more
+Synthetic check output for treatment vs control: no detectable effect; that contrast could have seen
+    49.15 pp or more
 Figures:
   figures/monitoring.png

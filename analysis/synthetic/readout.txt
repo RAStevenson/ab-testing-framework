@@ -1,4 +1,4 @@
-Synthetic pipeline check (planted effects, a test of the tool)
+Synthetic pipeline check (generated data, not a real experiment)
 Data: what the intake did before any statistic
   users   control 60,156 (50.1%)   treatment 59,844 (49.9%)
   repairs and drops   none; the file passed every rule as delivered
@@ -38,8 +38,7 @@ Planted versus found (synthetic only)
   n_users                  planted 120,000
   novelty_boost            planted 0.008
   novelty_half_life_days   planted 3.0
-  pre_correlation          planted 0.9   found CUPED on spend removed 14% of the noise (the setting
-      correlates hidden draws, not spend itself; see docs/NOTES.md)
+  pre_correlation          planted 0.9
   seed                     planted 38
   spend_rate               planted 0.06
   spend_rate_lift          planted 0.004   expected +0.315 per user on spend   found after CUPED
@@ -48,6 +47,6 @@ Planted versus found (synthetic only)
   whale_scale              planted 400.0
   whale_shape              planted 1.5
 
-Decision for treatment vs control: higher on converted by +0.67 pp (+0.39 to +0.95 pp)
+Synthetic check output for treatment vs control: higher on converted by +0.67 pp (+0.39 to +0.95 pp)
 Figures:
   figures/monitoring.png

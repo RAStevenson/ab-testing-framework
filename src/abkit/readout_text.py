@@ -382,11 +382,6 @@ def _truth_block(readout: ExperimentReadout) -> list[str]:
                 else f", too small to detect at this sample (p {format_p_value(result.p_value)})"
             )
         )
-    for metric, _, result in readout.cuped:
-        found["pre_correlation"] = (
-            f"found CUPED on {metric} removed {result.variance_reduction:.0%} of the noise "
-            "(the setting correlates hidden draws, not spend itself; see docs/NOTES.md)"
-        )
     width = max(len(name) for name in readout.truth)
     for name, value in sorted(readout.truth.items()):
         line = f"{name:<{width}}   planted {_planted(value)}"
@@ -408,10 +403,15 @@ def _planted(value: object) -> str:
 
 def _decision_lines(readout: ExperimentReadout) -> list[str]:
     """The closing lines: a broken split stops everything; otherwise one decision per contrast,
-    read at the Holm-adjusted p when there are several treatments."""
+    read at the Holm-adjusted p when there are several treatments. A run with planted values
+    prints these as synthetic check output, since no one decides anything on made-up data."""
     if any(limitation.code == "group_split" for limitation in readout.limitations):
-        return [_DECISIONS["split_broken"]]
-    return [_decision_line(readout, index) for index in range(len(readout.primary))]
+        lines = [_DECISIONS["split_broken"]]
+    else:
+        lines = [_decision_line(readout, index) for index in range(len(readout.primary))]
+    if readout.truth is None:
+        return lines
+    return [line.replace("Decision", "Synthetic check output", 1) for line in lines]
 
 
 def _decision_line(readout: ExperimentReadout, index: int) -> str:

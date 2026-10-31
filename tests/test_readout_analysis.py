@@ -252,6 +252,45 @@ class TestOmittedBlocks:
     """A block the data cannot support is omitted, the run carries on, and
     the console says which block and why, with the error in full."""
 
+    @pytest.mark.parametrize(
+        ("first_day_rows", "expected_error"),
+        [
+            ("control,1,0\n" * 20 + "treatment,1,0\n" * 20, "all-identical outcomes"),
+            ("control,1,1\n" * 20, "arm sizes must be positive"),
+        ],
+        ids=["no_conversions_on_the_first_day", "an_arm_absent_on_the_first_day"],
+    )
+    def test_a_look_the_data_cannot_support_omits_the_replay_and_keeps_the_result(
+        self,
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+        first_day_rows: str,
+        expected_error: str,
+    ) -> None:
+        data_path = tmp_path / "rows.csv"
+        later_days = "".join(
+            f"{arm},{day},{1 if user < 5 else 0}\n"
+            for day in (2, 3)
+            for arm in ("control", "treatment")
+            for user in range(20)
+        )
+        data_path.write_text(
+            "group,day,converted\n" + first_day_rows + later_days, encoding="utf-8"
+        )
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(
+            '[experiment]\nname = "t"\n\n[columns]\narm = "group"\nday = "day"\n\n'
+            '[arms]\nlabels = ["control", "treatment"]\n\n'
+            '[[metrics]]\nname = "converted"\nkind = "binary"\nprimary = true\n',
+            encoding="utf-8",
+        )
+        readout = analyze_experiment(load_user_rows(load_config(config_path), data_path))
+        assert readout.monitoring is None
+        assert readout.primary
+        error_output = capsys.readouterr().err
+        assert expected_error in error_output
+        assert "omits the block 'Monitoring replay'" in error_output
+
     def test_missing_series_omits_the_replay_and_says_so(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:

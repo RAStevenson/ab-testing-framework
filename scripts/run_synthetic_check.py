@@ -5,11 +5,9 @@ lift on conversion, a transient novelty boost, a lift on the share of
 users who spend, a whale tail, and a pre-experiment spend column for
 CUPED. The rows are written to data/synthetic/ (never committed) and then
 read through the identical intake, analysis, figure, and text path that
-run_analyze_experiment.py uses, so the readout's planted-versus-found
-block confirms the pipeline finds effects of known size when they are
-large enough to detect, and reports smaller ones as not detected with
-intervals that contain the planted value. The run tests
-the system; it is not an example of analysis.
+run_analyze_experiment.py uses, to show the pipeline works from start to
+finish. It is a purely synthetic check, not an example of analysis. This one
+run is not evidence that the statistics are right; the test suite is.
 
 Run with:
     python scripts/run_synthetic_check.py
@@ -38,7 +36,7 @@ from abkit.experiment_intake import load_config, load_user_rows
 from abkit.readout_analysis import analyze_experiment
 from abkit.readout_figures import draw_figures
 from abkit.readout_text import save_readout
-from abkit.synthetic_data import generate_example_rows
+from abkit.synthetic_data import generate_check_rows
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = REPO_ROOT / "analysis" / "synthetic" / "config.toml"
@@ -78,7 +76,7 @@ def main() -> None:
         truth = config.get("truth")
         if truth is None:
             raise ValueError(f"{args.config} has no [truth] table to generate from")
-        rows = generate_example_rows(
+        rows = generate_check_rows(
             int(truth["n_users"]),
             np.random.default_rng(int(truth["seed"])),
             base_rate=float(truth["base_rate"]),

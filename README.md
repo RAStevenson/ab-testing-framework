@@ -11,28 +11,6 @@ day by day, as if the experiment were still being watched, which those
 libraries do not do. It is built for an analyst who has an exported file and
 no experimentation platform, or who wants a second opinion on a dashboard.
 
-A look is one check of an experiment's running totals. The usual test
-divides the effect by its standard error to get a score called z. It calls
-the effect detected when z passes 1.96 in either direction. On a single
-check, that cutoff holds the false-positive rate at 5%. Checking that cutoff
-at every look raises the rate well above 5%. A spending design treats the 5%
-as a budget divided across the looks, so each look gets its own cutoff,
-called the spending boundary. The O'Brien-Fleming design used here spends
-almost none of the budget early and most of it at the end. Where a file has
-a day column, the replay applies that design to the finished run.
-
-![The synthetic check replayed look by look](analysis/synthetic/figures/monitoring.png)
-
-*The replay from the synthetic check, a generated experiment with a planted
-lift on conversion, described below. The observed |z| passes the naive 1.96
-line at look 1, but the spending design gives that look almost none of the
-5% and allows no stop there. It crosses the spending boundary at look 4
-of 14. The panel on the right shows each look's effect and its adjusted
-interval, the interval a stop at that look would have had to report. No
-interval is drawn at look 1, where no stop is allowed. The effect falls
-across the looks because the generator gives the earliest users an extra
-lift.*
-
 ## The readout
 
 The readout is a text file of labeled blocks rather than paragraphs. Each
@@ -104,32 +82,37 @@ How to read it, block by block:
   beside a result it does not affect, such as a sensitivity flag above an
   effect that was detected.
 - **Group split.** Whether users landed in the groups as planned, tested
-  against the intended split in the config. A split counts as broken when
-  its chi-square test gives p below 0.001. A broken split means users went
-  missing or were assigned unevenly, and no statistic repairs that, so the
-  decision lines are replaced by one stop line. With no intended split on
-  record, the block says there is no check, and the Data block's shares are
-  left to the reader.
-- **Sensitivity.** The smallest lift this sample could have detected with
-  80% power. A "not detected" result means an effect at least that large
-  would have been seen with 80% probability and says nothing about smaller
-  ones. With several treatments it is computed at the false-positive rate,
-  alpha, divided by their number, which is the strictest level the Holm
-  correction below applies. An effect that large then has an 80% chance of
-  detection however the other comparisons come out.
+  against the intended split in the config. This is a sample ratio mismatch
+  (SRM) check. A split counts as broken when its chi-square test gives p
+  below 0.001. A broken split means users went missing or were assigned
+  unevenly, and no statistic repairs that, so the decision lines are
+  replaced by one stop line. With no intended split on record, the block
+  says there is no check, and the Data block's shares are left to the
+  reader.
+- **Sensitivity.** The smallest lift on the primary metric this sample could
+  have detected with 80% power, known as the minimum detectable effect
+  (MDE). Lifts on a yes/no metric are in percentage points (pp). A "not
+  detected" result means an effect at least that large would have been seen
+  with at least 80% probability and says nothing about smaller ones.
 - **Primary metric.** The effect, its 95% interval, and p for each
-  treatment. With several treatments the comparisons are Holm-corrected,
-  which caps the chance of any false positive among them at alpha. Holm
-  tests the smallest p against alpha divided by the number of comparisons,
-  the next against alpha divided by one fewer, and so on, stopping at the
-  first that fails. The readout's Holm column restates that test as a
-  corrected p, and an effect counts as detected when its corrected p is
-  below alpha.
+  treatment. For a yes/no metric the test is a two-proportion z-test, which
+  compares the two groups' rates. For a continuous metric, such as spend, it
+  is Welch's t-test, which compares the two groups' means and still works
+  when their variances differ. With several treatments the comparisons are
+  Holm-corrected, which caps the chance of any false positive among them at
+  alpha, the false-positive rate the config sets. Holm tests the smallest p
+  against alpha divided by the number of comparisons, the next against alpha
+  divided by one fewer, and so on, stopping at the first that fails. The
+  readout's Holm column restates that test as a corrected p, and an effect
+  counts as detected when its corrected p is below alpha. The Sensitivity
+  block uses the strictest of these levels, alpha divided by the number of
+  treatments, so an effect that large has an 80% chance of detection however
+  the other comparisons come out.
 - **CUPED** (controlled-experiment using pre-experiment data). It reports a
   metric's effect with less noise, after a regression adjustment removes the
   part of each user's outcome their pre-experiment value already predicted.
-  It runs on each metric that has a pre-experiment column. In both committed
-  readouts that metric is spend, not the primary metric. "Noise removed" is
+  It runs on each metric that has a pre-experiment column. In the quoted
+  readout that metric is spend, not the primary metric. "Noise removed" is
   the share by which the adjustment shrank the estimate's variance, so more
   removed means a narrower interval. A 0% means the pre-experiment column
   predicts almost none of the outcome, as on Hillstrom. Its p is not
@@ -139,24 +122,57 @@ How to read it, block by block:
   suits a ship decision. Benjamini-Hochberg instead caps the false discovery
   rate, the expected share of false positives among the results it flags.
   That is enough for a screen of what to test next.
-- **Monitoring replay** (files with a day column holding at least three
-  distinct days, so the synthetic readout and not this one). The finished
-  run checked look by look against the spending boundary. A crossing means
-  that, for a run checked at exactly these looks, a stop there would have
-  held the false-positive rate at alpha. It says nothing about the effect's
-  size. "Never crosses" means no look allowed a stop. On a run that ended on
-  schedule, the primary block's interval is the result. The adjusted
-  interval is the one a stop would have had to report. The readout prints
-  the final look's, which is a little wider than the primary block's
-  interval because it is built to hold at every look at once. The naive 1.96
-  line is printed for contrast. With several treatments the replay runs on
-  the first treatment listed in the config, a rule that does not look at the
-  results.
-- **Planted versus found** (the synthetic check only). What the generator
-  planted beside what the readout found.
 - **Decision.** One line per treatment, judged on the primary metric's p,
   Holm-corrected when there are several treatments. A "no detectable effect"
   line carries the sensitivity figure, so it says what was ruled out.
+
+## The monitoring replay
+
+The replay shows where a finished run could have been stopped early while
+holding the false-positive rate. The quoted readout has no replay block,
+because the Hillstrom file has no day column. A file whose day column holds
+at least three distinct days gets the block, printed after the other
+results. When a day cannot be tested, such as a first day with no
+conversions in either group, the readout leaves the block out and the
+console prints the error.
+
+A look is one check of the primary metric's running totals. The z-test
+divides the effect by its standard error to get a score called z, and the
+replay computes that score for a continuous metric too. The test calls the
+effect detected when z passes 1.96 in either direction, the same as p below
+0.05. On a single check, that cutoff holds the false-positive rate at 5%.
+Checking that cutoff at every look raises the rate well above 5%. A spending
+design treats the 5% as a budget divided across the looks. That gives each
+look its own cutoff, called the spending boundary. The O'Brien-Fleming
+design used here spends almost none of the budget early and most of it at
+the end. The replay applies that design to the finished run, checking it
+look by look against the spending boundary.
+
+The block prints the look where z first crosses the spending boundary, if it
+does, and the final look's effect with its adjusted interval, an interval
+widened to allow for the repeated looks. A crossing means the design allows
+a stop at that look. For a run checked at exactly these looks, stopping at
+the first crossing holds the false-positive rate at 5%. A crossing says
+nothing about the effect's size. "Never crosses" means no look allowed a
+stop. The fixed 1.96 cutoff, labeled naive, is printed for contrast.
+
+On a run that ended on schedule, the primary block's interval is the result.
+The adjusted interval at a look is the one a stop there would have had to
+report. The readout prints the final look's adjusted interval, which is a
+little wider than the primary block's interval because the adjusted interval
+is built to cover the true effect at every look at once. With several
+treatments the replay runs on the first treatment listed in the config, a
+rule that does not look at the results.
+
+![The replay drawn from the synthetic check](analysis/synthetic/figures/monitoring.png)
+
+*This figure draws the replay from the synthetic check, which runs on
+generated data, not a real experiment. The observed |z| passes the fixed
+1.96 cutoff at look 1, but the spending design gives that look almost none
+of the 5% and allows no stop there. The observed |z| crosses the spending
+boundary at look 4 of 14. The panel on the right shows each look's effect
+and its adjusted interval. No interval is drawn at look 1, where no stop is
+allowed.*
 
 ## What the intake does to a file
 
@@ -251,9 +267,9 @@ uses.
 | `[[metrics]]` `name`, `kind` | yes | one entry per metric; `kind` is `binary` or `continuous` |
 | `[[metrics]]` `primary` | one metric | the metric the decisions are made on |
 | `[[metrics]]` `column` | no, the name | the metric's column in the file |
-| `[[metrics]]` `nonnegative` | no | drops a row with a negative value |
+| `[[metrics]]` `nonnegative` | no | drops a row with a negative value; set it for a metric that cannot go below zero, such as a count, and leave it off where negatives are real, such as revenue net of refunds |
 | `[[metrics]]` `pre_column` | no | a value measured before assignment; turns on CUPED for that metric |
-| `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block |
+| `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block, labels the closing lines as check output, and marks the replay figure as synthetic |
 
 The tool needs Python 3.11 or newer. There is no package install step,
 because the entry scripts put `src/` on the import path themselves, so a
@@ -280,28 +296,14 @@ users who spent. CUPED on the past-spending column removes under 1% of the
 noise, because spend in the year before the e-mail does not predict spend in
 the two weeks after it.
 
-[analysis/synthetic/readout.txt](analysis/synthetic/readout.txt) is not an
-example of analysis. It is a test of the tool. One generated experiment with
-planted effects runs through the same intake and readout as the real file,
-and the readout is checked against what was planted. The generator plants a
-lasting lift of +0.40 percentage points (pp) on conversion. It also adds a
-novelty effect, an extra lift for the earliest users. A user who enters
-three days after the start gets half of it, six days after a quarter, and so
-on. Averaged over the run, the expected lift at the end is +0.67 pp, which
-the readout prints with "novelty averaged in". The readout finds +0.67 pp
-with an interval of +0.39 to +0.95 pp, and its replay crosses the spending
-boundary at look 4 of 14.
-
-The planted rise in spend, +0.315 per user, is too small for this sample to
-detect under its heavy tail, a few users spending far more than the rest.
-The planted block lists that tail as three settings whose names begin with
-whale, the generator's word for those few heavy spenders. The readout
-reports the rise as not detected, with an interval that contains the planted
-value, rather than as found. CUPED removes 14% of the noise on spend at
-seed 38. Over eight seeds at a larger sample, measured once and recorded in
-docs/NOTES.md, it removed 12% to 18%. The settings are in the config beside
-the readout. The readout's planted-versus-found block prints each one, with
-what was found beside the four it can check.
+[analysis/synthetic/readout.txt](analysis/synthetic/readout.txt) is a purely
+synthetic check, not an example of analysis. One generated experiment with
+planted effects runs through the same intake and readout as a real file. The
+check's purpose is to show the pipeline works from start to finish. This one
+run is not evidence that the statistics are right. That evidence is the test
+suite, described under the section "For the technical reader". The readout's
+block headed "Planted versus found" lists the generation settings, with what
+the readout found beside the ones it can compare.
 
 ## What it does not do
 
@@ -316,10 +318,9 @@ known only once the run ends. A live version would need a planned final size
 set before the start. There are no futility boundaries, so the replay can
 show an early stop on a clear effect but never on a hopeless run. Each look
 holds the users enrolled by then with their final outcomes, so the replay
-sees outcomes a live look would not yet have had. After a sequential stop
-the only interval is the adjusted one. Every metric is one value per user
-and every comparison is a difference in means, so a ratio such as revenue
-per order, whose denominator varies by user, is out of scope.
+sees outcomes a live look would not yet have had. Every metric is one value
+per user and every comparison is a difference in means, so a ratio such as
+revenue per order, whose denominator varies by user, is out of scope.
 
 ## For the technical reader
 
@@ -351,9 +352,8 @@ earlier look has crossed and solves each look's cutoff from it. The adjusted
 intervals are each look's estimate plus or minus that look's boundary times
 its standard error.
 
-[docs/NOTES.md](docs/NOTES.md) holds the dated measurements the README
-cites, the history of the synthetic generator, and the record of what was
-removed on 2026-10-21.
+[docs/NOTES.md](docs/NOTES.md) holds dated measurements and decisions, and
+the record of what was removed on 2026-10-21.
 
 ## Repo layout
 

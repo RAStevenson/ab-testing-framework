@@ -33,7 +33,7 @@ def _style_axis(ax: Axes, *, grid_axis: Literal["both", "x", "y"] = "y") -> None
     ax.set_axisbelow(True)
 
 
-def _monitoring_figure(replay: MonitoringReplay, binary: bool, path: Path) -> None:
+def _monitoring_figure(replay: MonitoringReplay, binary: bool, synthetic: bool, path: Path) -> None:
     """Left: the observed |z| path against the spending boundaries and the naive threshold.
     Right: the effect at each look with its adjusted interval band."""
     import matplotlib
@@ -105,6 +105,8 @@ def _monitoring_figure(replay: MonitoringReplay, binary: bool, path: Path) -> No
     )
     effect_ax.legend(frameon=False, loc="upper right", fontsize=9)
     _style_axis(effect_ax)
+    if synthetic:
+        fig.suptitle("Synthetic check: generated data, not a real experiment", color=COLOR_INK)
     fig.tight_layout()
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -159,6 +161,6 @@ def draw_figures(readout: ExperimentReadout, figure_dir: Path) -> list[Path]:
     if readout.monitoring is not None:
         binary = bool(readout.primary) and isinstance(readout.primary[0][1], RateComparison)
         path = figure_dir / "monitoring.png"
-        _monitoring_figure(readout.monitoring, binary, path)
+        _monitoring_figure(readout.monitoring, binary, readout.truth is not None, path)
         paths.append(path)
     return paths
