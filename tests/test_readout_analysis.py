@@ -289,7 +289,7 @@ class TestOmittedBlocks:
         assert readout.primary
         error_output = capsys.readouterr().err
         assert expected_error in error_output
-        assert "omits the block 'Monitoring replay'" in error_output
+        assert "omits the block 'Monitoring'" in error_output
 
     def test_a_look_adding_no_users_to_the_first_contrast_omits_the_replay_and_says_so(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -319,7 +319,7 @@ class TestOmittedBlocks:
         assert readout.primary
         error_output = capsys.readouterr().err
         assert "treatment against control gained no users at a look" in error_output
-        assert "omits the block 'Monitoring replay'" in error_output
+        assert "omits the block 'Monitoring'" in error_output
 
     def test_missing_series_omits_the_replay_and_says_so(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -341,7 +341,7 @@ class TestOmittedBlocks:
         stderr = capsys.readouterr().err
         assert stderr.count("Traceback") == 1
         assert "no per-checkpoint aggregates" in stderr
-        assert "omits the block 'Monitoring replay'" in stderr
+        assert "omits the block 'Monitoring'" in stderr
 
 
 def test_planted_spend_difference_matches_the_recipe_by_hand():

@@ -61,12 +61,12 @@ def design_boundaries(
     spending: str = "obrien-fleming",
     grid_points: int = 1024,
 ) -> SequentialDesign:
-    """Two-sided group-sequential design for the given look schedule.
+    """Two-sided group-sequential design for the given looks.
 
-    ``information_fractions`` are the planned looks as fractions of the
-    final sample size, strictly increasing in (0, 1]. The design must be
-    fixed before the data are seen; choosing looks after peeking voids
-    the guarantee.
+    ``information_fractions`` are the looks as fractions of the planned
+    final sample size, strictly increasing in (0, 1]. The looks need no
+    schedule in advance. The plan and the spending function do, because
+    choosing either after peeking voids the guarantee.
     """
     fractions = np.asarray(information_fractions, dtype=np.float64)
     if fractions.ndim != 1 or fractions.size == 0:

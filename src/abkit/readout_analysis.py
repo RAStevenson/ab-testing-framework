@@ -521,7 +521,7 @@ def _usable_checkpoints(experiment: Experiment, metric: MetricSpec) -> tuple[int
         for arm in experiment.arms:
             _series(experiment, arm, metric.name)
     except ValueError:
-        _report_skipped_block("Monitoring replay")
+        _report_skipped_block("Monitoring")
         return None
     n_checkpoints = len(_present(experiment.checkpoints, "checkpoints"))
     return n_checkpoints, n_checkpoints
@@ -731,7 +731,7 @@ def analyze_experiment(experiment: Experiment) -> ExperimentReadout:
         try:
             monitoring = _monitoring(experiment, metric, usable)
         except ValueError:
-            _report_skipped_block("Monitoring replay")
+            _report_skipped_block("Monitoring")
         if monitoring is not None:
             limitations += _monitoring_limitations(monitoring)
     return ExperimentReadout(

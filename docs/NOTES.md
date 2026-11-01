@@ -10,10 +10,15 @@ The monitoring is Lan-DeMets alpha spending with an O'Brien-Fleming-style
 spending function, not the O'Brien-Fleming design itself. The design O'Brien
 and Fleming published in 1979 assumes a fixed number of equally spaced
 looks. Lan and DeMets (Biometrika, 1983) replaced that schedule with a
-function of the share of the plan reached, so looks can fall wherever the
-data does. `obrien_fleming_spending` in `src/abkit/group_sequential.py` is
-their function shaped to follow the 1979 boundaries. Both papers were
-written for clinical trials.
+spending function, which gives how much of the alpha may be used by each
+share of the plan, so the looks need no schedule in advance. The function
+`obrien_fleming_spending` in `src/abkit/group_sequential.py` follows the
+shape of the 1979 boundaries. Both papers were written for clinical trials.
+
+The plan and the function have to be fixed before the data is seen. Sources
+checked on 2026-11-01 disagree on how much harm follows when the results
+decide when to look. The monitoring takes one look per day in the file, so
+the results do not decide it.
 
 ## The Hillstrom readout's running time (2026-11-01)
 
