@@ -42,7 +42,7 @@ def test_obf_boundaries_are_steeply_decreasing():
 
 
 def test_obf_boundaries_match_reference_values():
-    # O'Brien-Fleming-type spending, 5 equal looks, two-sided alpha 0.05.
+    # O'Brien-Fleming-style spending, 5 equal looks, two-sided alpha 0.05.
     # Reference computed independently by Gauss-Legendre quadrature on the
     # same recursion, converged to 10 digits; agrees with the standard tables.
     sequential_design = design_boundaries([0.2, 0.4, 0.6, 0.8, 1.0], alpha=0.05)

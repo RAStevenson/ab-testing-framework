@@ -64,7 +64,7 @@ class SequentialDesign:
     ``boundaries[k]`` is the two-sided critical value for ``|z|`` at look
     ``k``. It is ``inf`` when the spending function allocates so little
     alpha to that look that no finite z could stop the experiment there,
-    which is normal for the first look or two of an O'Brien-Fleming design
+    which is normal for the first look or two of O'Brien-Fleming-style spending
     and is a design property rather than a failure.
 
     ``cumulative_alpha[k]`` is the type I error the spending function

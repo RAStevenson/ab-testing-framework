@@ -30,7 +30,7 @@ Other metrics: corrected for 2 comparisons (Holm, and BH = Benjamini-Hochberg)
   result   unadjusted 0 of 2 below 0.05; after Holm 0 survive
 
 Monitoring: look 5, 38% of the plan; 5% budget spread across the looks; a crossing = a stop allowed
-  treatment vs control on converted, O'Brien-Fleming spending against the plan
+  treatment vs control on converted, Lan-DeMets O'Brien-Fleming-style spending against the plan
   plan   40 users per group, 38% reached
   spending design   no crossing through look 5; no stop allowed yet
   naive 1.96 rule   never fires

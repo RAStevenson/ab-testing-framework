@@ -23,7 +23,7 @@ CUPED on spend: adjusted by its pre-experiment column; narrower interval = less 
   treatment vs control   +0.286   -0.402 to +0.973   p 0.415   noise removed 14%
 
 Monitoring replay: 14 looks; 5% budget spread across them; a crossing = a stop allowed at that look
-  treatment vs control on converted, O'Brien-Fleming spending against the plan
+  treatment vs control on converted, Lan-DeMets O'Brien-Fleming-style spending against the plan
   plan   59,000 users per group, reached at look 14
   spending design   crosses at look 4 of 14; a stop there keeps the 5% false-positive rate
   naive 1.96 rule   fires at look 1, on evidence the design does not accept

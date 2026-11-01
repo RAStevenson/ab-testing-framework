@@ -27,7 +27,7 @@ Other metrics: corrected for 2 comparisons (Holm, and BH = Benjamini-Hochberg)
   result   unadjusted 0 of 2 below 0.05; after Holm 0 survive
 
 Monitoring replay: 5 looks; 5% budget spread across them; a crossing = a stop allowed at that look
-  treatment vs control on converted, O'Brien-Fleming spending at the sizes reached
+  treatment vs control on converted, Lan-DeMets O'Brien-Fleming-style spending at the sizes reached
   plan   none in the config; the last look stands in for it
   spending design   never crosses in 5 looks; no early stop in either direction
   naive 1.96 rule   never fires

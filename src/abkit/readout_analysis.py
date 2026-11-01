@@ -531,7 +531,8 @@ def _monitoring(
     experiment: Experiment, metric: MetricSpec, usable: tuple[int, int]
 ) -> MonitoringResult | None:
     """Monitor the first contrast look by look, one look per checkpoint in the file, under
-    O'Brien-Fleming spending, with adjusted intervals, against the naive fixed threshold.
+    Lan-DeMets O'Brien-Fleming-style spending, with adjusted intervals, against the naive fixed
+    threshold.
 
     With a planned size in the config, each look's information fraction
     divides by the information the plan gives, so a file that stops short of

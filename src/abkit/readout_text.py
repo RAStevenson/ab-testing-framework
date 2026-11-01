@@ -377,9 +377,11 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
     return [
         "",
         heading,
-        _INDENT + f"{monitoring.treatment_arm} vs {control_arm} on {monitoring.metric}, "
-        "O'Brien-Fleming spending "
-        + ("at the sizes reached" if planned is None else "against the plan"),
+        *_wrapped(
+            f"{monitoring.treatment_arm} vs {control_arm} on {monitoring.metric}, "
+            "Lan-DeMets O'Brien-Fleming-style spending "
+            + ("at the sizes reached" if planned is None else "against the plan")
+        ),
         _INDENT + plan_line,
         *_first_treatment_note(readout),
         _INDENT + f"spending design   {design_line}",

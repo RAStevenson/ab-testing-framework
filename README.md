@@ -295,8 +295,9 @@ the file. The z-test divides the effect by its standard error to get a score
 called z. The block computes that score for a continuous metric too. The
 single-check cutoff is z past 1.96 in either direction, the same as p below
 0.05. The spending design gives each look its own cutoff, called the
-spending boundary. The O'Brien-Fleming design used here spends almost none
-of the budget early and most of it at the end.
+spending boundary. The design used here is Lan-DeMets alpha spending,
+developed for clinical trials. Its O'Brien-Fleming-style function spends
+almost none of the budget early and most of it at the end.
 
 The plan comes from the config key `planned_users_per_group`, set to the
 number the planning command prints. Each look's share of the plan sets how
@@ -324,7 +325,7 @@ fabricated file of 30 users read against a plan of 40 per group.
 
 ```text
 Monitoring: look 5, 38% of the plan; 5% budget spread across the looks; a crossing = a stop allowed
-  treatment vs control on converted, O'Brien-Fleming spending against the plan
+  treatment vs control on converted, Lan-DeMets O'Brien-Fleming-style spending against the plan
   plan   40 users per group, 38% reached
   spending design   no crossing through look 5; no stop allowed yet
   naive 1.96 rule   never fires
@@ -422,22 +423,21 @@ Flagged in the limitations block:
 
 A statistical routine can be wrong and still return plausible numbers, so
 the suite tests statistical properties. The false-positive rates of the
-z-test and the spending boundaries are simulated at fixed seeds. On
-fourteen daily looks with no true effect, checking the fixed 1.96 cutoff at
-every look detects an effect on 21.8% of runs, and the O'Brien-Fleming
-design on 4.9%. Both rates come from 50,000 simulated runs at seed 42 and
-are pinned by a test in `tests/test_group_sequential.py`. Interval coverage
-is measured rather than assumed, and the proportion power function is
-pinned against an exact binomial calculation. The boundary calculation is
-checked against published values for a second spending design, against
-exact probabilities from scipy for two- and three-look designs, against
-simulated crossing rates, and against a finer integration grid. Across
-20,000 simulated runs with no effect at seed 43, the adjusted intervals
-cover zero at every look at once on at least 95% of runs, allowing for
-simulation error. The intake has one test per rule on injected bad data and
-one per limitation code on data built to raise it. The readout text is
-pinned to a saved copy of the expected text that is read by eye when it
-changes.
+z-test and the spending boundaries are simulated at fixed seeds. On fourteen
+daily looks with no true effect, checking the fixed 1.96 cutoff at every
+look detects an effect on 21.8% of runs, and the spending design on 4.9%.
+Both rates come from 50,000 simulated runs at seed 42 and are pinned by a
+test in `tests/test_group_sequential.py`. Interval coverage is measured
+rather than assumed, and the proportion power function is pinned against an
+exact binomial calculation. The boundary calculation is checked against
+published values for a second spending design, against exact probabilities
+from scipy for two- and three-look designs, against simulated crossing
+rates, and against a finer integration grid. Across 20,000 simulated runs
+with no effect at seed 43, the adjusted intervals cover zero at every look
+at once on at least 95% of runs, allowing for simulation error. The intake
+has one test per rule on injected bad data and one per limitation code on
+data built to raise it. The readout text is pinned to a saved copy of the
+expected text that is read by eye when it changes.
 
 The monitoring boundaries are computed at the sample sizes the looks
 actually reached, as shares of the planned size, rather than on a planned

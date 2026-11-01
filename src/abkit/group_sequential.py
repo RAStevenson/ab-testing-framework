@@ -36,7 +36,7 @@ _MIN_INCREMENT = 1e-10
 
 
 def obrien_fleming_spending(information_fraction: ArrayLike, alpha: float) -> NDArray[np.float64]:
-    """Lan-DeMets O'Brien-Fleming-like spending: stingy early, most alpha late."""
+    """Lan-DeMets O'Brien-Fleming-style spending: stingy early, most alpha late."""
     fractions = np.asarray(information_fraction, dtype=np.float64)
     z_critical = stats.norm.isf(alpha / 2.0)
     return np.asarray(2.0 * stats.norm.sf(z_critical / np.sqrt(fractions)))
