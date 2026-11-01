@@ -1,7 +1,7 @@
 """The readout's figures, drawn from an ExperimentReadout and listed by path in the readout.
 
 ``draw_figures`` draws only the figures the readout has data for: the
-corrections and the monitoring replay with its adjusted intervals. matplotlib is
+corrections and the monitoring with its adjusted intervals. matplotlib is
 imported inside the drawing functions, so the library's runtime
 dependencies stay numpy, scipy, and statsmodels for everything except
 drawing, where it is a dev dependency of the scripts.
@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from abkit.readout_analysis import ExperimentReadout, MonitoringReplay
+from abkit.readout_analysis import ExperimentReadout, MonitoringResult
 from abkit.result_types import RateComparison
 
 if TYPE_CHECKING:
@@ -33,7 +33,9 @@ def _style_axis(ax: Axes, *, grid_axis: Literal["both", "x", "y"] = "y") -> None
     ax.set_axisbelow(True)
 
 
-def _monitoring_figure(replay: MonitoringReplay, binary: bool, synthetic: bool, path: Path) -> None:
+def _monitoring_figure(
+    monitoring: MonitoringResult, binary: bool, synthetic: bool, path: Path
+) -> None:
     """Left: the observed |z| path against the spending boundaries and the naive threshold.
     Right: the effect at each look with its adjusted interval band."""
     import matplotlib
@@ -41,14 +43,14 @@ def _monitoring_figure(replay: MonitoringReplay, binary: bool, synthetic: bool, 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    z_path = np.abs(np.asarray(replay.outcome.z_values))
-    boundaries = np.asarray(replay.sequential_design.boundaries)
+    z_path = np.abs(np.asarray(monitoring.outcome.z_values))
+    boundaries = np.asarray(monitoring.sequential_design.boundaries)
     looks = np.arange(1, z_path.size + 1)
     scale = 100.0 if binary else 1.0
     unit = "pp" if binary else "units"
-    estimates = scale * np.asarray(replay.intervals.estimates)
-    low = scale * np.asarray(replay.intervals.ci_low)
-    high = scale * np.asarray(replay.intervals.ci_high)
+    estimates = scale * np.asarray(monitoring.intervals.estimates)
+    low = scale * np.asarray(monitoring.intervals.ci_low)
+    high = scale * np.asarray(monitoring.intervals.ci_high)
 
     fig, (z_ax, effect_ax) = plt.subplots(1, 2, figsize=(11, 4.4))
     z_ax.plot(
@@ -70,19 +72,24 @@ def _monitoring_figure(replay: MonitoringReplay, binary: bool, synthetic: bool, 
         label="Spending boundary",
     )
     z_ax.axhline(
-        replay.z_naive,
+        monitoring.z_naive,
         color=COLOR_REFERENCE,
         linewidth=1.5,
         linestyle="--",
-        label=f"Naive threshold ({replay.z_naive:.2f})",
+        label=f"Naive threshold ({monitoring.z_naive:.2f})",
     )
-    top_values = [float(z_path.max()), replay.z_naive]
+    top_values = [float(z_path.max()), monitoring.z_naive]
     if finite.any():
         top_values.append(float(boundaries[finite].max()))
     z_ax.set_ylim(top=1.2 * max(top_values))
     z_ax.set_xlabel("Look")
     z_ax.set_ylabel("|z|")
-    z_ax.set_title("Boundaries at the sizes reached", loc="left", color=COLOR_INK, fontsize=10)
+    z_title = (
+        "Boundaries at the sizes reached"
+        if monitoring.planned_users_per_group is None
+        else "Boundaries against the planned size"
+    )
+    z_ax.set_title(z_title, loc="left", color=COLOR_INK, fontsize=10)
     z_ax.legend(frameon=False, loc="upper right", fontsize=9)
     _style_axis(z_ax)
 
@@ -99,7 +106,7 @@ def _monitoring_figure(replay: MonitoringReplay, binary: bool, synthetic: bool, 
     effect_ax.plot(looks, estimates, color=COLOR_CONTROL, linewidth=2, label="Effect at each look")
     effect_ax.axhline(0.0, color=COLOR_REFERENCE, linewidth=1.5, linestyle="--")
     effect_ax.set_xlabel("Look")
-    effect_ax.set_ylabel(f"{replay.treatment_arm} minus control ({unit})")
+    effect_ax.set_ylabel(f"{monitoring.treatment_arm} minus control ({unit})")
     effect_ax.set_title(
         "Adjusted intervals hold at every look at once", loc="left", color=COLOR_INK, fontsize=10
     )

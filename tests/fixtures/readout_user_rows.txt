@@ -28,6 +28,7 @@ Other metrics: corrected for 2 comparisons (Holm, and BH = Benjamini-Hochberg)
 
 Monitoring replay: 5 looks; 5% budget spread across them; a crossing = a stop allowed at that look
   treatment vs control on converted, O'Brien-Fleming spending at the sizes reached
+  plan   none in the config; the last look stands in for it
   spending design   never crosses in 5 looks; no early stop in either direction
   naive 1.96 rule   never fires
   final look   effect +13.33 pp   adjusted 95% -23.06 to +49.73 pp   boundary |z| 2.06

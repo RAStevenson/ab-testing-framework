@@ -1,0 +1,47 @@
+fixture experiment
+Data: what the intake did before any statistic
+  users   control 15 (50.0%)   treatment 15 (50.0%)
+  repairs and drops   none; the file passed every rule as delivered
+
+Limitations (*): read every result below with these in view
+  * fewer than 10 successes or failures on converted: control (4 of 15), treatment (6 of 15); the
+      z-test's normal approximation is unreliable here
+  * the top 1% of users carry 65% of spend, and 67% of users have none
+  * the smallest detectable effect on converted is above a modest 5% lift for treatment vs control
+      (184.3% of control); a 'not detected' result there would rule out little
+  * no metric declares a pre-experiment column (pre_column in the config); CUPED is skipped
+  * the run is at 38% of its planned 40 users per group; the results below are a peek, and the
+      decision follows the monitoring block
+
+Group split: does assignment match the plan?
+  treatment vs control   15 vs 15   chi-square 0.00   p 1.000
+  result   consistent with the plan
+
+Sensitivity: smallest lift this sample could detect, 80% power
+  treatment vs control   15 vs 15 users   control 26.7%   detectable 49.15 pp (184.3% of control)
+
+Primary metric, converted: effect, 95% interval, p; interval first
+  treatment vs control   +13.33 pp   -20.12 to +43.65 pp   p 0.439   not detected
+  read at 38% of the planned size; the p above is a peek, judged on the monitoring block
+
+Other metrics: corrected for 2 comparisons (Holm, and BH = Benjamini-Hochberg)
+  spend   treatment vs control   +38.333   p 0.265   Holm 0.530   BH 0.439
+  converted_again   treatment vs control   +13.33 pp   p 0.439   Holm 0.530   BH 0.439
+  result   unadjusted 0 of 2 below 0.05; after Holm 0 survive
+
+Monitoring: look 5, 38% of the plan; 5% budget spread across the looks; a crossing = a stop allowed
+  treatment vs control on converted, O'Brien-Fleming spending against the plan
+  plan   40 users per group, 38% reached
+  spending design   no crossing through look 5; no stop allowed yet
+  naive 1.96 rule   never fires
+  latest look   effect +13.33 pp   adjusted 95% -43.60 to +70.27 pp   boundary |z| 3.23
+
+Planted versus found (synthetic only)
+  absolute_lift   planted 0.13 (+13.00 pp)   expected +13.00 pp at the end of the run   found +13.33
+      pp (-20.12 to +43.65 pp)   inside
+  base_rate       planted 0.27   found 0.2667 (control rate)
+
+Synthetic check output for treatment vs control: no stop allowed yet at look 5, 38% of the planned
+    size; keep running
+Figures:
+  figures/monitoring.png

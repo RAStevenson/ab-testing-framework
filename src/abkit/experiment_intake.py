@@ -8,7 +8,7 @@ the ``Experiment`` object defined here, which also carries per-group
 summary statistics at the end of the run and, with a day column, at each
 checkpoint. ``experiment_capabilities`` reports which data properties a given
 Experiment has; the readout's analysis layer reads its ``time_axis`` flag to
-decide whether the replay runs.
+decide whether the monitoring block runs.
 
 The experiment description comes from a TOML config (stdlib ``tomllib``,
 so the library's dependencies stay numpy, scipy, and statsmodels).
@@ -80,7 +80,9 @@ class Experiment:
     array aligned across columns. ``pre_period`` maps each metric NAME that
     declared a ``pre_column`` to that column's values, aligned with ``rows``,
     and is None when no metric did. ``aggregates`` holds the per-group summary
-    statistics built from the rows. ``truth`` carries a generator config
+    statistics built from the rows. ``planned_users_per_group`` is the size
+    each arm was planned to reach, the number the planning command prints,
+    and None when the config sets none. ``truth`` carries a generator config
     verbatim for synthetic data and is None otherwise.
     """
 
@@ -89,6 +91,7 @@ class Experiment:
     intended_split: tuple[float, ...] | None
     metrics: tuple[MetricSpec, ...]
     alpha: float
+    planned_users_per_group: int | None
     rows: dict[str, NDArray]
     pre_period: dict[str, NDArray] | None
     aggregates: tuple[ArmAggregate, ...]
@@ -118,11 +121,12 @@ def load_config(path: Path) -> dict:
 
     Returns the parsed dict with defaults filled. Raises ValueError naming
     the offending key on any structural problem; nothing is silently
-    defaulted except ``alpha`` (0.05), the optional tables, and each
-    metric's ``column`` (its name), ``primary`` and ``nonnegative``
-    (False), and ``pre_column`` (None). ``input.shape`` is optional and
-    defaults to "user_rows"; any other value stops the run, so an old config
-    written for per-group totals fails loudly instead of being misread.
+    defaulted except ``alpha`` (0.05), ``planned_users_per_group``
+    (None), the optional tables, and each metric's ``column`` (its name),
+    ``primary`` and ``nonnegative`` (False), and ``pre_column`` (None).
+    ``input.shape`` is optional and defaults to "user_rows"; any other value
+    stops the run, so an old config written for per-group totals fails
+    loudly instead of being misread.
     """
     with open(path, "rb") as config_file:
         config = tomllib.load(config_file)
@@ -137,6 +141,15 @@ def load_config(path: Path) -> dict:
     alpha = experiment.setdefault("alpha", 0.05)
     if not isinstance(alpha, float) or not 0.0 < alpha < 1.0:
         raise ValueError(f"experiment.alpha must be a float in (0, 1), got {alpha!r}")
+    planned = experiment.setdefault("planned_users_per_group", None)
+    # bool is an int subclass, so `true` would pass an isinstance check alone
+    if planned is not None and (
+        isinstance(planned, bool) or not isinstance(planned, int) or planned < 2
+    ):
+        raise ValueError(
+            "experiment.planned_users_per_group must be a whole number of at least 2 when "
+            f"present, got {planned!r}"
+        )
 
     input_table = config.setdefault("input", {})
     if not isinstance(input_table, dict):
@@ -530,6 +543,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
         intended_split=tuple(split) if split is not None else None,
         metrics=metrics,
         alpha=config["experiment"]["alpha"],
+        planned_users_per_group=config["experiment"]["planned_users_per_group"],
         rows=rows,
         pre_period=pre_period,
         aggregates=_aggregates_from_rows(

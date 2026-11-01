@@ -450,3 +450,28 @@ def test_aggregates_shape_is_refused(tmp_path: Path) -> None:
     text = _config_text(input='[input]\nshape = "aggregates"\npath = "x.csv"\n')
     with pytest.raises(ValueError, match="reads one row per user"):
         load_config(_write_config(tmp_path, text))
+
+
+def test_planned_users_per_group_parses_and_reaches_the_experiment(tmp_path: Path) -> None:
+    assert (
+        load_config(FIXTURES / "experiment_ok.toml")["experiment"]["planned_users_per_group"]
+        is None
+    )
+    text = _config_text(
+        experiment='[experiment]\nname = "t"\nalpha = 0.05\nplanned_users_per_group = 40\n'
+    )
+    config = load_config(_write_config(tmp_path, text))
+    assert config["experiment"]["planned_users_per_group"] == 40
+    experiment = load_user_rows(config, FIXTURES / "user_rows_ok.csv")
+    assert experiment.planned_users_per_group == 40
+
+
+@pytest.mark.parametrize("value", ["true", "1", "40.0", '"40"'])
+def test_planned_users_per_group_must_be_a_count_of_at_least_two(
+    tmp_path: Path, value: str
+) -> None:
+    text = _config_text(
+        experiment=f'[experiment]\nname = "t"\nalpha = 0.05\nplanned_users_per_group = {value}\n'
+    )
+    with pytest.raises(ValueError, match="planned_users_per_group"):
+        load_config(_write_config(tmp_path, text))

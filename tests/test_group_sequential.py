@@ -308,3 +308,13 @@ def test_repeated_intervals_reject_mismatched_or_bad_input():
         repeated_intervals([0.1, 0.2], [0.05, 0.0], sequential_design)
     with pytest.raises(ValueError):  # a non-finite estimate
         repeated_intervals([0.1, np.nan], [0.05, 0.04], sequential_design)
+
+
+def test_a_boundary_never_changes_when_later_looks_are_added():
+    # what makes a live read valid: the boundary at each look depends on the
+    # looks before it and the plan, never on looks still to come
+    fractions = [0.15, 0.3, 0.5, 0.7, 0.85, 1.0]
+    full = design_boundaries(fractions, alpha=0.05)
+    for n_looks in range(1, len(fractions)):
+        prefix = design_boundaries(fractions[:n_looks], alpha=0.05)
+        np.testing.assert_allclose(prefix.boundaries, full.boundaries[:n_looks], atol=1e-6)

@@ -17,6 +17,7 @@ import numpy as np
 
 from abkit.readout_analysis import (
     ExperimentReadout,
+    MonitoringResult,
     planted_end_of_run_lift,
     planted_spend_difference,
 )
@@ -37,6 +38,18 @@ _DECISIONS = {
     "not_detected": (
         "Decision for {arm} vs {control}: no detectable effect; that contrast could have seen "
         "{mde} or more"
+    ),
+    "stop_allowed": (
+        "Decision for {arm} vs {control}: a stop is allowed from look {look}; {direction} on "
+        "{metric} by {effect} (adjusted {low} to {high})"
+    ),
+    "no_stop_yet": (
+        "Decision for {arm} vs {control}: no stop allowed yet at look {look}, {share} of the "
+        "planned size; keep running"
+    ),
+    "unmonitored": (
+        "Decision for {arm} vs {control}: none yet; the run is at {share} of its planned size "
+        "and the monitoring covers the first treatment only"
     ),
 }
 _SPLIT_RESULTS = {
@@ -248,6 +261,13 @@ def _primary_block(readout: ExperimentReadout) -> list[str]:
             _INDENT + f"Holm-corrected across the {len(readout.primary)} treatments; detection "
             "judged on the Holm p; intervals unadjusted"
         )
+    monitoring = readout.monitoring
+    if monitoring is not None and not monitoring.finished:
+        lines.append(
+            _INDENT
+            + f"read at {_plan_share(monitoring)} of the planned size; the p above is a peek, "
+            "judged on the monitoring block"
+        )
     binary_metrics = _binary_metrics(readout)
     for metric in dict.fromkeys(metric for metric, _, _ in readout.cuped):
         lines += [
@@ -289,31 +309,63 @@ def _corrections_block(readout: ExperimentReadout) -> list[str]:
     return lines
 
 
+def _plan_share(monitoring: MonitoringResult) -> str:
+    """The last judged look's share of the planned information, as a percentage."""
+    return f"{monitoring.sequential_design.information_fractions[-1]:.0%}"
+
+
 def _monitoring_block(readout: ExperimentReadout) -> list[str]:
-    """Block 7: the monitoring replay with the final look's adjusted interval."""
-    replay = readout.monitoring
-    if replay is None:
+    """Block 7: the monitoring of the first contrast, a replay of a finished run or a read of
+    one in flight, with the last judged look's adjusted interval."""
+    monitoring = readout.monitoring
+    if monitoring is None:
         return []
     control_arm = readout.arm_sizes[0][0]
-    binary = replay.metric in _binary_metrics(readout)
-    n_looks = replay.n_usable
-    stopped = replay.outcome.stopped_at_look
-    design_line = (
-        f"crosses at look {stopped} of {n_looks}; a stop there keeps the "
-        f"{readout.alpha:.0%} false-positive rate"
-        if stopped is not None
-        else f"never crosses in {n_looks} looks; no early stop in either direction"
-    )
-    if replay.naive_look is None:
-        naive_line = "never fires"
-    elif stopped is None or replay.naive_look < stopped:
-        naive_line = f"fires at look {replay.naive_look}, on evidence the design does not accept"
+    binary = monitoring.metric in _binary_metrics(readout)
+    n_looks = monitoring.n_judged
+    stopped = monitoring.outcome.stopped_at_look
+    planned = monitoring.planned_users_per_group
+    budget = f"{readout.alpha:.0%} budget spread across"
+    if not monitoring.finished:
+        heading = (
+            f"Monitoring: look {n_looks}, {_plan_share(monitoring)} of the plan; "
+            f"{budget} the looks; a crossing = a stop allowed"
+        )
+        design_line = (
+            f"crosses at look {stopped}; a stop is allowed from there and keeps the "
+            f"{readout.alpha:.0%} false-positive rate"
+            if stopped is not None
+            else f"no crossing through look {n_looks}; no stop allowed yet"
+        )
     else:
-        naive_line = f"fires at look {replay.naive_look}"
+        heading = (
+            f"Monitoring replay: {n_looks} looks; {budget} them; "
+            "a crossing = a stop allowed at that look"
+        )
+        design_line = (
+            f"crosses at look {stopped} of {n_looks}; a stop there keeps the "
+            f"{readout.alpha:.0%} false-positive rate"
+            if stopped is not None
+            else f"never crosses in {n_looks} looks; no early stop in either direction"
+        )
+    if planned is None:
+        plan_line = "plan   none in the config; the last look stands in for it"
+    elif monitoring.finished:
+        plan_line = f"plan   {planned:,} users per group, reached at look {n_looks}"
+    else:
+        plan_line = f"plan   {planned:,} users per group, {_plan_share(monitoring)} reached"
+    if monitoring.naive_look is None:
+        naive_line = "never fires"
+    elif stopped is None or monitoring.naive_look < stopped:
+        naive_line = (
+            f"fires at look {monitoring.naive_look}, on evidence the design does not accept"
+        )
+    else:
+        naive_line = f"fires at look {monitoring.naive_look}"
     last = n_looks - 1
-    level = f"{1.0 - replay.intervals.alpha:.0%}"
-    estimate = replay.intervals.estimates[last]
-    low, high = replay.intervals.ci_low[last], replay.intervals.ci_high[last]
+    level = f"{1.0 - monitoring.intervals.alpha:.0%}"
+    estimate = monitoring.intervals.estimates[last]
+    low, high = monitoring.intervals.ci_low[last], monitoring.intervals.ci_high[last]
     if binary:
         final = (
             f"effect {format_points_signed(estimate)}   "
@@ -321,16 +373,19 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
         )
     else:
         final = f"effect {estimate:+.3f}   adjusted {level} {low:+.3f} to {high:+.3f}"
+    last_label = "final look" if monitoring.finished else "latest look"
     return [
         "",
-        f"Monitoring replay: {n_looks} looks; {readout.alpha:.0%} budget spread across them; "
-        "a crossing = a stop allowed at that look",
-        _INDENT + f"{replay.treatment_arm} vs {control_arm} on {replay.metric}, "
-        "O'Brien-Fleming spending at the sizes reached",
+        heading,
+        _INDENT + f"{monitoring.treatment_arm} vs {control_arm} on {monitoring.metric}, "
+        "O'Brien-Fleming spending "
+        + ("at the sizes reached" if planned is None else "against the plan"),
+        _INDENT + plan_line,
         *_first_treatment_note(readout),
         _INDENT + f"spending design   {design_line}",
-        _INDENT + f"naive {replay.z_naive:.2f} rule   {naive_line}",
-        _INDENT + f"final look   {final}   boundary |z| {replay.intervals.boundaries[last]:.2f}",
+        _INDENT + f"naive {monitoring.z_naive:.2f} rule   {naive_line}",
+        _INDENT
+        + f"{last_label}   {final}   boundary |z| {monitoring.intervals.boundaries[last]:.2f}",
     ]
 
 
@@ -407,11 +462,55 @@ def _decision_lines(readout: ExperimentReadout) -> list[str]:
     prints these as synthetic check output, since no one decides anything on made-up data."""
     if any(limitation.code == "group_split" for limitation in readout.limitations):
         lines = [_DECISIONS["split_broken"]]
+    elif readout.monitoring is not None and not readout.monitoring.finished:
+        lines = [
+            _in_flight_decision_line(readout, readout.monitoring, index)
+            for index in range(len(readout.primary))
+        ]
     else:
         lines = [_decision_line(readout, index) for index in range(len(readout.primary))]
     if readout.truth is None:
         return lines
     return [line.replace("Decision", "Synthetic check output", 1) for line in lines]
+
+
+def _in_flight_decision_line(
+    readout: ExperimentReadout, monitoring: MonitoringResult, index: int
+) -> str:
+    """One contrast's decision while the run is short of its plan: for the monitored contrast,
+    whether the boundary allows a stop yet, with the stop look's adjusted interval; none for the
+    others."""
+    treatment_arm, _ = readout.primary[index]
+    control_arm = readout.arm_sizes[0][0]
+    share = _plan_share(monitoring)
+    if treatment_arm != monitoring.treatment_arm:
+        return _DECISIONS["unmonitored"].format(arm=treatment_arm, control=control_arm, share=share)
+    stopped = monitoring.outcome.stopped_at_look
+    if stopped is None:
+        return _DECISIONS["no_stop_yet"].format(
+            arm=treatment_arm, control=control_arm, look=monitoring.n_judged, share=share
+        )
+    look = stopped - 1
+    estimate = monitoring.intervals.estimates[look]
+    low, high = monitoring.intervals.ci_low[look], monitoring.intervals.ci_high[look]
+    if monitoring.metric in _binary_metrics(readout):
+        effect, low_text, high_text = (
+            format_points_signed(estimate),
+            f"{100 * low:+.2f}",
+            format_points_signed(high),
+        )
+    else:
+        effect, low_text, high_text = f"{estimate:+.3f}", f"{low:+.3f}", f"{high:+.3f}"
+    return _DECISIONS["stop_allowed"].format(
+        arm=treatment_arm,
+        control=control_arm,
+        look=stopped,
+        direction="higher" if estimate > 0 else "lower",
+        metric=monitoring.metric,
+        effect=effect,
+        low=low_text,
+        high=high_text,
+    )
 
 
 def _decision_line(readout: ExperimentReadout, index: int) -> str:

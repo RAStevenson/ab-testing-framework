@@ -6,14 +6,14 @@ readout prints them: the data and its validation events, the limitations
 the checks raised, the group-split check, the sensitivity of the sample,
 the primary metric per contrast with its CUPED adjustment where a
 pre-experiment column exists, the corrected secondary comparisons, the
-monitoring replay with adjusted intervals, and the planted truth for
+monitoring block with adjusted intervals, and the planted truth for
 synthetic runs. ``readout_text`` turns the record into lines and
 ``readout_figures`` draws from it; neither recomputes anything.
 
-A block the data cannot support is ``None``. The monitoring replay omits
+A block the data cannot support is ``None``. The monitoring block omits
 itself on a data error: the error prints in full, then one line names the
-block, and the run carries on, because a replay the file cannot support
-is not a reason to withhold the primary result.
+block, and the run carries on, because a monitoring the file cannot
+support is not a reason to withhold the primary result.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ MIN_EXPECTED_EVENTS = 10  # successes and failures per arm for the normal approx
 HEAVY_TAIL_TOP_SHARE = 0.25  # top 1% of users carrying this share of a metric's total
 MODEST_RELATIVE_LIFT = 0.05  # a 5% relative lift; a smallest detectable effect above it is flagged
 TARGET_POWER = 0.8
-MIN_LOOKS = 3  # fewer looks than this and the replay can say nothing
+MIN_LOOKS = 3  # fewer looks than this and the monitoring can say nothing
 # the boundary integration's grid convergence is pinned on a 14-look schedule
 # (tests/test_group_sequential.py); past that the boundaries are unchecked, so flagged
 MANY_LOOKS = 14
@@ -94,12 +94,18 @@ class CorrectedComparison:
 
 
 @dataclass(frozen=True)
-class MonitoringReplay:
-    """The monitoring replay of the first contrast with boundaries and adjusted intervals.
+class MonitoringResult:
+    """The monitoring of the first contrast with boundaries and adjusted intervals, a read of a
+    run in flight against its plan or a replay of a finished one.
 
     ``z_naive`` is the fixed dashboard threshold and ``naive_look`` the
     first look it would have fired at, for the comparison the readout
-    draws.
+    draws. ``n_judged`` is how many of the ``n_usable`` looks were judged
+    against a boundary: all of them without a plan or when the run ends
+    short of its plan, or the looks through the first that reached the
+    plan. ``finished`` is False while the run is in flight, short of its
+    plan; the last judged look's share of the plan is then the design's
+    last information fraction.
     """
 
     metric: str
@@ -111,6 +117,9 @@ class MonitoringReplay:
     naive_look: int | None
     n_usable: int
     n_checkpoints: int
+    planned_users_per_group: int | None
+    n_judged: int
+    finished: bool
 
 
 @dataclass(frozen=True)
@@ -136,7 +145,7 @@ class ExperimentReadout:
     primary_holm: tuple[float, ...] | None
     cuped: tuple[tuple[str, str, CupedResult], ...]
     corrections: tuple[CorrectedComparison, ...]
-    monitoring: MonitoringReplay | None
+    monitoring: MonitoringResult | None
     truth: dict | None
 
 
@@ -520,17 +529,20 @@ def _usable_checkpoints(experiment: Experiment, metric: MetricSpec) -> tuple[int
 
 def _monitoring(
     experiment: Experiment, metric: MetricSpec, usable: tuple[int, int]
-) -> MonitoringReplay | None:
-    """Replay the first contrast look by look, one look per checkpoint in the file, under
-    O'Brien-Fleming spending at the sizes reached, with adjusted intervals, against the naive
-    fixed threshold.
+) -> MonitoringResult | None:
+    """Monitor the first contrast look by look, one look per checkpoint in the file, under
+    O'Brien-Fleming spending, with adjusted intervals, against the naive fixed threshold.
 
-    A replay of a finished run, not live monitoring: each look's information
-    fraction divides by the final look's information, which is known only
-    once the run has ended. Information is taken as proportional to
-    1 / (1/n_control + 1/n_treatment), which assumes the outcome's variance
-    is steady across looks; where it drifts, the per-look fractions and so
-    the boundaries are approximate."""
+    With a planned size in the config, each look's information fraction
+    divides by the information the plan gives, so a file that stops short of
+    the plan is read in flight, and the first look at or past the plan is
+    the final look, judged at a fraction of 1; looks after it are not
+    judged. Without a plan the fractions divide by the last look's
+    information, which makes the block a replay of a finished run.
+    Information is taken as proportional to 1 / (1/n_control +
+    1/n_treatment), which assumes the outcome's variance is steady across
+    looks; where it drifts, the per-look fractions and so the boundaries
+    are approximate."""
     n_usable, n_checkpoints = usable
     if n_usable < MIN_LOOKS:
         return None
@@ -566,7 +578,33 @@ def _monitoring(
             f"{treatment_arm} against {control_arm} gained no users at a look, so the "
             "boundaries cannot be computed"
         )
-    fractions = information / information[-1]
+    planned = experiment.planned_users_per_group
+    if planned is None:
+        n_judged = n_usable
+        fractions = information / information[-1]
+        finished = True
+    else:
+        # the plan's information, both arms of the contrast at the planned size
+        plan_fractions = information / (planned / 2.0)
+        at_plan = np.nonzero(plan_fractions >= 1.0)[0]
+        if at_plan.size:
+            # the first look at the plan is the final look, judged at a fraction
+            # of 1 as is usual when the last sample overshoots the plan a little
+            n_judged = int(at_plan[0]) + 1
+            fractions = plan_fractions[:n_judged].copy()
+            fractions[-1] = 1.0
+            finished = True
+        else:
+            n_judged = n_usable
+            fractions = plan_fractions
+            finished = False
+    z_path = z_path[:n_judged]
+    control_counts, control_means, control_variances = (
+        values[:n_judged] for values in (control_counts, control_means, control_variances)
+    )
+    treatment_counts, treatment_means, treatment_variances = (
+        values[:n_judged] for values in (treatment_counts, treatment_means, treatment_variances)
+    )
     sequential_design = design_boundaries(
         fractions.tolist(), alpha=experiment.alpha, spending="obrien-fleming"
     )
@@ -584,7 +622,7 @@ def _monitoring(
     z_naive = float(np.round(stats.norm.isf(experiment.alpha / 2.0), 2))
     naive_crossings = np.nonzero(np.abs(z_path) >= z_naive)[0]
     naive_look = int(naive_crossings[0]) + 1 if naive_crossings.size else None
-    return MonitoringReplay(
+    return MonitoringResult(
         metric.name,
         treatment_arm,
         sequential_design,
@@ -594,7 +632,46 @@ def _monitoring(
         naive_look,
         n_usable,
         n_checkpoints,
+        planned,
+        n_judged,
+        finished,
     )
+
+
+def _monitoring_limitations(monitoring: MonitoringResult) -> list[Limitation]:
+    """The flags the monitoring block raises: too many looks for the pinned accuracy, a run
+    read in flight, or a run that continued past its plan."""
+    flags: list[Limitation] = []
+    if monitoring.n_judged > MANY_LOOKS:
+        flags.append(
+            Limitation(
+                "many_looks",
+                f"the monitoring has {monitoring.n_judged} looks; the boundary calculation is "
+                "checked for accuracy on 14 looks, so treat its boundaries as approximate",
+            )
+        )
+    planned = monitoring.planned_users_per_group
+    if planned is None:
+        return flags
+    if not monitoring.finished:
+        share = monitoring.sequential_design.information_fractions[-1]
+        flags.append(
+            Limitation(
+                "in_flight",
+                f"the run is at {share:.0%} of its planned {planned:,} users per group; the "
+                "results below are a peek, and the decision follows the monitoring block",
+            )
+        )
+    elif monitoring.n_judged < monitoring.n_usable:
+        flags.append(
+            Limitation(
+                "plan_passed",
+                f"the run continued {monitoring.n_usable - monitoring.n_judged} looks past its "
+                f"planned {planned:,} users per group; those looks are not judged, because the "
+                "design spends its whole budget by the plan",
+            )
+        )
+    return flags
 
 
 def _missing_days(experiment: Experiment) -> Limitation | None:
@@ -613,7 +690,7 @@ def _missing_days(experiment: Experiment) -> Limitation | None:
         "missing_days",
         f"{gaps.size} gap{'s' if gaps.size != 1 else ''} in the checkpoint sequence (the "
         f"largest {gaps.max():g} day{'s' if gaps.max() != 1 else ''} against a typical "
-        f"{typical:g}); the replay treats the checkpoints present as the whole run",
+        f"{typical:g}); the monitoring treats the checkpoints present as the looks",
     )
 
 
@@ -654,14 +731,8 @@ def analyze_experiment(experiment: Experiment) -> ExperimentReadout:
             monitoring = _monitoring(experiment, metric, usable)
         except ValueError:
             _report_skipped_block("Monitoring replay")
-        if monitoring is not None and monitoring.n_usable > MANY_LOOKS:
-            limitations.append(
-                Limitation(
-                    "many_looks",
-                    f"the replay has {monitoring.n_usable} looks; the boundary calculation is "
-                    "checked for accuracy on 14 looks, so treat its boundaries as approximate",
-                )
-            )
+        if monitoring is not None:
+            limitations += _monitoring_limitations(monitoring)
     return ExperimentReadout(
         experiment_name=experiment.name,
         primary_metric=metric.name,

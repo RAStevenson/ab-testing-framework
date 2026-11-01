@@ -365,7 +365,7 @@ def test_many_looks_flag_past_the_pinned_schedule(tmp_path: Path):
     readout = _readout(_generated_experiment(tmp_path, n_per_arm=4000, days=tuple(range(60))))
     assert readout.monitoring is not None and readout.monitoring.n_usable == 60
     flag = next(limitation for limitation in readout.limitations if limitation.code == "many_looks")
-    assert "the replay has 60 looks" in flag.detail
+    assert "the monitoring has 60 looks" in flag.detail
 
 
 def test_heavy_tail_flag_names_zero_inflation_when_most_users_are_zero(tmp_path: Path):
@@ -407,3 +407,106 @@ def test_sensitivity_with_several_treatments_is_solved_at_alpha_over_their_numbe
     experiment = load_user_rows(load_config(config_path), FIXTURES / "hillstrom_shaped.csv")
     readout = _readout(experiment)
     assert [values["alpha"] for _, values in readout.sensitivity] == [0.025, 0.025]
+
+
+class TestPlannedSize:
+    """The monitoring block against a planned size: in flight short of the plan, final at the
+    first look reaching it, and the replay of a finished run without one."""
+
+    @staticmethod
+    def _experiment(tmp_path: Path, planned: int | None, n_per_arm: int = 400) -> Experiment:
+        data_path = tmp_path / "rows.csv"
+        data_path.write_text(_generated_rows(n_per_arm, seed=3), encoding="utf-8")
+        text = _user_config_text()
+        if planned is not None:
+            text = text.replace(
+                "alpha = 0.05\n", f"alpha = 0.05\nplanned_users_per_group = {planned}\n"
+            )
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(text, encoding="utf-8")
+        return load_user_rows(load_config(config_path), data_path)
+
+    @staticmethod
+    def _information(experiment: Experiment) -> list[float]:
+        """Per-look 1 / (1/n_control + 1/n_treatment) on the primary metric, in checkpoint order."""
+        counts: dict[float, dict[str, int]] = {}
+        for cell in experiment.aggregates:
+            if cell.metric == "converted" and cell.checkpoint is not None:
+                counts.setdefault(cell.checkpoint, {})[cell.arm] = cell.n
+        return [
+            1.0 / (1.0 / counts[day]["control"] + 1.0 / counts[day]["treatment"])
+            for day in sorted(counts)
+        ]
+
+    def test_a_run_short_of_its_plan_is_read_in_flight(self, tmp_path: Path) -> None:
+        experiment = self._experiment(tmp_path, planned=1000)
+        readout = _readout(experiment)
+        monitoring = readout.monitoring
+        assert monitoring is not None
+        assert not monitoring.finished
+        assert monitoring.planned_users_per_group == 1000
+        assert monitoring.n_judged == monitoring.n_usable == 5
+        information = self._information(experiment)
+        expected = [value / 500.0 for value in information]
+        np.testing.assert_allclose(monitoring.sequential_design.information_fractions, expected)
+        assert expected[-1] == pytest.approx(0.4)
+        flag = next(limit for limit in readout.limitations if limit.code == "in_flight")
+        assert "40% of its planned 1,000 users per group" in flag.detail
+        assert "plan_passed" not in _codes(readout)
+
+    def test_the_first_look_at_the_plan_is_final_and_later_looks_are_not_judged(
+        self, tmp_path: Path
+    ) -> None:
+        probe = self._experiment(tmp_path, planned=None)
+        information = self._information(probe)
+        # a plan the third look reaches exactly, by truncation a hair below it
+        planned = int(2 * information[2])
+        readout = _readout(self._experiment(tmp_path, planned=planned))
+        monitoring = readout.monitoring
+        assert monitoring is not None
+        assert monitoring.finished
+        assert monitoring.n_judged == 3 and monitoring.n_usable == 5
+        assert monitoring.sequential_design.information_fractions[-1] == 1.0
+        assert len(monitoring.outcome.z_values) == 3
+        assert len(monitoring.intervals.estimates) == 3
+        flag = next(limit for limit in readout.limitations if limit.code == "plan_passed")
+        assert "continued 2 looks past" in flag.detail
+        assert "in_flight" not in _codes(readout)
+
+    def test_without_a_plan_the_last_look_stands_in_for_it(self, tmp_path: Path) -> None:
+        monitoring = _readout(self._experiment(tmp_path, planned=None)).monitoring
+        assert monitoring is not None
+        assert monitoring.finished and monitoring.planned_users_per_group is None
+        assert monitoring.n_judged == monitoring.n_usable == 5
+        assert monitoring.sequential_design.information_fractions[-1] == 1.0
+
+    def test_in_flight_boundaries_match_the_finished_designs_first_looks(
+        self, tmp_path: Path
+    ) -> None:
+        # the same file read after its third day and again once the plan is
+        # reached gives the same boundaries for the three looks they share
+        rows = _generated_rows(400, seed=3)
+        header, *body = rows.splitlines()
+        planned = int(2 * self._information(self._experiment(tmp_path, planned=None))[4])
+        text = _user_config_text().replace(
+            "alpha = 0.05\n", f"alpha = 0.05\nplanned_users_per_group = {planned}\n"
+        )
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(text, encoding="utf-8")
+        first_days = tmp_path / "first_days.csv"
+        first_days.write_text(
+            "\n".join([header] + [line for line in body if int(line.split(",")[2]) <= 2]) + "\n",
+            encoding="utf-8",
+        )
+        whole = tmp_path / "whole.csv"
+        whole.write_text(rows, encoding="utf-8")
+        in_flight = _readout(load_user_rows(load_config(config_path), first_days)).monitoring
+        finished = _readout(load_user_rows(load_config(config_path), whole)).monitoring
+        assert in_flight is not None and finished is not None
+        assert not in_flight.finished and finished.finished
+        assert in_flight.n_judged == 3 and finished.n_judged == 5
+        np.testing.assert_allclose(
+            in_flight.sequential_design.boundaries,
+            finished.sequential_design.boundaries[:3],
+            atol=1e-6,
+        )

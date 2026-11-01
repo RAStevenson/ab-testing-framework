@@ -7,8 +7,9 @@ one test at a time. The readout puts the data checks first and the result
 after. The standard tests come from statsmodels and scipy. The project intake
 checks and repairs the file before any test runs.
 
-The readout replays a finished run day by day, as if the experiment were
-still being watched. Neither statsmodels nor scipy offers that replay. It is
+The readout also monitors a run that is still going. It judges each look
+against the size the run was planned to reach and says whether a stop is
+allowed yet. Neither statsmodels nor scipy offers that monitoring. It is
 built for an analyst who has an exported file and no experimentation
 platform, or who wants a second opinion on a dashboard.
 
@@ -99,14 +100,22 @@ python scripts/run_analyze_experiment.py --config my_experiment.toml --data my_d
 the config does not name are ignored. The table lists the keys a config
 uses.
 
+To monitor an experiment while it runs, set `planned_users_per_group` in the
+config before the first look, to the number the planning command printed.
+Export the rows so far with a day column and run the analyze command on each
+new export. The monitoring block then says whether a stop is allowed yet,
+and the decision line follows it. The section "Monitoring a run" shows the
+block.
+
 | Table and key | Needed | What it does |
 |---|---|---|
 | `[experiment]` `name` | yes | the readout's title |
-| `[experiment]` `alpha` | no, 0.05 | the false-positive rate for the effect tests, the sensitivity, the corrections, and the replay, whose adjusted interval follows it; the other intervals stay 95% and the split check uses 0.001 |
+| `[experiment]` `alpha` | no, 0.05 | the false-positive rate for the effect tests, the sensitivity, the corrections, and the monitoring, whose adjusted interval follows it; the other intervals stay 95% and the split check uses 0.001 |
+| `[experiment]` `planned_users_per_group` | no | the size each group was planned to reach, the number the planning command prints; with a day column, the monitoring block judges each look against it, short of the plan or past it, instead of replaying the file as if its last day were the plan |
 | `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
 | `[input]` `md5` | no | the data file's checksum, so a readout cannot be made from the wrong file; a different file stops the run |
 | `[columns]` `arm` | yes | the column holding each user's group |
-| `[columns]` `day` | no | the day each user entered the experiment, as a whole number such as days since the start; a date string is dropped as unreadable, and each distinct value is one look of the replay, so a timestamp stored as a number, such as seconds, would make nearly every user its own look; with at least three distinct days, turns on the replay |
+| `[columns]` `day` | no | the day each user entered the experiment, as a whole number such as days since the start; a date string is dropped as unreadable, and each distinct value is one look of the monitoring block, so a timestamp stored as a number, such as seconds, would make nearly every user its own look; with at least three distinct days, turns on the monitoring block |
 | `[columns]` `user_id` | no | turns on the stop for a user appearing twice |
 | `[columns.aliases.<column>]` | no | value replacements for the group column or another text column, old = new, counted as repairs; metric, pre-experiment, and day values are read as numbers and user ids as text, and an alias table on any of those columns stops the run |
 | `[arms]` `labels` | yes | the group labels, control first; reversing them flips the sign of every effect |
@@ -116,7 +125,7 @@ uses.
 | `[[metrics]]` `column` | no, the name | the metric's column in the file |
 | `[[metrics]]` `nonnegative` | no | drops a row with a negative value; set it for a metric that cannot go below zero, such as a count, and leave it off where negatives are real, such as revenue net of refunds |
 | `[[metrics]]` `pre_column` | no | a column measured before assignment; turns on CUPED for that metric; a row whose cell there is not a number is dropped, and the metric's `nonnegative` and binary rules do not apply to that column |
-| `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block, labels the closing lines as check output, and marks the replay figure as synthetic |
+| `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block, labels the closing lines as check output, and marks the monitoring figure as synthetic |
 
 ## How it works
 
@@ -128,8 +137,8 @@ The writers, `src/abkit/readout_text.py` and `src/abkit/readout_figures.py`,
 print the lines and draw the figures. The tests, the power calculation,
 and CUPED are thin wrappers over statsmodels and scipy, in the modules
 `significance_tests.py`, `power_analysis.py`, and `cuped_adjustment.py`.
-The replay's spending boundaries and adjusted intervals are the project's
-own, in `src/abkit/group_sequential.py`.
+The monitoring block's spending boundaries and adjusted intervals are the
+project's own, in `src/abkit/group_sequential.py`.
 
 ## The readout
 
@@ -254,7 +263,7 @@ result rests on the fewer than 1% of users who spent. CUPED on the
 past-spending column removes under 1% of the noise, because spend in the
 year before the e-mail barely predicts spend in the two weeks after it.
 
-## The monitoring replay
+## Monitoring a run
 
 An A/B test is usually watched while it runs, and the first day the result
 looks significant brings pressure to stop. Every look at the running result
@@ -266,52 +275,85 @@ that chance at 5% for the whole run by treating the 5% as a budget spread
 across the looks. Each day then gets a stricter cutoff than a single check
 would.
 
-The replay applies that design to a finished file after the fact. It tells
-the analyst whether the effect was ever clear enough for a stop to be
-allowed, and on which day. It also says whether the first day the usual
-cutoff fired was one of those days. It assumes the file holds the whole run.
-A live version would need a planned final size, as the Limitations section
-says.
+The monitoring block applies that design to the run, look by look, against
+the size the run was planned to reach, and says whether a stop is allowed.
+On a run still going, that is the decision the readout gives. On a run that
+reached its plan it says where a stop would have been allowed. A file that
+ends short of the plan because someone stopped early, on a day the dashboard
+looked significant, reads the same way as a run still going, so the block
+says whether that stop was allowed.
 
-The quoted readout has no replay block, because the Hillstrom file has no
-day column. A file whose day column holds at least three distinct days gets
-the block, printed after the other results. When the data cannot support a
-test on one of those days, such as a first day with no conversions in either
-group, the readout leaves the block out and the console prints the error.
+The quoted readout has no monitoring block, because the Hillstrom file has
+no day column. A file whose day column holds at least three distinct days
+gets the block, printed after the other results. When the data cannot
+support a test on one of those days, such as a first day with no conversions
+in either group, the readout leaves the block out and the console prints the
+error.
 
 A look is one check of the primary metric's running totals, one per day in
 the file. The z-test divides the effect by its standard error to get a score
-called z. The replay computes that score for a continuous metric too. The
+called z. The block computes that score for a continuous metric too. The
 single-check cutoff is z past 1.96 in either direction, the same as p below
 0.05. The spending design gives each look its own cutoff, called the
 spending boundary. The O'Brien-Fleming design used here spends almost none
 of the budget early and most of it at the end.
 
+The plan comes from the config key `planned_users_per_group`, set to the
+number the planning command prints. Each look's share of the plan sets how
+much of the budget it may spend, so a boundary depends only on the looks
+before it and the plan, never on looks still to come. The first look to
+reach the plan is the final look, and looks after it are not judged, because
+the design has spent its whole budget by then. A limitation flag says how
+many looks the run continued past it. Without the key, the block takes the
+last look in the file as the plan and says so. Read that way, it judges a
+run stopped early by peeking as if the early stop had been the plan, so the
+key is what gives the block its meaning.
+
 The block prints the look where z first crosses the spending boundary, if it
-does, and the final look's effect with its adjusted interval, an interval
+does, and the latest look's effect with its adjusted interval, an interval
 widened to allow for the repeated looks. A crossing means the design allows
 a stop at that look. For a run checked at exactly these looks, stopping at
 the first crossing holds the false-positive rate at 5%. A crossing says
 nothing about the effect's size. "Never crosses" means no look allowed a
 stop. The fixed 1.96 cutoff, labeled naive, is printed for contrast.
 
-On a run that ended on schedule, the primary block's interval is the result.
+On a run short of its plan, the limitations block says the results are a
+peek, the primary block says so in a line under its p, and the decision line
+comes from the boundary. The block below is from the test suite's fixture, a
+fabricated file of 30 users read against a plan of 40 per group.
+
+```text
+Monitoring: look 5, 38% of the plan; 5% budget spread across the looks; a crossing = a stop allowed
+  treatment vs control on converted, O'Brien-Fleming spending against the plan
+  plan   40 users per group, 38% reached
+  spending design   no crossing through look 5; no stop allowed yet
+  naive 1.96 rule   never fires
+  latest look   effect +13.33 pp   adjusted 95% -43.60 to +70.27 pp   boundary |z| 3.23
+```
+
+Its closing line, labeled as check output because the fixture is synthetic,
+reads "no stop allowed yet at look 5, 38% of the planned size; keep
+running". When the boundary is crossed, the decision line allows a stop from
+that look and carries that look's adjusted interval.
+
+On a run that reached its plan, the primary block's interval is the result.
 The adjusted interval at a look is the one a stop there would have had to
 report. The readout prints the final look's adjusted interval, which is a
 little wider than the primary block's interval because the adjusted interval
 is built to cover the true effect at every look at once. With several
-treatments the replay runs on the first treatment listed in the config, a
-rule that does not look at the results.
+treatments the block runs on the first treatment listed in the config, a
+rule that does not look at the results, and short of the plan the other
+treatments get no decision line.
 
-![The replay drawn from the synthetic check](analysis/synthetic/figures/monitoring.png)
+![The monitoring drawn from the synthetic check](analysis/synthetic/figures/monitoring.png)
 
-*This figure draws the replay from the synthetic check, which runs on
-generated data, not a real experiment. The observed |z| passes the fixed
-1.96 cutoff at look 1, but the spending design gives that look almost none
-of the 5% and allows no stop there. The observed |z| crosses the spending
-boundary at look 4 of 14. The panel on the right shows each look's effect
-and its adjusted interval. No interval is drawn at look 1, where no stop is
-allowed.*
+*This figure draws the monitoring from the synthetic check, a finished run
+against its plan on generated data, not a real experiment. The observed |z|
+passes the fixed 1.96 cutoff at look 1, but the spending design gives that
+look almost none of the 5% and allows no stop there. The observed |z|
+crosses the spending boundary at look 4 of 14. The panel on the right shows
+each look's effect and its adjusted interval. No interval is drawn at look
+1, where no stop is allowed.*
 
 The run behind the figure is a purely synthetic check, not an example of
 analysis. One generated experiment with planted effects, from
@@ -372,7 +414,9 @@ Flagged in the limitations block:
 - a smallest detectable effect above a 5% relative lift
 - no pre-experiment column
 - gaps in the day sequence
-- a replay with more looks than the 14 its boundary accuracy is checked on
+- a run read short of its plan, or continued past it
+- a monitoring block with more looks than the 14 its boundary accuracy is
+  checked on
 
 ## How the statistics are tested
 
@@ -396,8 +440,10 @@ pinned to a saved copy of the expected text that is read by eye when it
 changes.
 
 The monitoring boundaries are computed at the sample sizes the looks
-actually reached rather than on a planned schedule. Each look's share of the
-run's final precision is taken from user counts rather than from the
+actually reached, as shares of the planned size, rather than on a planned
+schedule of looks. A test pins that a run read short of its plan gets the same
+boundaries for its looks as the same run read once it reached its plan. Each
+look's share of the plan is taken from user counts rather than from the
 observed variances, so where the variance drifts across looks the boundaries
 are approximate. The method is the recursive numerical integration of
 Armitage, McPherson, and Rowe, which carries forward the probability that no
@@ -415,15 +461,16 @@ not read. It assumes users were randomized one by one. An experiment that
 randomized groups of users, such as stores or communities, needs a variance
 estimate this tool does not have, and nothing in the file lets it detect
 that. It draws no causal conclusion beyond the randomized comparison. The
-replay reads a finished file and cannot watch a running experiment, because
-each look's boundary depends on its share of the final sample size, which is
-known only once the run ends. A live version would need a planned final size
-set before the start. There are no futility boundaries, so the replay can
-show an early stop on a clear effect but never on a hopeless run. Each look
-holds the users enrolled by then with their final outcomes, so the replay
-sees outcomes a live look would not yet have had. Every metric is one value
-per user and every comparison is a difference in means, so a ratio such as
-revenue per order, whose denominator varies by user, is out of scope.
+monitoring trusts the plan in the config. A planned size chosen after
+looking at the results voids its guarantee, and nothing in the file can
+detect that. The plan is one size that both groups of a comparison reach;
+unequal planned sizes are not supported. There are no futility boundaries,
+so the monitoring can allow an early stop on a clear effect but never on a
+hopeless run. In a replay of a finished run, each look holds the users
+enrolled by then with their final outcomes, so the replay sees outcomes a
+live look would not yet have had. Every metric is one value per user and
+every comparison is a difference in means, so a ratio such as revenue per
+order, whose denominator varies by user, is out of scope.
 
 ## Conventions
 
@@ -432,12 +479,12 @@ returns a frozen dataclass from `src/abkit/result_types.py` rather than a
 tuple. Randomness always flows through an explicit `numpy.random.Generator`
 parameter, with no module-level seeding. Inputs fail with an explicit
 `ValueError`, except in two places. The intake's coercion catch turns an
-unreadable value into a counted and reported row drop, and the replay omits
-itself on a data error after printing it in full. Tests are two-sided unless
-the function name says otherwise, p-value adjustments take and return arrays
-in the original order, and anything approximate states its accuracy in its
-docstring and has a test pinning it against a published or simulated value.
-Spelling is US throughout.
+unreadable value into a counted and reported row drop, and the monitoring
+block omits itself on a data error after printing it in full. Tests are
+two-sided unless the function name says otherwise, p-value adjustments take
+and return arrays in the original order, and anything approximate states its
+accuracy in its docstring and has a test pinning it against a published or
+simulated value. Spelling is US throughout.
 
 ## Script arguments
 
