@@ -4,13 +4,13 @@ abkit is a command-line program that reads an exported A/B test file and
 prints a readout, a text report of the data checks and the test results. Its
 goal is to make the evaluation of an A/B test one ordered pass instead of
 one test at a time. The readout puts the data checks first and the result
-after. The standard tests come from statsmodels and scipy. The project
-checks and repairs the file before any test runs, a step called the intake.
-The project also sets the order of the readout. The readout replays a
-finished run day by day, as if the experiment were still being watched.
-Neither statsmodels nor scipy offers that replay. It is built for an analyst
-who has an exported file and no experimentation platform, or who wants a
-second opinion on a dashboard.
+after. The standard tests come from statsmodels and scipy. The project intake
+checks and repairs the file before any test runs.
+
+The readout replays a finished run day by day, as if the experiment were
+still being watched. Neither statsmodels nor scipy offers that replay. It is
+built for an analyst who has an exported file and no experimentation
+platform, or who wants a second opinion on a dashboard.
 
 ## Setup and run
 
