@@ -4,6 +4,17 @@ Dated measurements, decisions, and history that do not belong in the README.
 Each measurement names its date, its conditions, and whether the loop that
 produced it is in the repo.
 
+## The Hillstrom readout's running time (2026-11-01)
+
+```
+python scripts/run_analyze_experiment.py --config analysis/hillstrom/config.toml
+```
+
+The command above took about 3 seconds on 2026-11-01 on a Windows 11
+desktop, with the data already fetched and the versions pinned in
+`requirements.txt`. The synthetic check took about the same. Both were
+measured once by hand, and no timing loop is in the repo.
+
 ## Scope reduced (2026-10-21)
 
 The scope was cut because the project had grown past what its author could
@@ -11,13 +22,13 @@ learn and defend in an interview, and a smaller process is quicker to learn
 and to publish. What stays is the data checks, the group split, the sample's
 sensitivity, the primary effect with its interval, the corrections for
 several comparisons, CUPED, and the replay of a run checked at every look.
-Three things were removed, with the code that only they used. The intake no
+Three things were removed, with the modules that only they used. The intake no
 longer reads per-group summary totals, so the ASOS example and its committed
 dataset are gone. The early-versus-late block, which tested whether an
 effect changed over the run, is gone. The cross-check on a skewed metric,
 which compared Welch's t-test with a bootstrap and a permutation test, is
 gone with the resampling module. Git history keeps all of it. The entries in
-the history section below record measurements from that code and stay as
+the history section below record measurements from those modules and stay as
 history.
 
 ## The heavy-tail flag on zero-inflated metrics (2026-10-09)
@@ -49,7 +60,7 @@ away from the null, where the interval lives. It also stays wide enough when
 an arm sits at or near 0% or 100%, where the plain unpooled interval comes
 out too narrow.
 
-## Removed code and the ASOS example (history)
+## Removed features and the ASOS example (history)
 
 ### Bootstrap interval coverage (2026-10-07)
 

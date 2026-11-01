@@ -4,22 +4,144 @@ abkit is a command-line program that reads an exported A/B test file and
 prints a readout, a text report of the data checks and the test results. Its
 goal is to make the evaluation of an A/B test one ordered pass instead of
 one test at a time. The readout puts the data checks first and the result
-after. The standard tests come from statsmodels and scipy. The repo's own
-code checks and repairs the file first, a step called the intake. The same
-code sets the order of the readout. The readout also replays a finished run
-day by day, as if the experiment were still being watched, which those
-libraries do not do. It is built for an analyst who has an exported file and
-no experimentation platform, or who wants a second opinion on a dashboard.
+after. The standard tests come from statsmodels and scipy. The project
+checks and repairs the file before any test runs, a step called the intake.
+The project also sets the order of the readout. The readout replays a
+finished run day by day, as if the experiment were still being watched.
+Neither statsmodels nor scipy offers that replay. It is built for an analyst
+who has an exported file and no experimentation platform, or who wants a
+second opinion on a dashboard.
+
+## Setup and run
+
+Requires git and Python 3.11 or later.
+
+In a terminal, run the following commands.
+
+1. Clone the repository:
+
+   ```
+   git clone https://github.com/RAStevenson/ab-testing-framework.git
+   ```
+
+2. Navigate to the root directory:
+
+   ```
+   cd ab-testing-framework
+   ```
+
+3. Create a new environment and activate it (on Mac or Linux the second
+   line is `source .venv/bin/activate`):
+
+   ```
+   python -m venv .venv
+   .venv\Scripts\activate
+   ```
+
+4. Install dependencies:
+
+   ```
+   pip install -r requirements.txt
+   ```
+
+5. Fetch the Hillstrom dataset, which is the real-data example, and read it:
+
+   ```
+   python scripts/run_fetch_hillstrom.py
+   python scripts/run_analyze_experiment.py --config analysis/hillstrom/config.toml
+   ```
+
+The first command downloads the 2008 dataset from its original URL into
+`data/hillstrom/`, which git ignores, and checks it against a pinned
+checksum. The dataset is not redistributed here because its publisher never
+stated a license. The second command prints the readout quoted under the
+section "The readout" and saves it as `readout.txt` beside the config, with
+the figures in a `figures/` folder. Reading the file takes a few seconds
+after the download. A measured run is recorded in `docs/NOTES.md`.
+
+The other entry points, with every argument listed under [Script
+arguments](#script-arguments) at the end:
+
+```
+python scripts/run_synthetic_check.py
+python scripts/run_plan_experiment.py --baseline-rate 0.05 --minimum-lift 0.005
+pytest
+```
+
+The first command regenerates the synthetic check in `analysis/synthetic/`,
+a run of the pipeline on generated data. The second prints the users needed
+per group for a baseline rate and the smallest lift worth detecting, or for
+a standard deviation and the smallest difference, at the chosen alpha and
+power. The third runs the test suite.
+
+abkit itself is not installed. The entry scripts put `src/` on the import
+path, so a fresh clone runs once the dependencies are installed. The
+versions in `requirements.txt` are the exact ones the committed readouts
+were produced with. The library depends on numpy, scipy, and statsmodels,
+and the figures need matplotlib, which that file pins with the dev tools.
+Rerunning a readout with those versions reproduces `readout.txt` byte for
+byte. The continuous integration checks regenerate the synthetic readout on
+every push to master, with the newest versions `pyproject.toml` allows, and
+fail if the committed copy has drifted. The Hillstrom readout is outside
+that check, since its data is fetched rather than committed and the checks
+should not depend on a URL from 2008 staying up.
+
+### Using it on your own data
+
+To read your own experiment, write a config and point the analyze command at
+your file, a comma-separated CSV in UTF-8 with a header row:
+
+```
+python scripts/run_analyze_experiment.py --config my_experiment.toml --data my_data.csv
+```
+
+`analysis/hillstrom/config.toml` is a complete working example. Data columns
+the config does not name are ignored. The table lists the keys a config
+uses.
+
+| Table and key | Needed | What it does |
+|---|---|---|
+| `[experiment]` `name` | yes | the readout's title |
+| `[experiment]` `alpha` | no, 0.05 | the false-positive rate for the effect tests, the sensitivity, the corrections, and the replay, whose adjusted interval follows it; the other intervals stay 95% and the split check uses 0.001 |
+| `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
+| `[input]` `md5` | no | the data file's checksum, so a readout cannot be made from the wrong file; a different file stops the run |
+| `[columns]` `arm` | yes | the column holding each user's group |
+| `[columns]` `day` | no | the day each user entered the experiment, as a whole number such as days since the start; a date string is dropped as unreadable, and each distinct value is one look of the replay, so a timestamp stored as a number, such as seconds, would make nearly every user its own look; with at least three distinct days, turns on the replay |
+| `[columns]` `user_id` | no | turns on the stop for a user appearing twice |
+| `[columns.aliases.<column>]` | no | value replacements for the group column or another text column, old = new, counted as repairs; metric, pre-experiment, and day values are read as numbers and user ids as text, and an alias table on any of those columns stops the run |
+| `[arms]` `labels` | yes | the group labels, control first; reversing them flips the sign of every effect |
+| `[arms]` `intended_split` | no | the planned share per group; turns on the check against the plan |
+| `[[metrics]]` `name`, `kind` | yes | one entry per metric; `kind` is `binary` or `continuous` |
+| `[[metrics]]` `primary` | one metric | the metric the decisions are made on |
+| `[[metrics]]` `column` | no, the name | the metric's column in the file |
+| `[[metrics]]` `nonnegative` | no | drops a row with a negative value; set it for a metric that cannot go below zero, such as a count, and leave it off where negatives are real, such as revenue net of refunds |
+| `[[metrics]]` `pre_column` | no | a column measured before assignment; turns on CUPED for that metric; a row whose cell there is not a number is dropped, and the metric's `nonnegative` and binary rules do not apply to that column |
+| `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block, labels the closing lines as check output, and marks the replay figure as synthetic |
+
+## How it works
+
+A run has three stages. The intake, in `src/abkit/experiment_intake.py`,
+reads the config and the CSV, repairs and drops what its rules allow with a
+count of each, and stops on a fault it cannot count. The analysis, in
+`src/abkit/readout_analysis.py`, computes every number the readout reports.
+The writers, `src/abkit/readout_text.py` and `src/abkit/readout_figures.py`,
+print the lines and draw the figures. The tests, the power calculation,
+and CUPED are thin wrappers over statsmodels and scipy, in the modules
+`significance_tests.py`, `power_analysis.py`, and `cuped_adjustment.py`.
+The replay's spending boundaries and adjusted intervals are the project's
+own, in `src/abkit/group_sequential.py`.
 
 ## The readout
 
 The readout is a text file of labeled blocks rather than paragraphs. Each
 heading carries a few words on how to read its block, and the file closes
-with one decision line per treatment and the figures' paths. The committed
-readout of the Hillstrom e-mail experiment follows whole, with a key to its
-blocks after it. The experiment's data was published by MineThatData
-in 2008. In the experiment, 64,000 customers of a retailer were split in thirds
-between a men's e-mail, a women's e-mail, and no e-mail.
+with one decision line per treatment and the figures' paths.
+
+The committed real-data example is the Hillstrom e-mail experiment, whose
+data was published by MineThatData in 2008. In the experiment, 64,000
+customers of a retailer were split in thirds between a men's e-mail, a
+women's e-mail, and no e-mail. Its readout follows whole, with a key to its
+blocks after it.
 
 The file is [analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt).
 
@@ -99,14 +221,11 @@ How to read it, block by block:
   is Welch's t-test, which compares the two groups' means and still works
   when their variances differ. With several treatments the comparisons are
   Holm-corrected, which caps the chance of any false positive among them at
-  alpha, the false-positive rate the config sets. Holm tests the smallest p
-  against alpha divided by the number of comparisons, the next against alpha
-  divided by one fewer, and so on, stopping at the first that fails. The
-  readout's Holm column restates that test as a corrected p, and an effect
-  counts as detected when its corrected p is below alpha. The Sensitivity
-  block uses the strictest of these levels, alpha divided by the number of
-  treatments, so an effect that large has an 80% chance of detection however
-  the other comparisons come out.
+  alpha, the false-positive rate the config sets. The readout's Holm column
+  is the corrected p, and an effect counts as detected when that p is below
+  alpha. The Sensitivity block is computed at alpha divided by the number
+  of treatments, the strictest level Holm applies, so an effect that large
+  has an 80% chance of detection however the other comparisons come out.
 - **CUPED** (controlled-experiment using pre-experiment data). It reports a
   metric's effect with less noise, after a regression adjustment removes the
   part of each user's outcome their pre-experiment value already predicted.
@@ -125,6 +244,15 @@ How to read it, block by block:
   Holm-corrected when there are several treatments. A "no detectable effect"
   line carries the sensitivity figure, so it says what size of effect the
   run could have seen.
+
+On Hillstrom, fewer than 1% of users spent anything, which the limitations
+block flags. The intake also normalizes and counts a misspelled zip-code
+category. Nothing else in the readout reads that column, so the config's
+alias for it is there to show the repair on real data. Both e-mail arms
+raise visits. Both also raise spend after the Holm correction, though that
+result rests on the fewer than 1% of users who spent. CUPED on the
+past-spending column removes under 1% of the noise, because spend in the
+year before the e-mail barely predicts spend in the two weeks after it.
 
 ## The monitoring replay
 
@@ -174,6 +302,18 @@ boundary at look 4 of 14. The panel on the right shows each look's effect
 and its adjusted interval. No interval is drawn at look 1, where no stop is
 allowed.*
 
+The run behind the figure is a purely synthetic check, not an example of
+analysis. One generated experiment with planted effects, from
+`src/abkit/synthetic_data.py`, runs through the same intake and readout as a
+real file. The check's purpose is to show the pipeline works from start to
+finish. This one run is not evidence that the statistics are right. That
+evidence is the test suite, described under the section "How the statistics
+are tested". The readout's block headed "Planted versus found" lists the
+generation settings, with what the readout found beside the ones it can
+compare.
+
+The file is [analysis/synthetic/readout.txt](analysis/synthetic/readout.txt).
+
 ## What the intake does to a file
 
 The intake never cleans a file silently. A fault it can neither repair nor
@@ -214,133 +354,35 @@ Stops the run, naming what failed:
 Flagged in the limitations block:
 
 - group sizes off from the intended split
-- the first continuous metric (the primary, if it is continuous) with its
-  top 1% of users carrying more than a quarter of its total
+- the top 1% of users carrying more than a quarter of a continuous
+  metric's total, checked on the first continuous metric (the primary, if it
+  is continuous) over the users in the control group and the first treatment
 - fewer than 10 successes or failures in an arm on a binary primary metric
 - a smallest detectable effect above a 5% relative lift
 - no pre-experiment column
 - gaps in the day sequence
 - a replay with more looks than the 14 its boundary accuracy is checked on
 
-## Setup and run
+## How the statistics are tested
 
-```bash
-python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements.txt  # .venv/bin/python on Unix
-.venv/Scripts/python -m pytest
-.venv/Scripts/python scripts/run_synthetic_check.py
-.venv/Scripts/python scripts/run_fetch_hillstrom.py   # fetches the 2008 dataset (not redistributed)
-.venv/Scripts/python scripts/run_analyze_experiment.py --config analysis/hillstrom/config.toml
-.venv/Scripts/python scripts/run_plan_experiment.py --baseline-rate 0.05 --minimum-lift 0.005
-```
-
-The analyze command prints the readout and saves it as `readout.txt` beside
-the config, with the figures in a `figures/` folder. The `--out` flag
-chooses another directory. The planning command prints the users needed per
-group for a baseline rate and the smallest lift worth detecting, or for a
-standard deviation and the smallest difference, at the chosen alpha and
-power.
-
-To read your own experiment, write a config and point the analyze command at
-your file, a comma-separated CSV in UTF-8 with a header row:
-
-```bash
-.venv/Scripts/python scripts/run_analyze_experiment.py --config my_experiment.toml --data my_data.csv
-```
-
-`analysis/hillstrom/config.toml` is a complete working example. Data columns
-the config does not name are ignored. The table lists the keys a config
-uses.
-
-| Table and key | Needed | What it does |
-|---|---|---|
-| `[experiment]` `name` | yes | the readout's title |
-| `[experiment]` `alpha` | no, 0.05 | the false-positive rate for the effect tests, the sensitivity, the corrections, and the replay, whose adjusted interval follows it; the other intervals stay 95% and the split check uses 0.001 |
-| `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
-| `[input]` `md5` | no | the data file's checksum, so a readout cannot be made from the wrong file; a different file stops the run |
-| `[columns]` `arm` | yes | the column holding each user's group |
-| `[columns]` `day` | no | the day each user entered the experiment, as a whole number such as days since the start; a date string is dropped as unreadable, and each distinct value is one look of the replay, so a timestamp stored as a number, such as seconds, would make nearly every user its own look; with at least three distinct days, turns on the replay |
-| `[columns]` `user_id` | no | turns on the stop for a user appearing twice |
-| `[columns.aliases.<column>]` | no | value replacements for the group column or another text column, old = new, counted as repairs; metric, pre-experiment, and day values are read as numbers and user ids as text, and an alias table on any of those columns stops the run |
-| `[arms]` `labels` | yes | the group labels, control first; reversing them flips the sign of every effect |
-| `[arms]` `intended_split` | no | the planned share per group; turns on the check against the plan |
-| `[[metrics]]` `name`, `kind` | yes | one entry per metric; `kind` is `binary` or `continuous` |
-| `[[metrics]]` `primary` | one metric | the metric the decisions are made on |
-| `[[metrics]]` `column` | no, the name | the metric's column in the file |
-| `[[metrics]]` `nonnegative` | no | drops a row with a negative value; set it for a metric that cannot go below zero, such as a count, and leave it off where negatives are real, such as revenue net of refunds |
-| `[[metrics]]` `pre_column` | no | a column measured before assignment; turns on CUPED for that metric; a row whose cell there is not a number is dropped, and the metric's `nonnegative` and binary rules do not apply to that column |
-| `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block, labels the closing lines as check output, and marks the replay figure as synthetic |
-
-The tool needs Python 3.11 or newer. There is no package install step,
-because the entry scripts put `src/` on the import path themselves, so a
-fresh clone runs once the dependencies in `requirements.txt` are present.
-The library depends on numpy, scipy, and statsmodels, and the figures need
-matplotlib, which that file pins with the dev tools. Rerunning a readout
-with the versions pinned there reproduces `readout.txt` byte for byte. The
-continuous integration checks regenerate the synthetic readout on every push
-to master, with the newest versions `pyproject.toml` allows, and fail if the
-committed copy has drifted. The Hillstrom readout is outside that check,
-since its data is fetched rather than committed and the checks should not
-depend on a URL from 2008 staying up.
-
-## The two committed readouts
-
-[analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt), quoted
-above, reads the Hillstrom e-mail experiment. Fewer than 1% of its users
-spent anything, which the limitations block flags. The intake also
-normalizes and counts a misspelled zip-code category. Nothing else in the
-readout reads that column, so the config's alias for it is there to show the
-repair on real data. Both e-mail arms raise visits. Both also raise spend
-after the Holm correction, though that result rests on the fewer than 1% of
-users who spent. CUPED on the past-spending column removes under 1% of the
-noise, because spend in the year before the e-mail barely predicts spend in
-the two weeks after it.
-
-[analysis/synthetic/readout.txt](analysis/synthetic/readout.txt) is a purely
-synthetic check, not an example of analysis. One generated experiment with
-planted effects runs through the same intake and readout as a real file. The
-check's purpose is to show the pipeline works from start to finish. This one
-run is not evidence that the statistics are right. That evidence is the test
-suite, described under the section "For the technical reader". The readout's
-block headed "Planted versus found" lists the generation settings, with what
-the readout found beside the ones it can compare.
-
-## Limitations
-
-It reads one row per user, so a file of per-group summary totals is not
-read. It assumes users were randomized one by one. An experiment that
-randomized groups of users, such as stores or communities, needs a variance
-estimate this tool does not have, and nothing in the file lets it detect
-that. It draws no causal conclusion beyond the randomized comparison. The
-replay reads a finished file and cannot watch a running experiment, because
-each look's boundary depends on its share of the final sample size, which is
-known only once the run ends. A live version would need a planned final size
-set before the start. There are no futility boundaries, so the replay can
-show an early stop on a clear effect but never on a hopeless run. Each look
-holds the users enrolled by then with their final outcomes, so the replay
-sees outcomes a live look would not yet have had. Every metric is one value
-per user and every comparison is a difference in means, so a ratio such as
-revenue per order, whose denominator varies by user, is out of scope.
-
-## For the technical reader
-
-Statistical code can be wrong and still return plausible numbers, so the
-suite tests statistical properties. The false-positive rates of the z-test
-and the spending boundaries are simulated at fixed seeds. On fourteen daily
-looks with no true effect, checking the fixed 1.96 cutoff at every look
-detects an effect on 21.8% of runs, and the O'Brien-Fleming design on 4.9%.
-Both rates come from 50,000 simulated runs at seed 42 and are pinned by a
-test in `tests/test_group_sequential.py`. Interval coverage is measured
-rather than assumed, and the proportion power function is pinned against an
-exact binomial calculation. The boundary calculation is checked against
-published values for a second spending design, against exact probabilities
-from scipy for two- and three-look designs, against simulated crossing
-rates, and against a finer integration grid. Across 20,000 simulated runs
-with no effect, the adjusted intervals cover zero at every look at once on
-at least 95% of runs, allowing for simulation error. The intake has one test
-per rule on injected bad data and one per limitation code on data built to
-raise it. The readout text is pinned to a saved copy of the expected text
-that is read by eye when it changes.
+A statistical routine can be wrong and still return plausible numbers, so
+the suite tests statistical properties. The false-positive rates of the
+z-test and the spending boundaries are simulated at fixed seeds. On
+fourteen daily looks with no true effect, checking the fixed 1.96 cutoff at
+every look detects an effect on 21.8% of runs, and the O'Brien-Fleming
+design on 4.9%. Both rates come from 50,000 simulated runs at seed 42 and
+are pinned by a test in `tests/test_group_sequential.py`. Interval coverage
+is measured rather than assumed, and the proportion power function is
+pinned against an exact binomial calculation. The boundary calculation is
+checked against published values for a second spending design, against
+exact probabilities from scipy for two- and three-look designs, against
+simulated crossing rates, and against a finer integration grid. Across
+20,000 simulated runs with no effect at seed 43, the adjusted intervals
+cover zero at every look at once on at least 95% of runs, allowing for
+simulation error. The intake has one test per rule on injected bad data and
+one per limitation code on data built to raise it. The readout text is
+pinned to a saved copy of the expected text that is read by eye when it
+changes.
 
 The monitoring boundaries are computed at the sample sizes the looks
 actually reached rather than on a planned schedule. Each look's share of the
@@ -355,38 +397,91 @@ its standard error.
 [docs/NOTES.md](docs/NOTES.md) holds dated measurements and decisions, and
 the record of what was removed on 2026-10-21.
 
-## Repo layout
+## Limitations
 
-- `src/abkit/experiment_intake.py`: the config, the loader, and the checks
-  and repairs.
-- `src/abkit/readout_analysis.py`: every number the readout reports,
-  computed once, no text.
-- `src/abkit/readout_text.py` and `readout_figures.py`: the lines and the
-  figures.
-- `src/abkit/significance_tests.py`, `power_analysis.py`, and
-  `cuped_adjustment.py`: thin wrappers over statsmodels and scipy. Their
-  statistical tests return the repo's result dataclasses.
-- `src/abkit/group_sequential.py`: the spending boundaries and the adjusted
-  intervals.
-- `src/abkit/result_types.py`: the frozen result dataclasses the statistical
-  functions return.
-- `src/abkit/synthetic_data.py`: the generated experiment the synthetic
-  pipeline check runs on.
-- `scripts/`: the analyze, plan, synthetic, and fetch commands.
-- `analysis/`: the two committed readouts with their configs and figures.
-- `tests/`: the suite, mostly one file per module.
-- `docs/NOTES.md`: dated measurements and decisions.
+The tool reads one row per user, so a file of per-group summary totals is
+not read. It assumes users were randomized one by one. An experiment that
+randomized groups of users, such as stores or communities, needs a variance
+estimate this tool does not have, and nothing in the file lets it detect
+that. It draws no causal conclusion beyond the randomized comparison. The
+replay reads a finished file and cannot watch a running experiment, because
+each look's boundary depends on its share of the final sample size, which is
+known only once the run ends. A live version would need a planned final size
+set before the start. There are no futility boundaries, so the replay can
+show an early stop on a clear effect but never on a hopeless run. Each look
+holds the users enrolled by then with their final outcomes, so the replay
+sees outcomes a live look would not yet have had. Every metric is one value
+per user and every comparison is a difference in means, so a ratio such as
+revenue per order, whose denominator varies by user, is out of scope.
 
 ## Conventions
 
 Every public function carries full type hints, and every statistical test
-returns a frozen dataclass rather than a tuple. Randomness always flows
-through an explicit `numpy.random.Generator` parameter, with no module-level
-seeding. Inputs fail with an explicit `ValueError`, except in two places.
-The intake's coercion catch turns an unreadable value into a counted and
-reported row drop, and the replay omits itself on a data error after
-printing it in full. Tests are two-sided unless the function name says
-otherwise, p-value adjustments take and return arrays in the original order,
-and anything approximate states its accuracy in its docstring and has a test
-pinning it against a published or simulated value. Spelling is US
-throughout.
+returns a frozen dataclass from `src/abkit/result_types.py` rather than a
+tuple. Randomness always flows through an explicit `numpy.random.Generator`
+parameter, with no module-level seeding. Inputs fail with an explicit
+`ValueError`, except in two places. The intake's coercion catch turns an
+unreadable value into a counted and reported row drop, and the replay omits
+itself on a data error after printing it in full. Tests are two-sided unless
+the function name says otherwise, p-value adjustments take and return arrays
+in the original order, and anything approximate states its accuracy in its
+docstring and has a test pinning it against a published or simulated value.
+Spelling is US throughout.
+
+## Script arguments
+
+This lists every argument of every user-facing script, mirroring `--help`,
+which each script prints with `-h`.
+
+### `run_fetch_hillstrom.py`
+
+Takes no arguments. It downloads the Hillstrom file from its original URL
+into `data/hillstrom/`, checks the download against the SHA-256 pinned in
+the script, and refuses a file that does not match, keeping the rejected
+bytes beside the cache for review. A cached file that matches is not
+downloaded again.
+
+### `run_analyze_experiment.py`
+
+Required:
+
+- `--config`: the experiment TOML, with the keys listed under "Using it on
+  your own data". `analysis/hillstrom/config.toml` is a complete example.
+
+Optional:
+
+- `--data`: the data file to read, overriding the config's `[input]`
+  `path`. The config's `md5`, when set, is still checked against this file.
+- `--out`: the directory for `readout.txt` and the `figures/` folder.
+  Default is the config's directory.
+
+### `run_synthetic_check.py`
+
+Optional:
+
+- `--config`: the recipe TOML, an experiment config with a `[truth]` table
+  of generation settings. Default `analysis/synthetic/config.toml`.
+- `--out`: the directory for the readout and figures. Default is the
+  config's directory. The generated rows go to the config's `[input]`
+  `path`, which for the default recipe is `data/synthetic/`, ignored by
+  git.
+
+### `run_plan_experiment.py`
+
+Required, one pair or the other:
+
+- `--baseline-rate` with `--minimum-lift`: for a yes/no metric, the
+  control rate and the smallest absolute lift worth detecting, as fractions
+  such as 0.05 and 0.005.
+- `--standard-deviation` with `--minimum-difference`: for a continuous
+  metric, its standard deviation and the smallest difference in means worth
+  detecting, in the metric's own units.
+
+Passing both pairs, or neither, stops the command with an error naming the
+choice.
+
+Optional:
+
+- `--alpha`: the false-positive rate. Default 0.05.
+- `--power`: the chance of detecting an effect of the stated size. Default
+  0.8.
