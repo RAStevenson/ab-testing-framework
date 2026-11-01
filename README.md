@@ -256,25 +256,36 @@ year before the e-mail barely predicts spend in the two weeks after it.
 
 ## The monitoring replay
 
-The replay shows where a finished run could have been stopped early while
-holding the false-positive rate. The quoted readout has no replay block,
-because the Hillstrom file has no day column. A file whose day column holds
-at least three distinct days gets the block, printed after the other
-results. When the data cannot support a test on one of those days, such as a
-first day with no conversions in either group, the readout leaves the block
-out and the console prints the error.
+An A/B test is usually watched while it runs, and the first day the result
+looks significant brings pressure to stop. Every look at the running result
+is another chance of a false positive, an effect detected when none is
+there. One check at the usual cutoff carries a 5% chance of a false
+positive. Checking every day for two weeks and stopping on the first
+significant day raises that chance well above 5%. A spending design holds
+that chance at 5% for the whole run by treating the 5% as a budget spread
+across the looks. Each day then gets a stricter cutoff than a single check
+would.
+
+The replay applies that design to a finished file after the fact. It tells
+the analyst whether the effect was ever clear enough for a stop to be
+allowed, and on which day. It also says whether the first day the usual
+cutoff fired was one of those days. It assumes the file holds the whole run.
+A live version would need a planned final size, as the Limitations section
+says.
+
+The quoted readout has no replay block, because the Hillstrom file has no
+day column. A file whose day column holds at least three distinct days gets
+the block, printed after the other results. When the data cannot support a
+test on one of those days, such as a first day with no conversions in either
+group, the readout leaves the block out and the console prints the error.
 
 A look is one check of the primary metric's running totals, one per day in
 the file. The z-test divides the effect by its standard error to get a score
 called z. The replay computes that score for a continuous metric too. The
-test calls the effect detected when z passes 1.96 in either direction, the
-same as p below 0.05. On a single check, that cutoff holds the
-false-positive rate at 5%. Checking that cutoff at every look raises the
-rate well above 5%. A spending design treats the 5% as a budget divided
-across the looks. That gives each look its own cutoff, called the spending
-boundary. The O'Brien-Fleming design used here spends almost none of the
-budget early and most of it at the end. The replay applies that design to
-the finished run, checking it look by look against the spending boundary.
+single-check cutoff is z past 1.96 in either direction, the same as p below
+0.05. The spending design gives each look its own cutoff, called the
+spending boundary. The O'Brien-Fleming design used here spends almost none
+of the budget early and most of it at the end.
 
 The block prints the look where z first crosses the spending boundary, if it
 does, and the final look's effect with its adjusted interval, an interval
