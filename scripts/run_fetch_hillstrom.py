@@ -1,4 +1,4 @@
-"""Fetch the Hillstrom e-mail experiment dataset to the local cache.
+"""Fetch the Hillstrom email experiment dataset to the local cache.
 
 The dataset is Kevin Hillstrom's MineThatData E-Mail Analytics And Data
 Mining Challenge (2008): 64,000 customers randomly assigned to a men's

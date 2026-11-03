@@ -12,7 +12,7 @@
 #   python scripts/run_analyze_experiment.py --config analysis/hillstrom/config.toml
 
 [experiment]
-name = "Hillstrom e-mail experiment"
+name = "Hillstrom email experiment"
 alpha = 0.05
 
 [input]

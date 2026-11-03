@@ -18,8 +18,8 @@ on a dashboard.
 This document covers setup, using the tool on your own experiment, the
 argument reference, how the readout and its monitoring block are read, and
 what the intake does with a file. The two runs committed in the repo follow,
-a demonstration on the Hillstrom e-mail experiment and a synthetic check
-with planted effects. The limitations close the document. 
+a demonstration on the Hillstrom email experiment and a synthetic check with
+planted effects. The limitations close the document.
 
 ## Setup and run
 
@@ -293,8 +293,8 @@ in this order:
   detectable effect" line carries the sensitivity figure, so it says what
   size of effect the run could have seen.
 
-The demonstration on the Hillstrom e-mail experiment, later in this
-document, shows a complete readout.
+The demonstration on the Hillstrom email experiment, later in this document,
+shows a complete readout.
 
 ## Monitoring a run
 
@@ -436,12 +436,12 @@ Flagged in the limitations block:
 - a monitoring block with more looks than the 14 its boundary accuracy is
   checked on
 
-## Demonstration on the Hillstrom e-mail experiment
+## Demonstration on the Hillstrom email experiment
 
-The committed real-data example is the Hillstrom e-mail experiment, whose
+The committed real-data example is the Hillstrom email experiment, whose
 data was published by MineThatData in 2008. In the experiment, 64,000
-customers of a retailer were split in thirds between a men's e-mail, a
-women's e-mail, and no e-mail. Two commands fetch the data and read it:
+customers of a retailer were split in thirds between a men's email, a
+women's email, and no email. Two commands fetch the data and read it:
 
 ```
 python scripts/run_fetch_hillstrom.py
@@ -458,7 +458,7 @@ The dataset has no day column, so the readout has no monitoring block.
 The file is [analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt).
 
 ```text
-Hillstrom e-mail experiment
+Hillstrom email experiment
 Data: what the intake did before any statistic
   users   No E-Mail 21,306 (33.3%)   Mens E-Mail 21,307 (33.3%)   Womens E-Mail 21,387 (33.4%)
   alias normalized   28,776 rows   first at line 2, zip_code 'Surburban' to 'Suburban'
@@ -508,11 +508,11 @@ Figures:
 On Hillstrom, fewer than 1% of users spent anything, which the limitations
 block flags. The intake also normalizes and counts a misspelled zip-code
 category. Nothing else in the readout reads that column, so the config's
-alias for it is there to show the repair on real data. Both e-mail groups
+alias for it is there to show the repair on real data. Both email groups
 raise visits. Both also raise spend after the Holm correction, though that
 result rests on the fewer than 1% of users who spent. CUPED on the
 past-spending column removes under 1% of the noise, because spend in the
-year before the e-mail barely predicts spend in the two weeks after it. The
+year before the email barely predicts spend in the two weeks after it. The
 readout rounds that to 0%.
 
 ## Synthetic check with planted effects
