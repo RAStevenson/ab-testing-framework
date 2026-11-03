@@ -246,7 +246,8 @@ def _primary_block(readout: ExperimentReadout) -> list[str]:
     control_arm = readout.arm_sizes[0][0]
     lines = [
         "",
-        f"Primary metric, {readout.primary_metric}: effect, 95% interval, p; interval first",
+        f"Primary metric, {readout.primary_metric}: effect, {1 - readout.alpha:.0%} interval, p; "
+        "interval first",
     ]
     for index, (treatment_arm, comparison) in enumerate(readout.primary):
         outcome = _primary_outcome(comparison, readout.alpha, _decision_p(readout, index))

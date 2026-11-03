@@ -159,7 +159,7 @@ table lists the keys a config uses.
 | Table and key | Required | Description |
 |---|---|---|
 | `[experiment]` `name` | yes | the readout's title |
-| `[experiment]` `alpha` | no, default = 0.05 | the false-positive rate for the tests, the corrections, the sensitivity, and the monitoring. The split check uses 0.001 regardless, and the intervals outside the monitoring block stay 95% |
+| `[experiment]` `alpha` | no, default = 0.05 | the false-positive rate for the tests, the corrections, the sensitivity, and the monitoring; every interval's level is one minus it, and the split check uses 0.001 regardless |
 | `[experiment]` `planned_users_per_group` | no | the size each group is planned to reach, the number the planning command prints; with a day column, the monitoring block judges each look against it. It needs an equal `intended_split` |
 | `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
 | `[input]` `md5` | no | the data file's checksum, so a readout cannot be made from the wrong file; a different file stops the run |
@@ -271,7 +271,7 @@ in this order:
   treatments it is computed at alpha divided by their number, the strictest
   level the next block's Holm correction applies, so an effect that large
   has an 80% chance of detection however the other comparisons come out.
-- **Primary metric.** The effect, its 95% interval, and p for each
+- **Primary metric.** The effect, its interval, and p for each
   treatment, from a two-proportion z-test on a yes/no metric or Welch's
   t-test on a continuous one. Lifts on a yes/no metric are in percentage
   points (pp), and on a continuous metric in its own units per user. With

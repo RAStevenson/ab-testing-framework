@@ -141,6 +141,22 @@ class TestUserRowsFixture:
         assert corrected.metric == "spend"
         assert corrected.holm_p == corrected.bh_q == corrected.comparison.p_value
 
+    def test_plain_intervals_follow_alpha(self, tmp_path: Path) -> None:
+        # detection is judged at alpha, so the intervals it is read beside
+        # sit at the same level; at alpha 0.2 that is 80%
+        _generated_experiment(tmp_path, 400, pre_column=True)  # writes rows.csv beside the config
+        text = _user_config_text(pre_column=True).replace("alpha = 0.05", "alpha = 0.2")
+        assert "alpha = 0.2" in text
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(text, encoding="utf-8")
+        readout = _readout(load_user_rows(load_config(config_path), tmp_path / "rows.csv"))
+        ((_, primary),) = readout.primary
+        assert primary.confidence == pytest.approx(0.8)
+        (corrected,) = readout.corrections
+        assert corrected.comparison.confidence == pytest.approx(0.8)
+        ((_, _, cuped),) = readout.cuped
+        assert cuped.confidence == pytest.approx(0.8)
+
     def test_a_continuous_primary_runs_through_the_monitoring(self, tmp_path: Path) -> None:
         text = (
             _user_config_text()

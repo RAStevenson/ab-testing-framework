@@ -101,7 +101,7 @@ def _monitoring_figure(
         color=COLOR_CONTROL,
         alpha=0.18,
         linewidth=0,
-        label="Adjusted 95% interval",
+        label=f"Adjusted {1 - monitoring.intervals.alpha:.0%} interval",
     )
     effect_ax.plot(looks, estimates, color=COLOR_CONTROL, linewidth=2, label="Effect at each look")
     effect_ax.axhline(0.0, color=COLOR_REFERENCE, linewidth=1.5, linestyle="--")

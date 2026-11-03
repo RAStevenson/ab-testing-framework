@@ -38,6 +38,15 @@ new stop came from the interviewer's read. A config that plans a size and
 also plans an unequal split is refused, because the plan is one size every
 group reaches. The README had said so and the intake had not enforced it.
 
+The interviewer's read also found that detection was judged at alpha while
+the primary and CUPED intervals stayed at 95% whatever alpha was, so at a
+looser alpha a detected effect could carry an interval that included zero.
+Every interval the readout prints is now at one minus alpha, the level the
+monitoring block's adjusted interval already used. Neither committed readout
+changes, since both run at 0.05. Robert ruled this a defect rather than
+creep, and three one-sentence README additions the same panel asked for
+were dropped on the same ruling.
+
 ## The committed runs use the same function as a user's run (a design decision, 2026-11-03)
 
 Robert asked on his structural read whether the Hillstrom demonstration and

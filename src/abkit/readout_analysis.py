@@ -218,16 +218,25 @@ def _cell_test(
     experiment: Experiment, treatment_arm: str, metric: MetricSpec
 ) -> RateComparison | MeanComparison:
     """The two-sample test for one (contrast, metric) cell: the z-test for a binary metric,
-    Welch's t-test for a continuous one."""
+    Welch's t-test for a continuous one. The interval's level is one minus the experiment's
+    alpha, the level the p is judged at. The two agree exactly for Welch's test. For the
+    z-test the p uses the pooled standard error and the interval does not, so near alpha a
+    detected effect's interval can include zero."""
+    confidence = 1.0 - experiment.alpha
     if metric.kind == "binary":
         control = _agg(experiment, experiment.arms[0], metric.name, None)
         treatment = _agg(experiment, treatment_arm, metric.name, None)
         return two_proportion_ztest(
-            _successes(control), control.n, _successes(treatment), treatment.n
+            _successes(control),
+            control.n,
+            _successes(treatment),
+            treatment.n,
+            confidence=confidence,
         )
     return welch_ttest(
         _arm_values(experiment, experiment.arms[0], metric.name),
         _arm_values(experiment, treatment_arm, metric.name),
+        confidence=confidence,
     )
 
 
@@ -430,6 +439,7 @@ def _cuped(
                         rows[metric.name][treatment_mask],
                         pre_period[metric.name][control_mask],
                         pre_period[metric.name][treatment_mask],
+                        confidence=1.0 - experiment.alpha,
                     ),
                 )
             )
