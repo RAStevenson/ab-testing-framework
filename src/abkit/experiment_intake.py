@@ -29,9 +29,9 @@ from numpy.typing import NDArray
 
 _METRIC_KINDS = ("binary", "continuous")
 _RESERVED_COLUMN_KEYS = ("arm", "day", "user_id")
-# share of data rows the drop rules may remove before the run stops: past
-# this the file is not cleaned-ish and the readout would describe the
-# survivors rather than the experiment
+# share of data rows the drop rules may remove before the run stops; values
+# missing for a reason tied to the outcome can bias the comparison, and the
+# file cannot show why a value is blank or invalid
 DROPPED_ROW_STOP = 0.01
 
 
@@ -362,9 +362,9 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     split); a non-blank user id that appears twice when a user_id column is
     declared (``duplicate_user_error``, naming the id and both rows); and
     the drop rules removing more than ``DROPPED_ROW_STOP`` of the data
-    rows (``too_many_dropped_error``, with the count per rule). A file past
-    that share is not cleaned-ish, and a readout of its survivors would
-    describe a different experiment.
+    rows (``too_many_dropped_error``, with the count per rule). Past that
+    share, values missing for a reason tied to the outcome could bias the
+    comparison, and the file cannot show why a value is blank or invalid.
 
     A metric's ``pre_column`` (its pre-experiment value, for CUPED) must be
     a finite number and is returned in ``pre_period`` keyed by metric name.

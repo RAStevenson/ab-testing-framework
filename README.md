@@ -391,11 +391,12 @@ Dropped and counted, with a stop above 1% of rows:
   negative
 - a row with a value other than 0 or 1 in a binary metric
 
-A file past that share is not clean enough to read, and a readout of the
-remaining rows would describe a different experiment. Some exports leave a
-metric blank for users who never did the thing it counts, such as spend for
-a user who bought nothing. Fill those blanks with zero before running the
-tool, or the drops will pass 1% and stop the run.
+A file past that share is not clean enough to read. If values go missing
+for a reason tied to the outcome, dropping those rows can bias the
+comparison. Nothing in the file shows why a value is blank or invalid. Some
+exports leave a metric blank for users who never did the thing it counts,
+such as spend for a user who bought nothing. Fill those blanks with zero
+before running the tool, or the drops will pass 1% and stop the run.
 
 Stops the run, naming what failed:
 
