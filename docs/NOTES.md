@@ -18,6 +18,29 @@ earlier look has crossed and solves each look's cutoff from it. The adjusted
 intervals are each look's estimate plus or minus that look's boundary times
 its standard error.
 
+## What the test suite pins (moved from the README, 2026-11-03)
+
+Robert cut the README's testing section on his structural read of
+2026-11-03 as padding. Its measurements keep their record here, verbatim.
+
+A statistical routine can be wrong and still return plausible numbers, so
+the suite tests statistical properties. The false-positive rates of the
+z-test and the spending boundaries are simulated at fixed seeds. On fourteen
+daily looks with no true effect, checking the fixed 1.96 cutoff at every
+look detects an effect on 21.8% of runs, and the spending design on 4.9%.
+Both rates come from 50,000 simulated runs at seed 42 and are pinned by a
+test in `tests/test_group_sequential.py`. Interval coverage is measured
+rather than assumed, and the proportion power function is pinned against an
+exact binomial calculation. The boundary calculation is checked against
+published values for a second spending design, against exact probabilities
+from scipy for two- and three-look designs, against simulated crossing
+rates, and against a finer integration grid. Across 20,000 simulated runs
+with no effect at seed 43, the adjusted intervals cover zero at every look
+at once on at least 95% of runs, allowing for simulation error. The intake
+has one test per rule on injected bad data and one per limitation code on
+data built to raise it. The readout text is pinned to a saved copy of the
+expected text that is read by eye when it changes.
+
 ## The power cost of monitoring against the plan (2026-11-03)
 
 The planning command sizes a test for one check at the planned size. Over

@@ -15,11 +15,10 @@ analyst who has an exported file and no experimentation platform, or who
 wants a second opinion on a dashboard.
 
 This document covers setup, using the tool on your own experiment, the
-argument reference, how the readout and its monitoring block are read, what
-the intake does to a file, and how the statistics are tested. The two runs
-committed in the repo follow, a demonstration on the Hillstrom e-mail
-experiment and a synthetic check with planted effects. The limitations close
-the document.
+argument reference, how the readout and its monitoring block are read, and
+what the intake does with a file. The two runs committed in the repo follow,
+a demonstration on the Hillstrom e-mail experiment and a synthetic check
+with planted effects. The limitations close the document.
 
 ## Setup and run
 
@@ -88,7 +87,7 @@ the primary one, such as whether a user bought anything. A yes/no metric's
 spread follows from its rate, so only the rate has to be guessed. Otherwise
 the standard deviation has to be guessed.
 
-Either command prints the users needed per group, at 80% power and alpha
+Either command prints the users required per group, at 80% power and alpha
 0.05 unless told otherwise. Put that number in the config as
 `planned_users_per_group` before the first look. A run that will be checked
 daily can raise it by a few percent, for the reason given under "Monitoring
@@ -115,15 +114,17 @@ columns of the CSV. The rest states what the CSV cannot: which group is the
 control, which outcome the decision rests on, and how the users were meant
 to be split. For a file with one row per user and these columns,
 
+#### Example data (.csv file):
+
 ```
 variant,converted,spend
 control,0,0
-new_page,1,49.99
 control,1,12.50
+new_page,1,49.99
 new_page,0,0
 ```
 
-this config is complete:
+#### Example config (.toml file):
 
 ```toml
 [experiment]
@@ -154,10 +155,10 @@ lists the values found in it, control first. Each `[[metrics]]` block names
 one outcome column and says whether it holds yes/no values or amounts. The
 table lists every key a config uses.
 
-| Table and key | Needed | What it does |
+| Table and key | Required | Description |
 |---|---|---|
 | `[experiment]` `name` | yes | the readout's title |
-| `[experiment]` `alpha` | no, 0.05 | the false-positive rate for the tests, the corrections, the sensitivity, and the monitoring with its adjusted interval; the other intervals stay 95% and the split check uses 0.001 |
+| `[experiment]` `alpha` | no, default = 0.05 | the false-positive rate for the tests, the corrections, the sensitivity, and the monitoring with its adjusted interval; the other intervals stay 95% and the split check uses 0.001 |
 | `[experiment]` `planned_users_per_group` | no | the size each group is planned to reach, the number the planning command prints; with a day column, the monitoring block judges each look against it |
 | `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
 | `[input]` `md5` | no | the data file's checksum, so a readout cannot be made from the wrong file; a different file stops the run |
@@ -168,8 +169,8 @@ table lists every key a config uses.
 | `[groups]` `labels` | yes | the group labels, control first; reversing them flips the sign of every effect |
 | `[groups]` `intended_split` | no | the planned share per group; turns on the check against the plan |
 | `[[metrics]]` `name`, `kind` | yes | one entry per metric; `kind` is `binary` or `continuous` |
-| `[[metrics]]` `primary` | one metric | the metric the decisions are made on |
-| `[[metrics]]` `column` | no, the name | the metric's column in the file |
+| `[[metrics]]` `primary` | yes, one metric required | the metric the decisions are made on |
+| `[[metrics]]` `column` | no, default = name | the metric's column in the file |
 | `[[metrics]]` `nonnegative` | no | drops a row with a negative value; leave it off where negatives are real, such as revenue net of refunds |
 | `[[metrics]]` `pre_column` | no | a column measured before assignment; turns on CUPED for that metric, and a row with no number there is dropped |
 | `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block and labels the closing lines and the monitoring figure as synthetic |
@@ -374,7 +375,7 @@ treatments the block runs on the first treatment listed in the config, a
 rule that does not look at the results, and short of the plan the other
 treatments get no decision line.
 
-## What the intake does to a file
+## What the intake does with a file
 
 The intake never cleans a file silently. A fault it can neither repair nor
 drop with a count stops the run.
@@ -425,34 +426,6 @@ Flagged in the limitations block:
 - a run read short of its plan, or continued past it
 - a monitoring block with more looks than the 14 its boundary accuracy is
   checked on
-
-## How the statistics are tested
-
-A statistical routine can be wrong and still return plausible numbers, so
-the suite tests statistical properties. The false-positive rates of the
-z-test and the spending boundaries are simulated at fixed seeds. On fourteen
-daily looks with no true effect, checking the fixed 1.96 cutoff at every
-look detects an effect on 21.8% of runs, and the spending design on 4.9%.
-Both rates come from 50,000 simulated runs at seed 42 and are pinned by a
-test in `tests/test_group_sequential.py`. Interval coverage is measured
-rather than assumed, and the proportion power function is pinned against an
-exact binomial calculation. The boundary calculation is checked against
-published values for a second spending design, against exact probabilities
-from scipy for two- and three-look designs, against simulated crossing
-rates, and against a finer integration grid. Across 20,000 simulated runs
-with no effect at seed 43, the adjusted intervals cover zero at every look
-at once on at least 95% of runs, allowing for simulation error. The intake
-has one test per rule on injected bad data and one per limitation code on
-data built to raise it. The readout text is pinned to a saved copy of the
-expected text that is read by eye when it changes.
-
-A test pins that a run read short of its plan gets the same boundaries for
-its looks as the same run read once it reached its plan. The suite runs
-with `pytest`.
-
-[docs/NOTES.md](docs/NOTES.md) holds dated measurements and decisions, how
-the monitoring boundaries are computed, and the record of what was removed
-on 2026-10-21.
 
 ## Demonstration on the Hillstrom e-mail experiment
 
@@ -561,20 +534,6 @@ each look's effect and its adjusted interval. No interval is drawn at look
 1, where no stop is allowed.*
 
 The file is [analysis/synthetic/readout.txt](analysis/synthetic/readout.txt).
-
-## Conventions
-
-Every public function carries full type hints, and every statistical test
-returns a frozen dataclass from `src/abkit/result_types.py` rather than a
-tuple. Randomness always flows through an explicit `numpy.random.Generator`
-parameter, with no module-level seeding. Inputs fail with an explicit
-`ValueError`, except in two places. The intake's coercion catch turns an
-unreadable value into a counted and reported row drop, and the monitoring
-block omits itself on a data error after printing it in full. Tests are
-two-sided unless the function name says otherwise, p-value adjustments take
-and return arrays in the original order, and anything approximate states its
-accuracy in its docstring and has a test pinning it against a published or
-simulated value. Spelling is US throughout.
 
 ## Limitations
 
