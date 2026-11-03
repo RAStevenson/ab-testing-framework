@@ -18,6 +18,26 @@ earlier look has crossed and solves each look's cutoff from it. The adjusted
 intervals are each look's estimate plus or minus that look's boundary times
 its standard error.
 
+## The committed runs use the same function as a user's run (a design decision, 2026-11-03)
+
+Robert asked on his structural read whether the Hillstrom demonstration and
+the synthetic check had paths of their own, which would make neither a test
+of what a user runs. Hillstrom already ran the user's command,
+`run_analyze_experiment.py`, on its config. The synthetic script called the
+same library steps but not that script's two checks, that the data file
+exists and that it matches the md5 its config pins. Neither check could have
+stopped the synthetic run, because the script writes the file just before
+reading it and its config pins no md5, so the change gives both scripts one
+function rather than closing a gap.
+
+Both checks and the library calls now sit in `write_experiment_readout`, in
+`src/abkit/experiment_readout.py`, which both scripts call. The synthetic
+script only generates and writes the rows before that call. The only
+Hillstrom-specific code left in `run_analyze_experiment.py` is the hint to
+run the fetch script when the Hillstrom file is missing. Robert ruled to
+keep it. It sits in that script's error handler rather than in the library,
+and it fires only when the missing file is the data file.
+
 ## What the test suite pins (moved from the README, 2026-11-03)
 
 Robert cut the README's testing section on his structural read of

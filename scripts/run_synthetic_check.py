@@ -3,9 +3,9 @@
 The config's [truth] table is the recipe: one experiment with a planted
 lift on conversion, a transient novelty boost, a lift on the share of
 users who spend, a whale tail, and a pre-experiment spend column for
-CUPED. The rows are written to data/synthetic/ (never committed) and then
-read through the identical intake, analysis, figure, and text path that
-run_analyze_experiment.py uses, to show the pipeline works from start to
+CUPED. The rows are written to data/synthetic/ (never committed), and the
+readout is then made by abkit.experiment_readout, the same function
+run_analyze_experiment.py calls, to show the pipeline works from start to
 finish. It is a purely synthetic check, not an example of analysis. This one
 run is not evidence that the statistics are right; the test suite is.
 
@@ -32,10 +32,8 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from abkit.experiment_intake import load_config, load_user_rows
-from abkit.readout_analysis import analyze_experiment
-from abkit.readout_figures import draw_figures
-from abkit.readout_text import save_readout
+from abkit.experiment_intake import load_config
+from abkit.experiment_readout import input_data_path, write_experiment_readout
 from abkit.synthetic_data import generate_check_rows
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -65,12 +63,13 @@ def write_rows(rows: dict[str, NDArray[Any]], data_path: Path) -> int:
 
 
 def main() -> None:
-    """Generate the rows from the recipe, then load, analyze, draw, print, and save the readout."""
+    """Generate the rows from the recipe, write them, then write and print the readout."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="recipe TOML")
     parser.add_argument("--out", type=Path, help="output directory (default: config's directory)")
     args = parser.parse_args()
 
+    out_dir = args.out or args.config.parent
     try:
         config = load_config(args.config)
         truth = config.get("truth")
@@ -93,14 +92,10 @@ def main() -> None:
             whale_scale=float(truth["whale_scale"]),
             pre_correlation=float(truth["pre_correlation"]),
         )
-        data_path = args.config.parent / config["input"]["path"]
+        data_path = input_data_path(args.config, config)
         n_rows = write_rows(rows, data_path)
         print(f"wrote {n_rows:,} rows to {data_path}\n")
-        experiment = load_user_rows(config, data_path)
-        readout = analyze_experiment(experiment)
-        out_dir = args.out or args.config.parent
-        figure_paths = draw_figures(readout, out_dir / "figures")
-        lines = save_readout(readout, out_dir, figure_paths)
+        lines = write_experiment_readout(args.config, out_dir)
         print("\n".join(lines))
         print(f"\nsaved {out_dir / 'readout.txt'}")
         return

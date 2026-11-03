@@ -74,7 +74,47 @@ class TestAnalyzeExperiment:
         assert "Traceback" in stderr
         assert "data file not found" in stderr
         assert _last_line(stderr).startswith("error: the analysis stopped before readout.txt")
+        assert "run_fetch_hillstrom" not in _last_line(stderr)
         assert not out_dir.exists()
+
+    def test_missing_fetched_data_file_ends_on_the_fetch_command(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        analyze = _load_script("run_analyze_experiment")
+        config_text = (FIXTURES / "experiment_ok.toml").read_text(encoding="utf-8")
+        assert "hillstrom" not in str(tmp_path).lower()
+        config_text = config_text.replace(
+            'path = "user_rows_ok.csv"', 'path = "data/hillstrom/hillstrom.csv"'
+        )
+        assert "data/hillstrom/hillstrom.csv" in config_text
+        config = tmp_path / "config.toml"
+        config.write_text(config_text, encoding="utf-8")
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["run_analyze_experiment.py", "--config", str(config), "--out", str(tmp_path / "out")],
+        )
+        with pytest.raises(SystemExit) as stopped:
+            analyze.main()
+        assert stopped.value.code == 2
+        last = _last_line(capsys.readouterr().err)
+        assert last.startswith("error: the analysis stopped before readout.txt")
+        assert last.endswith("run scripts/run_fetch_hillstrom.py first.")
+
+    def test_a_mistyped_config_path_gets_no_fetch_hint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        analyze = _load_script("run_analyze_experiment")
+        missing_config = tmp_path / "analysis" / "hillstrom" / "confg.toml"
+        monkeypatch.setattr(
+            sys, "argv", ["run_analyze_experiment.py", "--config", str(missing_config)]
+        )
+        with pytest.raises(SystemExit) as stopped:
+            analyze.main()
+        assert stopped.value.code == 2
+        last = _last_line(capsys.readouterr().err)
+        assert last.startswith("error: the analysis stopped before readout.txt")
+        assert "run_fetch_hillstrom" not in last
 
     def test_user_rows_fixture_writes_the_readout_and_its_figures(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -131,10 +171,10 @@ class TestAnalyzeExperiment:
     ) -> None:
         analyze = _load_script("run_analyze_experiment")
 
-        def matplotlib_missing(path: Path) -> dict:
+        def matplotlib_missing(*args: object) -> list[str]:
             raise ImportError("simulated", name="matplotlib.pyplot")
 
-        monkeypatch.setattr(analyze, "load_config", matplotlib_missing)
+        monkeypatch.setattr(analyze, "write_experiment_readout", matplotlib_missing)
         monkeypatch.setattr(
             sys, "argv", ["run_analyze_experiment.py", "--config", str(tmp_path / "unused.toml")]
         )
@@ -150,10 +190,10 @@ class TestAnalyzeExperiment:
     ) -> None:
         analyze = _load_script("run_analyze_experiment")
 
-        def broken_import(path: Path) -> dict:
+        def broken_import(*args: object) -> list[str]:
             raise ImportError("simulated broken install", name="scipy")
 
-        monkeypatch.setattr(analyze, "load_config", broken_import)
+        monkeypatch.setattr(analyze, "write_experiment_readout", broken_import)
         monkeypatch.setattr(
             sys, "argv", ["run_analyze_experiment.py", "--config", str(tmp_path / "unused.toml")]
         )

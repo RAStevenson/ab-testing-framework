@@ -114,7 +114,7 @@ columns of the CSV. The rest states what the CSV cannot: which group is the
 control, which outcome the decision rests on, and how the users were meant
 to be split. For a file with one row per user and these columns,
 
-#### Example data (.csv file):
+#### Example data (.csv file)
 
 ```
 variant,converted,spend
@@ -124,7 +124,7 @@ new_page,1,49.99
 new_page,0,0
 ```
 
-#### Example config (.toml file):
+#### Example config (.toml file)
 
 ```toml
 [experiment]
@@ -240,11 +240,14 @@ reads the config and the CSV, repairs and drops what its rules allow with a
 count of each, and stops on a fault it cannot count. The analysis, in
 `src/abkit/readout_analysis.py`, computes every number the readout reports.
 The writers, `src/abkit/readout_text.py` and `src/abkit/readout_figures.py`,
-print the lines and draw the figures. The tests, the power calculation,
-and CUPED are thin wrappers over statsmodels and scipy, in the modules
-`significance_tests.py`, `power_analysis.py`, and `cuped_adjustment.py`.
-The monitoring block's spending boundaries and adjusted intervals are the
-project's own, in `src/abkit/group_sequential.py`.
+print the lines and draw the figures. The three stages run inside one
+function, in `src/abkit/experiment_readout.py`. Every run goes through it,
+including the Hillstrom demonstration and the synthetic check. The
+significance tests, the power calculation, and CUPED are thin wrappers over
+statsmodels and scipy, in the modules `significance_tests.py`,
+`power_analysis.py`, and `cuped_adjustment.py`. The monitoring block's
+spending boundaries and adjusted intervals are the project's own, in
+`src/abkit/group_sequential.py`.
 
 ## The readout
 
@@ -509,11 +512,12 @@ year before the e-mail barely predicts spend in the two weeks after it.
 
 The synthetic check runs the pipeline on generated data and is not an
 example of analysis. One generated experiment with planted effects, from
-`src/abkit/synthetic_data.py`, runs through the same intake and readout as a
-real file. It shows the pipeline works from start to finish. The evidence
-that the statistics are right comes from the test suite. The readout's block
-headed "Planted versus found" lists the generation settings, with what the
-readout found beside the ones it can compare. One command regenerates it:
+`src/abkit/synthetic_data.py`, is written to a CSV and run through the same
+function as a user's file. It shows the pipeline works from start to finish.
+The evidence that the statistics are right comes from the test suite. The
+readout's block headed "Planted versus found" lists the generation settings,
+with what the readout found beside the ones it can compare. One command
+regenerates it:
 
 ```
 python scripts/run_synthetic_check.py

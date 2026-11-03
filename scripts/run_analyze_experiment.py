@@ -3,9 +3,9 @@
 Point it at a TOML experiment description and a CSV with one row per
 user. It checks and gently repairs the data, runs every check and analysis
 the data can support, prints the readout, and saves it as readout.txt with
-the figures beside it. The committed Hillstrom readout is this script run
-on its committed config; a user's own experiment goes through the
-identical path.
+the figures beside it. The work is abkit.experiment_readout's, the one path
+every run takes: the committed Hillstrom readout is this script run on its
+committed config, and the synthetic check calls the same function.
 
 Run with:
     python scripts/run_analyze_experiment.py --config <experiment.toml>
@@ -26,50 +26,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import argparse
-import hashlib
 import traceback
 
-from abkit.experiment_intake import load_config, load_user_rows
-from abkit.readout_analysis import analyze_experiment
-from abkit.readout_figures import draw_figures
-from abkit.readout_text import save_readout
+from abkit.experiment_readout import MissingDataFileError, write_experiment_readout
 
 
 def main() -> None:
-    """Load the config and data, analyze, draw the figures, print the readout, and save it."""
+    """Parse the arguments, write the readout and its figures, and print it."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
     parser.add_argument("--config", required=True, type=Path, help="experiment TOML")
     parser.add_argument("--data", type=Path, help="data file; overrides the config's input path")
     parser.add_argument("--out", type=Path, help="output directory (default: config's directory)")
     args = parser.parse_args()
 
+    out_dir = args.out or args.config.parent
     try:
-        config = load_config(args.config)
-        data_path = args.data or args.config.parent / config["input"].get("path", "")
-        if not data_path.is_file():
-            hint = (
-                " For the committed hillstrom example, run scripts/run_fetch_hillstrom.py first."
-                if "hillstrom" in str(data_path).lower()
-                else ""
-            )
-            raise ValueError(
-                f"data file not found: {data_path} (set input.path in the config "
-                f"or pass --data).{hint}"
-            )
-        pinned = config["input"].get("md5")
-        if pinned:
-            digest = hashlib.md5(data_path.read_bytes()).hexdigest()
-            if digest != pinned:
-                raise ValueError(
-                    f"data file {data_path.name} has md5 {digest}, but the config "
-                    f"pins {pinned}; refusing to read a file other than the "
-                    "one the config was written against"
-                )
-        experiment = load_user_rows(config, data_path)
-        readout = analyze_experiment(experiment)
-        out_dir = args.out or args.config.parent
-        figure_paths = draw_figures(readout, out_dir / "figures")
-        lines = save_readout(readout, out_dir, figure_paths)
+        lines = write_experiment_readout(args.config, out_dir, args.data)
         print("\n".join(lines))
         print(f"\nsaved {out_dir / 'readout.txt'}")
         return
@@ -86,12 +58,20 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(2)
-    except (ValueError, OSError):
+    except (ValueError, OSError) as error:
         traceback.print_exc()
+        # the Hillstrom file is fetched, never committed, so a fresh clone
+        # running the committed config hits this first
+        fetch_hint = (
+            " For the committed Hillstrom example, run scripts/run_fetch_hillstrom.py first."
+            if isinstance(error, MissingDataFileError)
+            and "hillstrom" in str(error.data_path).lower()
+            else ""
+        )
         print(
             "error: the analysis stopped before readout.txt was written; figures "
             "drawn before the failure may already be replaced. Fix the problem named "
-            "in the error above and rerun the same command.",
+            f"in the error above and rerun the same command.{fetch_hint}",
             file=sys.stderr,
         )
         sys.exit(2)
