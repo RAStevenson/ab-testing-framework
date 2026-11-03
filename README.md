@@ -19,7 +19,7 @@ This document covers setup, using the tool on your own experiment, the
 argument reference, how the readout and its monitoring block are read, and
 what the intake does with a file. The two runs committed in the repo follow,
 a demonstration on the Hillstrom e-mail experiment and a synthetic check
-with planted effects. The limitations close the document.
+with planted effects. The limitations close the document. 
 
 ## Setup and run
 
