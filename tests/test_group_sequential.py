@@ -149,7 +149,7 @@ def test_naive_daily_peeking_inflates_type_i_error():
     sequential_design = design_boundaries(fractions.tolist(), alpha=0.05)
     controlled = np.any(np.abs(z_paths) >= np.array(sequential_design.boundaries), axis=1).mean()
     assert controlled == pytest.approx(0.05, abs=0.005)
-    # the README quotes these two rates from this seed, so they are pinned here
+    # docs/NOTES.md and the resume quote these two rates from this seed, so they are pinned here
     assert naive == pytest.approx(0.218, abs=0.0005)
     assert controlled == pytest.approx(0.049, abs=0.0005)
 
