@@ -66,7 +66,7 @@ the exported file when it is done. The last two take a config, a TOML file
 whose keys the table at the end of this section lists. Every argument is
 listed under [Script arguments](#script-arguments).
 
-To size the test, give the planning command the expected control rate and
+To size the test, give the planning command the expected baseline rate and
 the smallest lift worth acting on, as fractions, or for a continuous metric
 such as spend, the metric's standard deviation and the smallest difference
 in means:
@@ -76,8 +76,8 @@ python scripts/run_plan_experiment.py --baseline-rate 0.05 --minimum-lift 0.005
 python scripts/run_plan_experiment.py --standard-deviation 12 --minimum-difference 0.5
 ```
 
-Both the base rate and the standard deviation come from past data, such as
-last month's users or an earlier test's control group. The standard
+Both the baseline rate and the standard deviation come from past data, such
+as last month's users or an earlier test's control group. The standard
 deviation is taken over the same per-user value the test will compare, such
 as each user's spend over two weeks. Once the test has run, the readout's
 sensitivity block recomputes what the test could detect from the spread the
@@ -172,9 +172,9 @@ Optional:
 
 Required, one pair or the other:
 
-- `--baseline-rate` with `--minimum-lift`: for a yes/no metric, the
-  control rate and the smallest absolute lift worth detecting, as fractions
-  such as 0.05 and 0.005.
+- `--baseline-rate` with `--minimum-lift`: for a yes/no metric, the baseline
+  rate and the smallest absolute lift worth detecting, as fractions such as
+  0.05 and 0.005.
 - `--standard-deviation` with `--minimum-difference`: for a continuous
   metric, its standard deviation per user, from past data, and the smallest
   difference in means worth detecting, in the metric's own units.

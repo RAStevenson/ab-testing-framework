@@ -1,6 +1,6 @@
 """Plan an experiment: the users needed per group to detect the smallest effect worth acting on.
 
-Give it the baseline conversion rate and the smallest lift worth
+Give it the baseline rate and the smallest lift worth
 detecting, and it prints the users needed per group and in total at the
 chosen power and alpha, in the readout's style. For a measured metric
 such as spend, give its standard deviation per user, from past data,
@@ -74,7 +74,9 @@ def plan_lines(args: argparse.Namespace) -> list[str]:
 def main() -> None:
     """Parse the planning inputs and print the users needed."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("--baseline-rate", type=float, help="control conversion rate, e.g. 0.05")
+    parser.add_argument(
+        "--baseline-rate", type=float, help="baseline rate in the control group, e.g. 0.05"
+    )
     parser.add_argument(
         "--minimum-lift", type=float, help="smallest absolute lift worth detecting, e.g. 0.005"
     )
