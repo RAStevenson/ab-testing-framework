@@ -4,6 +4,20 @@ Dated measurements, decisions, and history that do not belong in the README.
 Each measurement names its date, its conditions, and whether the loop that
 produced it is in the repo.
 
+## How the monitoring boundaries are computed (moved from the README, 2026-11-03)
+
+The monitoring boundaries are computed at the sample sizes the looks
+actually reached, as shares of the planned size, rather than on a planned
+schedule of looks. A test pins that a run read short of its plan gets the
+same boundaries for its looks as the same run read once it reached its plan.
+Each look's share of the plan is taken from user counts rather than from the
+observed variances, so where the variance drifts across looks the boundaries
+are approximate. The method is the recursive numerical integration of
+Armitage, McPherson, and Rowe, which carries forward the probability that no
+earlier look has crossed and solves each look's cutoff from it. The adjusted
+intervals are each look's estimate plus or minus that look's boundary times
+its standard error.
+
 ## The power cost of monitoring against the plan (2026-11-03)
 
 The planning command sizes a test for one check at the planned size. Over

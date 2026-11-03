@@ -57,8 +57,7 @@ The first command downloads the 2008 dataset from its original URL into
 checksum. The dataset is not redistributed here because its publisher never
 stated a license. The second command prints the readout quoted under the
 section "The readout" and saves it as `readout.txt` beside the config, with
-the figures in a `figures/` folder. Reading the file takes a few seconds
-after the download. A measured run is recorded in `docs/NOTES.md`.
+the figures in a `figures/` folder.
 
 The other entry points, with every argument listed under [Script
 arguments](#script-arguments) at the end:
@@ -77,15 +76,10 @@ power. The third runs the test suite.
 
 abkit itself is not installed. The entry scripts put `src/` on the import
 path, so a fresh clone runs once the dependencies are installed. The
-versions in `requirements.txt` are the exact ones the committed readouts
-were produced with. The library depends on numpy, scipy, and statsmodels,
-and the figures need matplotlib, which that file pins with the dev tools.
-Rerunning a readout with those versions reproduces `readout.txt` byte for
-byte. The continuous integration checks regenerate the synthetic readout on
-every push to master, with the newest versions `pyproject.toml` allows, and
-fail if the committed copy has drifted. The Hillstrom readout is outside
-that check, since its data is fetched rather than committed and the checks
-should not depend on a URL from 2008 staying up.
+versions in `requirements.txt` are the ones the committed readouts were
+produced with, and rerunning a readout with them reproduces `readout.txt`
+byte for byte. The continuous integration checks regenerate the synthetic
+readout on every push to master and fail if the committed copy has drifted.
 
 ### Using it on your own data
 
@@ -96,9 +90,9 @@ your file, a comma-separated CSV in UTF-8 with a header row:
 python scripts/run_analyze_experiment.py --config my_experiment.toml --data my_data.csv
 ```
 
-`analysis/hillstrom/config.toml` is a complete working example. Data columns
-the config does not name are ignored. The table lists the keys a config
-uses.
+The Hillstrom config, `analysis/hillstrom/config.toml`, is a complete
+working example. Data columns the config does not name are ignored. The
+table lists the keys a config uses.
 
 To monitor an experiment while it runs, set `planned_users_per_group` in the
 config before the first look, to the number the planning command printed.
@@ -110,22 +104,22 @@ block.
 | Table and key | Needed | What it does |
 |---|---|---|
 | `[experiment]` `name` | yes | the readout's title |
-| `[experiment]` `alpha` | no, 0.05 | the false-positive rate for the effect tests, the sensitivity, the corrections, and the monitoring, whose adjusted interval follows it; the other intervals stay 95% and the split check uses 0.001 |
-| `[experiment]` `planned_users_per_group` | no | the size each group was planned to reach, the number the planning command prints; with a day column, the monitoring block judges each look against it, short of the plan or past it, instead of replaying the file as if its last day were the plan |
+| `[experiment]` `alpha` | no, 0.05 | the false-positive rate for the tests, the corrections, the sensitivity, and the monitoring with its adjusted interval; the other intervals stay 95% and the split check uses 0.001 |
+| `[experiment]` `planned_users_per_group` | no | the size each group is planned to reach, the number the planning command prints; with a day column, the monitoring block judges each look against it |
 | `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
 | `[input]` `md5` | no | the data file's checksum, so a readout cannot be made from the wrong file; a different file stops the run |
 | `[columns]` `arm` | yes | the column holding each user's group |
-| `[columns]` `day` | no | the day each user entered the experiment, as a whole number such as days since the start; a date string is dropped as unreadable, and each distinct value is one look of the monitoring block, so a timestamp stored as a number, such as seconds, would make nearly every user its own look; with at least three distinct days, turns on the monitoring block |
+| `[columns]` `day` | no | the day each user entered the experiment, as a whole number such as days since the start, not a date; each distinct value is one look, so a timestamp in seconds would make nearly every user its own look; three or more distinct days turn on the monitoring block |
 | `[columns]` `user_id` | no | turns on the stop for a user appearing twice |
-| `[columns.aliases.<column>]` | no | value replacements for the group column or another text column, old = new, counted as repairs; metric, pre-experiment, and day values are read as numbers and user ids as text, and an alias table on any of those columns stops the run |
+| `[columns.aliases.<column>]` | no | value replacements for a text column, old = new, counted as repairs; an alias table on a metric, pre-experiment, day, or user id column stops the run |
 | `[arms]` `labels` | yes | the group labels, control first; reversing them flips the sign of every effect |
 | `[arms]` `intended_split` | no | the planned share per group; turns on the check against the plan |
 | `[[metrics]]` `name`, `kind` | yes | one entry per metric; `kind` is `binary` or `continuous` |
 | `[[metrics]]` `primary` | one metric | the metric the decisions are made on |
 | `[[metrics]]` `column` | no, the name | the metric's column in the file |
-| `[[metrics]]` `nonnegative` | no | drops a row with a negative value; set it for a metric that cannot go below zero, such as a count, and leave it off where negatives are real, such as revenue net of refunds |
-| `[[metrics]]` `pre_column` | no | a column measured before assignment; turns on CUPED for that metric; a row whose cell there is not a number is dropped, and the metric's `nonnegative` and binary rules do not apply to that column |
-| `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block, labels the closing lines as check output, and marks the monitoring figure as synthetic |
+| `[[metrics]]` `nonnegative` | no | drops a row with a negative value; leave it off where negatives are real, such as revenue net of refunds |
+| `[[metrics]]` `pre_column` | no | a column measured before assignment; turns on CUPED for that metric, and a row with no number there is dropped |
+| `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block and labels the closing lines and the monitoring figure as synthetic |
 
 ## How it works
 
@@ -206,53 +200,38 @@ How to read it, block by block:
 
 - **Data.** Each group's user count and its share of the total, then what
   the intake repaired or dropped, with counts.
-- **Limitations.** What the checks flagged. A flag does not stop the run;
-  every result below is read with these in view. Each flag comes from the
-  data alone, never from an effect the readout found, so a flag can sit
-  beside a result it does not affect, such as a sensitivity flag above an
-  effect that was detected.
-- **Group split.** Whether users landed in the groups as planned, tested
-  against the intended split in the config. This is a sample ratio mismatch
-  (SRM) check. A split counts as broken when its chi-square test gives p
-  below 0.001. A broken split means users went missing or were assigned
-  unevenly, and no statistic repairs that, so the decision lines are
-  replaced by one stop line. With no intended split on record, the block
-  says there is no check, and the Data block's shares are left to the
-  reader.
-- **Sensitivity.** The smallest lift on the primary metric this sample could
-  have detected with 80% power, known as the minimum detectable effect
-  (MDE). Lifts on a yes/no metric are in percentage points (pp). A "not
-  detected" result means an effect at least that large would have been seen
-  with at least 80% probability and says nothing about smaller ones.
+- **Limitations.** What the checks flagged. A flag does not stop the run.
+  Flags come from the data, never from an effect the readout found, so a
+  flag can sit beside a result it does not affect. Here the sensitivity flag
+  sits above an effect that was detected.
+- **Group split.** A sample ratio mismatch (SRM) check of the group sizes
+  against the intended split. A chi-square p below 0.001 counts as broken.
+  No statistic repairs a broken split, so one stop line then replaces the
+  decision lines.
+- **Sensitivity.** The minimum detectable effect (MDE), the smallest lift on
+  the primary metric this sample could detect with 80% power. With several
+  treatments it is computed at alpha divided by their number, the strictest
+  level the Holm correction applies, so an effect that large has an 80%
+  chance of detection however the other comparisons come out.
 - **Primary metric.** The effect, its 95% interval, and p for each
-  treatment. For a yes/no metric the test is a two-proportion z-test, which
-  compares the two groups' rates. For a continuous metric, such as spend, it
-  is Welch's t-test, which compares the two groups' means and still works
-  when their variances differ. With several treatments the comparisons are
-  Holm-corrected, which caps the chance of any false positive among them at
-  alpha, the false-positive rate the config sets. The readout's Holm column
-  is the corrected p, and an effect counts as detected when that p is below
-  alpha. The Sensitivity block is computed at alpha divided by the number
-  of treatments, the strictest level Holm applies, so an effect that large
-  has an 80% chance of detection however the other comparisons come out.
-- **CUPED** (controlled-experiment using pre-experiment data). It reports a
-  metric's effect with less noise, after a regression adjustment removes the
-  part of each user's outcome their pre-experiment value already predicted.
-  It runs on each metric that has a pre-experiment column. In the quoted
-  readout that metric is spend, not the primary metric. "Noise removed" is
-  the share by which the adjustment shrank the estimate's variance, so more
-  removed means a narrower interval. A 0% means the pre-experiment column
-  predicts almost none of the outcome, as on Hillstrom. Its p is not
-  corrected for the other comparisons.
-- **Other metrics.** The secondary metrics, corrected two ways, printed
-  when they give two or more comparisons. Holm, as on the primary metric,
-  suits a ship decision. Benjamini-Hochberg instead caps the false discovery
-  rate, the expected share of false positives among the results it flags.
-  That is enough for a screen of what to test next.
-- **Decision.** One line per treatment, judged on the primary metric's p,
-  Holm-corrected when there are several treatments. A "no detectable effect"
-  line carries the sensitivity figure, so it says what size of effect the
-  run could have seen.
+  treatment, from a two-proportion z-test on a yes/no metric or Welch's
+  t-test on a continuous one. Lifts on a yes/no metric are in percentage
+  points (pp). With several treatments, the readout also prints a
+  Holm-corrected p, which caps the chance of any false positive among the
+  comparisons at alpha. An effect counts as detected when that corrected p
+  is below alpha.
+- **CUPED** (controlled-experiment using pre-experiment data). A metric's
+  effect with less noise, after a regression removes what each user's
+  pre-experiment value already predicted. It runs on each metric that has a
+  pre-experiment column, here spend. Its p is not corrected for the other
+  comparisons.
+- **Other metrics.** The secondary metrics, corrected two ways. Holm, as on
+  the primary metric, suits a ship decision. Benjamini-Hochberg caps the
+  expected share of false positives among the results it flags, which is
+  enough for a screen of what to test next.
+- **Decision.** One line per treatment, judged on the primary metric. A "no
+  detectable effect" line carries the sensitivity figure, so it says what
+  size of effect the run could have seen.
 
 On Hillstrom, fewer than 1% of users spent anything, which the limitations
 block flags. The intake also normalizes and counts a misspelled zip-code
@@ -275,13 +254,11 @@ that chance at 5% for the whole run by treating the 5% as a budget spread
 across the looks. Each day then gets a stricter cutoff than a single check
 would.
 
-The monitoring block applies that design to the run, look by look, against
-the size the run was planned to reach, and says whether a stop is allowed.
-On a run still going, that is the decision the readout gives. On a run that
-reached its plan it says where a stop would have been allowed. A file that
-ends short of the plan because someone stopped early, on a day the dashboard
-looked significant, reads the same way as a run still going, so the block
-says whether that stop was allowed.
+The monitoring block applies that design look by look, against the size the
+run was planned to reach. On a file short of the plan it says whether a stop
+is allowed yet. A run still going and a run someone stopped early, on a day
+the dashboard looked significant, look the same in the file. For an early
+stop, that answer says whether the stop was allowed.
 
 The quoted readout has no monitoring block, because the Hillstrom file has
 no day column. A file whose day column holds at least three distinct days
@@ -291,11 +268,10 @@ in either group, the readout leaves the block out and the console prints the
 error.
 
 A look is one check of the primary metric's running totals, one per day in
-the file. The z-test divides the effect by its standard error to get a score
-called z. The block computes that score for a continuous metric too. The
-single-check cutoff is z past 1.96 in either direction, the same as p below
-0.05. The spending design gives each look its own cutoff, called the
-spending boundary. The design used here is Lan-DeMets alpha spending,
+the file. Each look is scored as z, the effect divided by its standard
+error. The single-check cutoff is z past 1.96 in either direction, the same
+as p below 0.05. The spending design gives each look its own cutoff, called
+the spending boundary. The design used here is Lan-DeMets alpha spending,
 developed for clinical trials. Its O'Brien-Fleming-style function spends
 almost none of the budget early and most of it at the end.
 
@@ -313,8 +289,8 @@ key is what gives the block its meaning.
 The planning command sizes a test for a single check at the planned size.
 Looking daily costs a little power, because the final look's boundary sits
 above 1.96. A run that will be monitored can raise the plan by a few percent
-to keep its power. docs/NOTES.md records the measured cost for fourteen
-daily looks.
+to keep its power. The measured cost for fourteen daily looks is in
+`docs/NOTES.md`.
 
 The block prints the look where z first crosses the spending boundary, if it
 does, and the latest look's effect with its adjusted interval, an interval
@@ -365,12 +341,10 @@ each look's effect and its adjusted interval. No interval is drawn at look
 The run behind the figure is a purely synthetic check, not an example of
 analysis. One generated experiment with planted effects, from
 `src/abkit/synthetic_data.py`, runs through the same intake and readout as a
-real file. The check's purpose is to show the pipeline works from start to
-finish. This one run is not evidence that the statistics are right. That
-evidence is the test suite, described under the section "How the statistics
-are tested". The readout's block headed "Planted versus found" lists the
-generation settings, with what the readout found beside the ones it can
-compare.
+real file. It shows the pipeline works from start to finish. The evidence
+that the statistics are right comes from the test suite. Its block headed
+"Planted versus found" lists the generation settings, with what the readout
+found beside the ones it can compare.
 
 The file is [analysis/synthetic/readout.txt](analysis/synthetic/readout.txt).
 
@@ -446,20 +420,12 @@ has one test per rule on injected bad data and one per limitation code on
 data built to raise it. The readout text is pinned to a saved copy of the
 expected text that is read by eye when it changes.
 
-The monitoring boundaries are computed at the sample sizes the looks
-actually reached, as shares of the planned size, rather than on a planned
-schedule of looks. A test pins that a run read short of its plan gets the same
-boundaries for its looks as the same run read once it reached its plan. Each
-look's share of the plan is taken from user counts rather than from the
-observed variances, so where the variance drifts across looks the boundaries
-are approximate. The method is the recursive numerical integration of
-Armitage, McPherson, and Rowe, which carries forward the probability that no
-earlier look has crossed and solves each look's cutoff from it. The adjusted
-intervals are each look's estimate plus or minus that look's boundary times
-its standard error.
+A test pins that a run read short of its plan gets the same boundaries for
+its looks as the same run read once it reached its plan.
 
-[docs/NOTES.md](docs/NOTES.md) holds dated measurements and decisions, and
-the record of what was removed on 2026-10-21.
+[docs/NOTES.md](docs/NOTES.md) holds dated measurements and decisions, how
+the monitoring boundaries are computed, and the record of what was removed
+on 2026-10-21.
 
 ## Limitations
 
@@ -473,11 +439,13 @@ looking at the results voids its guarantee, and nothing in the file can
 detect that. The plan is one size that both groups of a comparison reach;
 unequal planned sizes are not supported. There are no futility boundaries,
 so the monitoring can allow an early stop on a clear effect but never on a
-hopeless run. In a replay of a finished run, each look holds the users
-enrolled by then with their final outcomes, so the replay sees outcomes a
-live look would not yet have had. Every metric is one value per user and
-every comparison is a difference in means, so a ratio such as revenue per
-order, whose denominator varies by user, is out of scope.
+hopeless run. Each look's share of the plan is taken from user counts rather
+than from the observed variances, so where the variance drifts across looks
+the boundaries are approximate. In a replay of a finished run, each look
+holds the users enrolled by then with their final outcomes, so the replay
+sees outcomes a live look would not yet have had. Every metric is one value
+per user and every comparison is a difference in means, so a ratio such as
+revenue per order, whose denominator varies by user, is out of scope.
 
 ## Conventions
 
@@ -511,7 +479,7 @@ downloaded again.
 Required:
 
 - `--config`: the experiment TOML, with the keys listed under "Using it on
-  your own data". `analysis/hillstrom/config.toml` is a complete example.
+  your own data". The Hillstrom config is a complete example.
 
 Optional:
 
