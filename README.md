@@ -76,10 +76,18 @@ python scripts/run_plan_experiment.py --baseline-rate 0.05 --minimum-lift 0.005
 python scripts/run_plan_experiment.py --standard-deviation 12 --minimum-difference 0.5
 ```
 
-Either prints the users needed per group, at 80% power and alpha 0.05 unless
-told otherwise. Put that number in the config as `planned_users_per_group`
-before the first look. A run that will be checked daily can raise it by a
-few percent, for the reason given under "Monitoring a run".
+Both the rate and the standard deviation come from past data, such as last
+month's users or an earlier test's control group. The standard deviation is
+taken over the same per-user value the test will compare, such as each
+user's spend over two weeks. Once the test has run, the readout's
+sensitivity block recomputes what the test could detect from the spread the
+data actually shows.
+
+Either command prints the users needed per group, at 80% power and alpha
+0.05 unless told otherwise. Put that number in the config as
+`planned_users_per_group` before the first look. A run that will be checked
+daily can raise it by a few percent, for the reason given under "Monitoring
+a run".
 
 To monitor the run, export the rows so far with a day column and run the
 analyze command on each new export:
@@ -163,8 +171,8 @@ Required, one pair or the other:
   control rate and the smallest absolute lift worth detecting, as fractions
   such as 0.05 and 0.005.
 - `--standard-deviation` with `--minimum-difference`: for a continuous
-  metric, its standard deviation and the smallest difference in means worth
-  detecting, in the metric's own units.
+  metric, its standard deviation per user, from past data, and the smallest
+  difference in means worth detecting, in the metric's own units.
 
 Passing both pairs, or neither, stops the command with an error naming the
 choice.

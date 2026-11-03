@@ -3,8 +3,8 @@
 Give it the baseline conversion rate and the smallest lift worth
 detecting, and it prints the users needed per group and in total at the
 chosen power and alpha, in the readout's style. For a measured metric
-such as spend, give the standard deviation and the smallest difference
-worth detecting instead.
+such as spend, give its standard deviation per user, from past data,
+and the smallest difference worth detecting instead.
 
 Run with:
     python scripts/run_plan_experiment.py --baseline-rate 0.05 --minimum-lift 0.005
@@ -79,7 +79,9 @@ def main() -> None:
         "--minimum-lift", type=float, help="smallest absolute lift worth detecting, e.g. 0.005"
     )
     parser.add_argument(
-        "--standard-deviation", type=float, help="the measured metric's standard deviation"
+        "--standard-deviation",
+        type=float,
+        help="the metric's standard deviation per user, from past data",
     )
     parser.add_argument(
         "--minimum-difference", type=float, help="smallest difference in means worth detecting"
