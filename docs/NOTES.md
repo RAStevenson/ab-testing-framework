@@ -4,6 +4,21 @@ Dated measurements, decisions, and history that do not belong in the README.
 Each measurement names its date, its conditions, and whether the loop that
 produced it is in the repo.
 
+## The power cost of monitoring against the plan (2026-11-03)
+
+The planning command sizes a test for one check at the planned size. Over
+fourteen equally spaced daily looks against that plan, the final look's
+boundary from `design_boundaries` is |z| 2.145 rather than 1.96, so the test
+detects a real effect a little less often. With an effect sized for 80%
+power on a single check, 200,000 simulated runs at seed 42 detected it on
+77.8% of runs when monitored and on 80.2% when checked once, where the 0.2
+above 80 is simulation error. A plan about 5.6% larger restored 80% under
+monitoring. The final boundary is lower with fewer looks, 1.979 at two
+equally spaced looks and 2.063 at five, so fewer looks should cost less, but
+only fourteen were simulated. The runs draw z-scores across the looks
+directly rather than simulating users. The loop was run by hand on
+2026-11-03 and is not in the repo.
+
 ## The monitoring method's name (2026-11-01)
 
 The monitoring is Lan-DeMets alpha spending with an O'Brien-Fleming-style

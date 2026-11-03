@@ -65,7 +65,8 @@ def plan_lines(args: argparse.Namespace) -> list[str]:
     lines += [
         f"  per group   {per_group:,}   total   {2 * per_group:,}",
         "",
-        f"Decision: run until each group has {per_group:,} users, then read the experiment once",
+        f"Decision: run until each group has {per_group:,} users; read the experiment then, "
+        "or look daily with the monitoring block",
     ]
     return lines
 

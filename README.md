@@ -310,6 +310,12 @@ last look in the file as the plan and says so. Read that way, it judges a
 run stopped early by peeking as if the early stop had been the plan, so the
 key is what gives the block its meaning.
 
+The planning command sizes a test for a single check at the planned size.
+Looking daily costs a little power, because the final look's boundary sits
+above 1.96. A run that will be monitored can raise the plan by a few percent
+to keep its power. docs/NOTES.md records the measured cost for fourteen
+daily looks.
+
 The block prints the look where z first crosses the spending boundary, if it
 does, and the latest look's effect with its adjusted interval, an interval
 widened to allow for the repeated looks. A crossing means the design allows
