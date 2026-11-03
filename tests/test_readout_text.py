@@ -90,6 +90,27 @@ def test_decision_prefers_a_broken_split(tmp_path: Path) -> None:
     assert "  * the split is off" in lines
 
 
+def test_a_sample_too_small_for_any_lift_says_so_on_the_decision_line(tmp_path: Path) -> None:
+    # the README's four-row example: no lift is reachable at 80% power
+    (tmp_path / "rows.csv").write_text(
+        "variant,converted,spend\ncontrol,0,0\ncontrol,1,12.50\nnew_page,1,49.99\nnew_page,0,0\n",
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '[experiment]\nname = "tiny"\n\n[input]\npath = "rows.csv"\n\n'
+        '[columns]\ngroup = "variant"\n\n[groups]\nlabels = ["control", "new_page"]\n\n'
+        '[[metrics]]\nname = "converted"\nkind = "binary"\nprimary = true\n',
+        encoding="utf-8",
+    )
+    readout = analyze_experiment(load_user_rows(load_config(config_path), tmp_path / "rows.csv"))
+    lines = readout_lines(readout, tmp_path, [])
+    assert lines[-1] == (
+        "Decision for new_page vs control: no detectable effect; "
+        "no lift was detectable at this size"
+    )
+
+
 def test_save_readout_writes_the_same_lines_with_unix_endings(tmp_path: Path) -> None:
     experiment = load_user_rows(
         load_config(FIXTURES / "experiment_ok.toml"), FIXTURES / "user_rows_ok.csv"

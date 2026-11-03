@@ -153,7 +153,7 @@ nonnegative = true
 `[columns]` names the column that holds each user's group, and `[groups]`
 lists the values found in it, control first. Each `[[metrics]]` block names
 one outcome column and says whether it holds yes/no values or amounts. The
-table lists every key a config uses.
+table lists the keys a config uses.
 
 | Table and key | Required | Description |
 |---|---|---|
@@ -281,12 +281,14 @@ in this order:
   effect with less noise, after a regression removes what each user's
   pre-experiment value already predicted. It runs on each metric that has a
   pre-experiment column. Its p is not corrected for the other comparisons.
-- **Other metrics.** The secondary metrics, corrected two ways. Holm, as on
-  the primary metric, suits a ship decision. Benjamini-Hochberg caps the
-  expected share of false positives among the results it flags, which is
-  enough for a screen of what to test next. Neither correction counts the
-  primary metric's comparisons, so adding a secondary metric never makes the
-  correction on the primary metric stricter.
+- **Other metrics.** The secondary metrics, corrected two ways. The block
+  prints when there are two or more secondary comparisons; a lone secondary
+  metric is reported only through CUPED. Holm, as on the primary metric,
+  suits a ship decision. Benjamini-Hochberg caps the expected share of false
+  positives among the results it flags, which is enough for a screen of what
+  to test next. Neither correction counts the primary metric's comparisons,
+  so adding a secondary metric never makes the correction on the primary
+  metric stricter.
 - **Decision.** One line per treatment, judged on the primary metric. A "no
   detectable effect" line carries the sensitivity figure, so it says what
   size of effect the run could have seen.
@@ -375,8 +377,9 @@ report. The readout prints the final look's adjusted interval, which is a
 little wider than the primary block's interval because the adjusted interval
 is built to cover the true effect at every look at once. With several
 treatments the block runs on the first treatment listed in the config, a
-rule that does not look at the results, and short of the plan the other
-treatments get no decision line.
+rule that does not look at the results. Short of the plan, the other
+treatments' decision lines say none yet, because the monitoring covers the
+first treatment only.
 
 ## What the intake does with a file
 
@@ -414,7 +417,7 @@ Stops the run, naming what failed:
   config does not list
 - a user appearing twice, when the config names a user id column
 - a data file whose checksum does not match the md5 the config pins,
-  checked by the analyze command before the intake reads the file
+  checked before the intake reads the file
 
 Flagged in the limitations block:
 
@@ -423,7 +426,8 @@ Flagged in the limitations block:
   metric's total, checked on the first continuous metric (the primary, if it
   is continuous) over the users in the control group and the first treatment
 - fewer than 10 successes or failures in a group on a binary primary metric
-- a smallest detectable effect above a 5% relative lift
+- a smallest detectable effect above a 5% relative lift, or none reachable
+  at 80% power
 - no pre-experiment column
 - gaps in the day sequence
 - a run read short of its plan, or continued past it

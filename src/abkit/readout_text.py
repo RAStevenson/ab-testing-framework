@@ -39,6 +39,9 @@ _DECISIONS = {
         "Decision for {arm} vs {control}: no detectable effect; that contrast could have seen "
         "{mde} or more"
     ),
+    "nothing_detectable": (
+        "Decision for {arm} vs {control}: no detectable effect; no lift was detectable at this size"
+    ),
     "stop_allowed": (
         "Decision for {arm} vs {control}: a stop is allowed from look {look}; {direction} on "
         "{metric} by {effect} (adjusted {low} to {high})"
@@ -523,11 +526,8 @@ def _decision_line(readout: ExperimentReadout, index: int) -> str:
     if outcome == "not_detected":
         mde = readout.sensitivity[index][1]["mde"]
         if not np.isfinite(mde):
-            mde_text = "no lift at all with this sample"
-        elif isinstance(comparison, RateComparison):
-            mde_text = format_points(mde)
-        else:
-            mde_text = f"{mde:.3f}"
+            return _DECISIONS["nothing_detectable"].format(arm=treatment_arm, control=control_arm)
+        mde_text = format_points(mde) if isinstance(comparison, RateComparison) else f"{mde:.3f}"
         return _DECISIONS[outcome].format(arm=treatment_arm, control=control_arm, mde=mde_text)
     if isinstance(comparison, RateComparison):
         low, high = f"{100 * comparison.ci_low:+.2f}", format_points_signed(comparison.ci_high)
