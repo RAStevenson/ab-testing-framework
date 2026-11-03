@@ -167,7 +167,8 @@ def _data_block(readout: ExperimentReadout) -> list[str]:
     if readout.validation:
         for event in readout.validation:
             label = event.rule.replace("_", " ")
-            lines += _wrapped(f"{label}   {event.count:,} rows   {event.detail}")
+            noun = "row" if event.count == 1 else "rows"
+            lines += _wrapped(f"{label}   {event.count:,} {noun}   {event.detail}")
     else:
         lines.append(_INDENT + "repairs and drops   none; the file passed every rule as delivered")
     return lines
@@ -292,11 +293,14 @@ def _corrections_block(readout: ExperimentReadout) -> list[str]:
         return []
     control_arm = readout.arm_sizes[0][0]
     family = readout.corrections
-    lines = [
-        "",
-        f"Other metrics: corrected for {len(family)} comparisons "
-        "(Holm, and BH = Benjamini-Hochberg)",
-    ]
+    heading = (
+        "Other metrics: 1 comparison, nothing to correct (Holm, and BH = Benjamini-Hochberg, "
+        "leave its p as is)"
+        if len(family) == 1
+        else f"Other metrics: corrected for {len(family)} comparisons "
+        "(Holm, and BH = Benjamini-Hochberg)"
+    )
+    lines = ["", heading]
     for corrected in family:
         lines += _wrapped(
             f"{corrected.metric}   {corrected.treatment_arm} vs {control_arm}   "
@@ -342,14 +346,14 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
         )
     else:
         heading = (
-            f"Monitoring replay: {n_looks} looks; {budget} them; "
+            f"Monitoring replay: {n_looks} {_looks(n_looks)}; {budget} them; "
             "a crossing = a stop allowed at that look"
         )
         design_line = (
             f"crosses at look {stopped} of {n_looks}; a stop there keeps the "
             f"{readout.alpha:.0%} false-positive rate"
             if stopped is not None
-            else f"never crosses in {n_looks} looks; no early stop in either direction"
+            else f"never crosses in {n_looks} {_looks(n_looks)}; no early stop in either direction"
         )
     if planned is None:
         plan_line = "plan   none in the config; the last look stands in for it"
@@ -377,6 +381,26 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
     else:
         final = f"effect {estimate:+.3f}   adjusted {level} {low:+.3f} to {high:+.3f}"
     last_label = "final look" if monitoring.finished else "latest look"
+    # the boundary is infinite while too little of the budget is spent for any
+    # z to cross, so the figure draws nothing there and the reader needs the
+    # first look a stop is possible at
+    finite_looks = [
+        look + 1
+        for look, boundary in enumerate(monitoring.intervals.boundaries)
+        if np.isfinite(boundary)
+    ]
+    if not finite_looks:
+        earliest_line = (
+            f"none of these {n_looks} {_looks(n_looks)}; too little of the budget is spent "
+            "for any z to cross"
+        )
+    elif finite_looks[0] == 1:
+        earliest_line = "look 1"
+    else:
+        earliest_line = (
+            f"look {finite_looks[0]}; before it too little of the budget is spent for any z to "
+            "cross"
+        )
     return [
         "",
         heading,
@@ -387,11 +411,17 @@ def _monitoring_block(readout: ExperimentReadout) -> list[str]:
         ),
         _INDENT + plan_line,
         *_first_treatment_note(readout),
+        *_wrapped(f"earliest possible stop   {earliest_line}"),
         _INDENT + f"spending design   {design_line}",
         _INDENT + f"naive {monitoring.z_naive:.2f} rule   {naive_line}",
         _INDENT
         + f"{last_label}   {final}   boundary |z| {monitoring.intervals.boundaries[last]:.2f}",
     ]
+
+
+def _looks(count: int) -> str:
+    """The noun for a count of looks."""
+    return "look" if count == 1 else "looks"
 
 
 def _first_treatment_note(readout: ExperimentReadout) -> list[str]:

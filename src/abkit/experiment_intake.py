@@ -186,6 +186,16 @@ def load_config(path: Path) -> dict:
         raise ValueError(
             "groups.intended_split must be positive shares, one per label, summing to 1"
         )
+    # shares are typed by hand, so a third written as 0.3333 counts as equal
+    if (
+        planned is not None
+        and split is not None
+        and any(abs(share - 1.0 / len(labels)) > 1e-3 for share in split)
+    ):
+        raise ValueError(
+            "experiment.planned_users_per_group is one size every group reaches, so it needs "
+            f"an equal groups.intended_split (shares within 0.001 of equal), got {split!r}"
+        )
 
     metrics = config.get("metrics")
     if not isinstance(metrics, list) or not metrics:
@@ -350,8 +360,8 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     - ``null_row_dropped``: a row with an empty arm or an empty value in
       any declared metric or pre-experiment column is dropped. Where a
       metric or pre-experiment column caused a drop, the rule's first
-      occurrence records that column with its data row. A blank day cell is
-      recorded as ``uncoercible_dropped`` instead.
+      occurrence records that column with its line in the file, the header being
+      line 1. A blank day cell is recorded as ``uncoercible_dropped`` instead.
     - ``negative_value_dropped``: a row with a negative value in a metric
       declared ``nonnegative`` is dropped.
     - ``uncoercible_dropped``: a row whose metric, pre-experiment, or day
@@ -413,10 +423,10 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     first_row_of_user: dict[str, int] = {}
 
     def event(rule: str, index: int, note: str | None = None) -> None:
-        """Count one occurrence of a validation rule and keep the first data row it happened at,
-        with the note (which value became which) when the rule changed a value."""
+        """Count one occurrence of a validation rule and keep the first file line it happened
+        at, with the note (which column, or which value became which) for that first line."""
         counts[rule] = counts.get(rule, 0) + 1
-        examples.setdefault(rule, (f"{note}, " if note else "") + f"first at data row {index}")
+        examples.setdefault(rule, f"first at line {index}" + (f", {note}" if note else ""))
 
     for index, row in enumerate(raw_rows, start=2):  # row 1 is the header
         arm_raw = (row[arm_column] or "").strip()
@@ -424,7 +434,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
         if arm_aliased != arm_raw:
             event("alias_normalized", index, f"{arm_column} {arm_raw!r} to {arm_aliased!r}")
         if not arm_aliased:
-            event("null_row_dropped", index)
+            event("null_row_dropped", index, f"column {arm_column!r}")
             continue
         arm = label_by_fold.get(arm_aliased.casefold())
         # whitespace or case differences are normalization too, and the
@@ -434,7 +444,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
             event("group_label_normalized", index)
         if arm is None:
             raise ValueError(
-                f"unmapped_group_error: group value {arm_raw!r} at data row {index} matches no "
+                f"unmapped_group_error: group value {arm_raw!r} at line {index} matches no "
                 f"label in {labels}; add it to groups.labels or [columns.aliases.{arm_column}]"
             )
 
@@ -446,7 +456,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
             # outcome is the user's, so the run stops.
             if user_id in first_row_of_user:
                 raise ValueError(
-                    f"duplicate_user_error: user id {user_id!r} appears at data rows "
+                    f"duplicate_user_error: user id {user_id!r} appears at lines "
                     f"{first_row_of_user[user_id]} and {index}; each user must appear once"
                 )
             first_row_of_user[user_id] = index
@@ -497,10 +507,21 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
                 event("alias_normalized", index, f"{column} {raw!r} to {mapped!r}")
             kept[column].append(mapped)
 
-    if not kept[arm_column]:
-        raise ValueError(f"no usable rows in {data_path.name} after validation")
     dropped_by_rule = {rule: count for rule, count in counts.items() if rule.endswith("_dropped")}
     n_dropped = sum(dropped_by_rule.values())
+    if not kept[arm_column]:
+        if not raw_rows:
+            raise ValueError(f"no_usable_rows_error: {data_path.name} has a header and no rows")
+        # the same accounting the 1% stop prints, because a file every row of
+        # which fails one rule (a date in the day column, yes/no in a binary
+        # column) needs the rule, the column, and the line more than any other
+        raise ValueError(
+            f"no_usable_rows_error: the drop rules removed every one of the {len(raw_rows):,} "
+            f"data rows in {data_path.name}; by rule: {dropped_by_rule}; where each first "
+            "fired: "
+            + "; ".join(f"{rule} {examples[rule]}" for rule in dropped_by_rule)
+            + ". Clean the file before reading it"
+        )
     if n_dropped > DROPPED_ROW_STOP * len(raw_rows):
         raise ValueError(
             f"too_many_dropped_error: the drop rules removed {n_dropped:,} of {len(raw_rows):,} "

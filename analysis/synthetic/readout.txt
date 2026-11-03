@@ -22,9 +22,14 @@ Primary metric, converted: effect, 95% interval, p; interval first
 CUPED on spend: adjusted by its pre-experiment column; narrower interval = less noise
   treatment vs control   +0.286   -0.402 to +0.973   p 0.415   noise removed 14%
 
+Other metrics: 1 comparison, nothing to correct (Holm, and BH = Benjamini-Hochberg, leave its p as is)
+  spend   treatment vs control   +0.433   p 0.253   Holm 0.253   BH 0.253
+  result   unadjusted 0 of 1 below 0.05; after Holm 0 survive
+
 Monitoring replay: 14 looks; 5% budget spread across them; a crossing = a stop allowed at that look
   treatment vs control on converted, Lan-DeMets O'Brien-Fleming-style spending against the plan
   plan   59,000 users per group, reached at look 14
+  earliest possible stop   look 2; before it too little of the budget is spent for any z to cross
   spending design   crosses at look 4 of 14; a stop there keeps the 5% false-positive rate
   naive 1.96 rule   fires at look 1, on evidence the design does not accept
   final look   effect +0.67 pp   adjusted 95% +0.36 to +0.97 pp   boundary |z| 2.16
@@ -50,4 +55,5 @@ Planted versus found (synthetic only)
 
 Synthetic check output for treatment vs control: higher on converted by +0.67 pp (+0.39 to +0.95 pp)
 Figures:
+  figures/corrections.png
   figures/monitoring.png

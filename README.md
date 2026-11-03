@@ -7,12 +7,13 @@ one test at a time. The readout puts the data checks first and the result
 after. The standard tests come from statsmodels and scipy. The project intake
 checks and repairs the file before any test runs.
 
-The readout also monitors a run that is still going. It judges each look
-against the size the run was planned to reach and says whether a stop is
-allowed yet. A planning command gives that size before the test starts.
-Neither statsmodels nor scipy offers that monitoring. It is built for an
-analyst who has an exported file and no experimentation platform, or who
-wants a second opinion on a dashboard.
+The readout also monitors a run that is still going. A look is one day's
+check of the running result. The readout judges each look against the size
+the run was planned to reach and says whether a stop is allowed yet. A
+planning command gives that size before the test starts. Neither statsmodels
+nor scipy offers that monitoring. It is built for an analyst who has an
+exported file and no experimentation platform, or who wants a second opinion
+on a dashboard.
 
 This document covers setup, using the tool on your own experiment, the
 argument reference, how the readout and its monitoring block are read, and
@@ -158,8 +159,8 @@ table lists the keys a config uses.
 | Table and key | Required | Description |
 |---|---|---|
 | `[experiment]` `name` | yes | the readout's title |
-| `[experiment]` `alpha` | no, default = 0.05 | the false-positive rate for the tests, the corrections, the sensitivity, and the monitoring with its adjusted interval; the other intervals stay 95% and the split check uses 0.001 |
-| `[experiment]` `planned_users_per_group` | no | the size each group is planned to reach, the number the planning command prints; with a day column, the monitoring block judges each look against it |
+| `[experiment]` `alpha` | no, default = 0.05 | the false-positive rate for the tests, the corrections, the sensitivity, and the monitoring. The split check uses 0.001 regardless, and the intervals outside the monitoring block stay 95% |
+| `[experiment]` `planned_users_per_group` | no | the size each group is planned to reach, the number the planning command prints; with a day column, the monitoring block judges each look against it. It needs an equal `intended_split` |
 | `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
 | `[input]` `md5` | no | the data file's checksum, so a readout cannot be made from the wrong file; a different file stops the run |
 | `[columns]` `group` | yes | the column holding each user's group |
@@ -172,8 +173,8 @@ table lists the keys a config uses.
 | `[[metrics]]` `primary` | yes, one metric required | the metric the decisions are made on |
 | `[[metrics]]` `column` | no, default = name | the metric's column in the file |
 | `[[metrics]]` `nonnegative` | no | drops a row with a negative value; leave it off where negatives are real, such as revenue net of refunds |
-| `[[metrics]]` `pre_column` | no | a column measured before assignment; turns on CUPED for that metric, and a row with no number there is dropped |
-| `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block and labels the closing lines and the monitoring figure as synthetic |
+| `[[metrics]]` `pre_column` | no | a column measured before assignment; turns on CUPED for that metric, the noise reduction described under "The readout"; a row with no number there is dropped |
+| `[truth]` | no | the synthetic check's generation settings; prints the generation settings with what the readout found beside the ones it can compare, and labels the closing lines and the monitoring figure as synthetic |
 
 ## Script arguments
 
@@ -268,27 +269,26 @@ in this order:
 - **Sensitivity.** The minimum detectable effect (MDE), the smallest lift on
   the primary metric this sample could detect with 80% power. With several
   treatments it is computed at alpha divided by their number, the strictest
-  level the Holm correction applies, so an effect that large has an 80%
-  chance of detection however the other comparisons come out.
+  level the next block's Holm correction applies, so an effect that large
+  has an 80% chance of detection however the other comparisons come out.
 - **Primary metric.** The effect, its 95% interval, and p for each
   treatment, from a two-proportion z-test on a yes/no metric or Welch's
   t-test on a continuous one. Lifts on a yes/no metric are in percentage
-  points (pp). With several treatments, the readout also prints a
-  Holm-corrected p, which caps the chance of any false positive among the
-  comparisons at alpha. An effect counts as detected when that corrected p
-  is below alpha.
+  points (pp), and on a continuous metric in its own units per user. With
+  several treatments, the readout also prints a Holm-corrected p, which caps
+  the chance of any false positive among the comparisons at alpha. An effect
+  counts as detected when that corrected p is below alpha.
 - **CUPED** (controlled-experiment using pre-experiment data). A metric's
   effect with less noise, after a regression removes what each user's
   pre-experiment value already predicted. It runs on each metric that has a
   pre-experiment column. Its p is not corrected for the other comparisons.
-- **Other metrics.** The secondary metrics, corrected two ways. The block
-  prints when there are two or more secondary comparisons; a lone secondary
-  metric is reported only through CUPED. Holm, as on the primary metric,
-  suits a ship decision. Benjamini-Hochberg caps the expected share of false
-  positives among the results it flags, which is enough for a screen of what
-  to test next. Neither correction counts the primary metric's comparisons,
-  so adding a secondary metric never makes the correction on the primary
-  metric stricter.
+- **Other metrics.** The secondary metrics, corrected two ways. Holm, as on
+  the primary metric, suits a ship decision. Benjamini-Hochberg caps the
+  expected share of false positives among the results it flags, which is
+  enough for a screen of what to test next. Neither correction counts the
+  primary metric's comparisons, so adding a secondary metric never makes the
+  correction on the primary metric stricter. A lone secondary comparison
+  prints with its own p, which the corrections leave unchanged.
 - **Decision.** One line per treatment, judged on the primary metric. A "no
   detectable effect" line carries the sensitivity figure, so it says what
   size of effect the run could have seen.
@@ -324,8 +324,9 @@ the file. Each look is scored as z, the effect divided by its standard
 error. The single-check cutoff is z past 1.96 in either direction, the same
 as p below 0.05. The spending design gives each look its own cutoff, called
 the spending boundary. The design used here is Lan-DeMets alpha spending,
-developed for clinical trials. Its O'Brien-Fleming-style function spends
-almost none of the budget early and most of it at the end.
+developed for clinical trials. Its spending function follows the shape
+O'Brien and Fleming proposed in 1979, and spends almost none of the budget
+early and most of it at the end.
 
 The plan comes from the config key `planned_users_per_group`, set to the
 number the planning command prints. Each look's share of the plan sets how
@@ -361,6 +362,7 @@ fabricated file of 30 users read against a plan of 40 per group.
 Monitoring: look 5, 38% of the plan; 5% budget spread across the looks; a crossing = a stop allowed
   treatment vs control on converted, Lan-DeMets O'Brien-Fleming-style spending against the plan
   plan   40 users per group, 38% reached
+  earliest possible stop   look 2; before it too little of the budget is spent for any z to cross
   spending design   no crossing through look 5; no stop allowed yet
   naive 1.96 rule   never fires
   latest look   effect +13.33 pp   adjusted 95% -43.60 to +70.27 pp   boundary |z| 3.23
@@ -459,7 +461,7 @@ The file is [analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt).
 Hillstrom e-mail experiment
 Data: what the intake did before any statistic
   users   No E-Mail 21,306 (33.3%)   Mens E-Mail 21,307 (33.3%)   Womens E-Mail 21,387 (33.4%)
-  alias normalized   28,776 rows   zip_code 'Surburban' to 'Suburban', first at data row 2
+  alias normalized   28,776 rows   first at line 2, zip_code 'Surburban' to 'Suburban'
 
 Limitations (*): read every result below with these in view
   * the top 1% of users carry 100% of spend, because fewer than 1% have any spend at all
@@ -510,7 +512,8 @@ alias for it is there to show the repair on real data. Both e-mail groups
 raise visits. Both also raise spend after the Holm correction, though that
 result rests on the fewer than 1% of users who spent. CUPED on the
 past-spending column removes under 1% of the noise, because spend in the
-year before the e-mail barely predicts spend in the two weeks after it.
+year before the e-mail barely predicts spend in the two weeks after it. The
+readout rounds that to 0%.
 
 ## Synthetic check with planted effects
 

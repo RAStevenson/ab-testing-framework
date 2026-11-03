@@ -32,6 +32,7 @@ Other metrics: corrected for 2 comparisons (Holm, and BH = Benjamini-Hochberg)
 Monitoring: look 5, 38% of the plan; 5% budget spread across the looks; a crossing = a stop allowed
   treatment vs control on converted, Lan-DeMets O'Brien-Fleming-style spending against the plan
   plan   40 users per group, 38% reached
+  earliest possible stop   look 2; before it too little of the budget is spent for any z to cross
   spending design   no crossing through look 5; no stop allowed yet
   naive 1.96 rule   never fires
   latest look   effect +13.33 pp   adjusted 95% -43.60 to +70.27 pp   boundary |z| 3.23

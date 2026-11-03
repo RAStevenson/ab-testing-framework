@@ -115,9 +115,8 @@ def main() -> None:
     except (ValueError, OSError):
         traceback.print_exc()
         print(
-            "error: the run stopped before readout.txt was written; the generated rows "
-            "and figures written before the failure may already be replaced. Fix the "
-            "problem named in the error above and rerun the same command.",
+            "error: the run stopped before readout.txt was written. Fix the problem named "
+            "in the error above and rerun the same command.",
             file=sys.stderr,
         )
         sys.exit(2)

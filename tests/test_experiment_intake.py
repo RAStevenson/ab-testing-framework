@@ -182,7 +182,7 @@ class TestValidatorRules:
             "u1,control,0,1,5\nu2,treatment,0,0,0\nu1,control,1,0,0\n",
             encoding="utf-8",
         )
-        with pytest.raises(ValueError, match=r"duplicate_user_error.*'u1'.*rows 2 and 4"):
+        with pytest.raises(ValueError, match=r"duplicate_user_error.*'u1'.*lines 2 and 4"):
             load_user_rows(config, data_path)
 
     def test_drop_share_above_one_percent_stops_the_run(self, tmp_path: Path) -> None:
@@ -208,6 +208,32 @@ class TestValidatorRules:
             ValueError, match=r"too_many_dropped_error.*2 of 100.*uncoercible_dropped"
         ):
             load_user_rows(config, two_bad)
+
+    def test_every_row_dropped_names_the_rule_column_and_line(self, tmp_path: Path) -> None:
+        # a yes/no column holding words: every row fails one rule, and the
+        # stop has to say which rule, which column, and where it first fired
+        config = load_config(_write_config(tmp_path, _config_text()))
+        words = tmp_path / "words.csv"
+        words.write_text(
+            "user_id,group,day,converted,spend\n"
+            "u1,control,0,yes,5\nu2,treatment,0,no,0\nu3,control,1,no,0\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(
+            ValueError,
+            match=r"no_usable_rows_error.*3 data rows.*uncoercible_dropped first at line 2, "
+            r"column 'converted'",
+        ):
+            load_user_rows(config, words)
+
+    def test_a_header_with_no_rows_says_so(self, tmp_path: Path) -> None:
+        config = load_config(_write_config(tmp_path, _config_text()))
+        empty = tmp_path / "empty.csv"
+        empty.write_text("user_id,group,day,converted,spend\n", encoding="utf-8")
+        with pytest.raises(
+            ValueError, match=r"no_usable_rows_error: empty\.csv has a header and no rows"
+        ):
+            load_user_rows(config, empty)
 
     def test_pre_column_round_trips(self, tmp_path: Path) -> None:
         text = _config_text(
@@ -298,7 +324,7 @@ class TestValidatorRules:
 
     def test_events_carry_example_row(self, dirty: Experiment) -> None:
         by_rule = {event.rule: event.detail for event in dirty.validation}
-        assert by_rule["negative_value_dropped"] == "column 'spend', first at data row 7"
+        assert by_rule["negative_value_dropped"] == "first at line 7, column 'spend'"
 
 
 class TestBatteryRegressions:
@@ -475,3 +501,23 @@ def test_planned_users_per_group_must_be_a_count_of_at_least_two(
     )
     with pytest.raises(ValueError, match="planned_users_per_group"):
         load_config(_write_config(tmp_path, text))
+
+
+def test_a_plan_needs_an_equal_split(tmp_path: Path) -> None:
+    # the plan is one size both groups of a comparison reach, so the config
+    # cannot also plan an unequal split
+    text = _config_text(
+        experiment='[experiment]\nname = "t"\nalpha = 0.05\nplanned_users_per_group = 40\n'
+    ).replace("intended_split = [0.5, 0.5]", "intended_split = [0.7, 0.3]")
+    assert "[0.7, 0.3]" in text
+    with pytest.raises(ValueError, match=r"equal groups\.intended_split"):
+        load_config(_write_config(tmp_path, text))
+    # a third typed to four decimals is equal for this purpose
+    thirds = _config_text(
+        experiment='[experiment]\nname = "t"\nalpha = 0.05\nplanned_users_per_group = 40\n'
+    ).replace(
+        'labels = ["control", "treatment"]\nintended_split = [0.5, 0.5]',
+        'labels = ["control", "a", "b"]\nintended_split = [0.3334, 0.3333, 0.3333]',
+    )
+    assert "[0.3334, 0.3333, 0.3333]" in thirds
+    load_config(_write_config(tmp_path, thirds))

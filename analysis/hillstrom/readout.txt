@@ -1,7 +1,7 @@
 Hillstrom e-mail experiment
 Data: what the intake did before any statistic
   users   No E-Mail 21,306 (33.3%)   Mens E-Mail 21,307 (33.3%)   Womens E-Mail 21,387 (33.4%)
-  alias normalized   28,776 rows   zip_code 'Surburban' to 'Suburban', first at data row 2
+  alias normalized   28,776 rows   first at line 2, zip_code 'Surburban' to 'Suburban'
 
 Limitations (*): read every result below with these in view
   * the top 1% of users carry 100% of spend, because fewer than 1% have any spend at all

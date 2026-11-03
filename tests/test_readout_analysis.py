@@ -134,9 +134,27 @@ class TestUserRowsFixture:
         assert readout.monitoring.n_usable == 5
         assert len(readout.monitoring.intervals.ci_low) == 5
 
-    def test_corrections_family_of_one_is_empty(self, tmp_path: Path) -> None:
-        # two metrics, two arms -> one non-primary comparison -> no family
-        assert _readout(_user_experiment(tmp_path)).corrections == ()
+    def test_a_lone_secondary_comparison_is_reported_uncorrected(self, tmp_path: Path) -> None:
+        # two metrics, two arms -> one non-primary comparison, printed with
+        # both corrections equal to its own p
+        (corrected,) = _readout(_user_experiment(tmp_path)).corrections
+        assert corrected.metric == "spend"
+        assert corrected.holm_p == corrected.bh_q == corrected.comparison.p_value
+
+    def test_a_continuous_primary_runs_through_the_monitoring(self, tmp_path: Path) -> None:
+        text = (
+            _user_config_text()
+            .replace("primary = true\n", "")
+            .replace('kind = "continuous"\n', 'kind = "continuous"\nprimary = true\n')
+        )
+        assert text.count("primary = true") == 1
+        config_path = tmp_path / "config.toml"
+        config_path.write_text(text, encoding="utf-8")
+        readout = _readout(load_user_rows(load_config(config_path), FIXTURES / "user_rows_ok.csv"))
+        assert readout.monitoring is not None
+        assert readout.monitoring.metric == "spend"
+        assert readout.monitoring.n_usable == 5
+        assert all(np.isfinite(readout.monitoring.intervals.estimates))
 
     def test_truth_carried_only_when_declared(self, tmp_path: Path) -> None:
         assert _readout(_user_experiment(tmp_path, truth=True)).truth == {

@@ -18,6 +18,26 @@ earlier look has crossed and solves each look's cutoff from it. The adjusted
 intervals are each look's estimate plus or minus that look's boundary times
 its standard error.
 
+## What the full reader panel changed (2026-11-03)
+
+A panel of simulated readers, one with an export of their own, read the
+README and ran the tool after Robert's structural read. Three of its
+findings changed what the readout prints, and each is a decision worth a
+record. A lone secondary metric used to print nowhere, because the
+corrections block needed two comparisons; it now prints with Holm and BH
+equal to its own p, since both corrections leave a single p-value
+unchanged. The row number in every intake message is the file's line
+number, the header being line 1, and the messages now call it a line. And
+the monitoring block names the earliest look a stop is possible, because
+the boundary is infinite while too little of the budget is spent for any z
+to cross, and the figure draws nothing there. The same panel found that a
+file every row of which fails one rule, such as a day column holding
+dates, stopped with "no usable rows" and named nothing. That stop now
+prints the rule, the column, and the line, as the 1% stop always did. One
+new stop came from the interviewer's read. A config that plans a size and
+also plans an unequal split is refused, because the plan is one size every
+group reaches. The README had said so and the intake had not enforced it.
+
 ## The committed runs use the same function as a user's run (a design decision, 2026-11-03)
 
 Robert asked on his structural read whether the Hillstrom demonstration and

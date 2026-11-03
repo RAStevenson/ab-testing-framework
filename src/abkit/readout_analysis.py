@@ -21,7 +21,7 @@ from __future__ import annotations
 import sys
 import traceback
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -146,7 +146,7 @@ class ExperimentReadout:
     cuped: tuple[tuple[str, str, CupedResult], ...]
     corrections: tuple[CorrectedComparison, ...]
     monitoring: MonitoringResult | None
-    truth: dict | None
+    truth: dict[str, Any] | None
 
 
 _Field = TypeVar("_Field")
@@ -187,7 +187,9 @@ def _agg(experiment: Experiment, arm: str, metric: str, checkpoint: float | None
     raise ValueError(f"no aggregate for ({arm}, {metric}, {checkpoint})")
 
 
-def _series(experiment: Experiment, arm: str, metric: str) -> tuple[NDArray, NDArray, NDArray]:
+def _series(
+    experiment: Experiment, arm: str, metric: str
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     """Cumulative (n, mean, variance) arrays for one arm and metric, in
     checkpoint order. Raises if the experiment has no time axis."""
     cells = sorted(
@@ -435,8 +437,9 @@ def _cuped(
 
 
 def _corrections(experiment: Experiment) -> tuple[CorrectedComparison, ...]:
-    """Holm and Benjamini-Hochberg over the non-primary metrics' contrasts; empty when that family
-    has fewer than two members."""
+    """Holm and Benjamini-Hochberg over the non-primary metrics' contrasts; empty when there is
+    no secondary metric. With one comparison both corrections leave its p unchanged, and the
+    block prints it so a declared metric never goes unreported."""
     family: list[tuple[MetricSpec, str]] = [
         (metric, treatment_arm)
         for metric in experiment.metrics
@@ -445,7 +448,7 @@ def _corrections(experiment: Experiment) -> tuple[CorrectedComparison, ...]:
     ]
     # the primary's own contrasts are corrected in the primary block, so they
     # never stand in for a missing secondary family here
-    if len(family) < 2:
+    if not family:
         return ()
     comparisons = [_cell_test(experiment, arm, metric) for metric, arm in family]
     naive = np.array([comparison.p_value for comparison in comparisons])

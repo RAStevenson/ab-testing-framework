@@ -140,7 +140,10 @@ class TestAnalyzeExperiment:
         assert readout.startswith("fixture-experiment\n")
         assert readout in printed
         assert "Decision for" in readout
-        assert sorted(path.name for path in (out_dir / "figures").iterdir()) == ["monitoring.png"]
+        assert sorted(path.name for path in (out_dir / "figures").iterdir()) == [
+            "corrections.png",
+            "monitoring.png",
+        ]
 
     def test_md5_mismatch_stops_before_reading_the_file(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

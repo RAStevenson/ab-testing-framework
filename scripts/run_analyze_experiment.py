@@ -69,9 +69,8 @@ def main() -> None:
             else ""
         )
         print(
-            "error: the analysis stopped before readout.txt was written; figures "
-            "drawn before the failure may already be replaced. Fix the problem named "
-            f"in the error above and rerun the same command.{fetch_hint}",
+            "error: the analysis stopped before readout.txt was written. Fix the problem "
+            f"named in the error above and rerun the same command.{fetch_hint}",
             file=sys.stderr,
         )
         sys.exit(2)
