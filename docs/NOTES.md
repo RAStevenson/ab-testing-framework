@@ -4,6 +4,18 @@ Dated measurements, decisions, and history that do not belong in the README.
 Each measurement names its date, its conditions, and whether the loop that
 produced it is in the repo.
 
+## Planning from a pooled standard deviation (2026-11-03)
+
+With two equal groups whose means differ by d, the standard deviation of
+both groups pooled is the square root of the within-group variance plus d
+squared over 4. For the README's planning example, a standard deviation of
+12 and a difference of 0.5, that is the square root of 144 plus 0.0625, or
+12.0026 against 12. The pooled value barely moves with the effect, which is
+why a plan set from it, before any result is read, is not a plan chosen
+after looking at the results. Clinical trials use the same approach under
+the name blinded sample size re-estimation. The arithmetic was done by hand
+on 2026-11-03; no test pins it.
+
 ## How the monitoring boundaries are computed (moved from the README, 2026-11-03)
 
 The monitoring boundaries are computed at the sample sizes the looks
