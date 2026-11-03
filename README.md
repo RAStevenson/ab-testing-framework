@@ -76,23 +76,17 @@ python scripts/run_plan_experiment.py --baseline-rate 0.05 --minimum-lift 0.005
 python scripts/run_plan_experiment.py --standard-deviation 12 --minimum-difference 0.5
 ```
 
-Both the rate and the standard deviation come from past data, such as last
-month's users or an earlier test's control group. The standard deviation is
-taken over the same per-user value the test will compare, such as each
-user's spend over two weeks. Once the test has run, the readout's
+Both the base rate and the standard deviation come from past data, such as
+last month's users or an earlier test's control group. The standard
+deviation is taken over the same per-user value the test will compare, such
+as each user's spend over two weeks. Once the test has run, the readout's
 sensitivity block recomputes what the test could detect from the spread the
 data actually shows.
 
-With no past data, there are two ways to plan. One is to make a yes/no
-version of the metric the primary one, such as whether a user bought
-anything, because a yes/no metric's spread follows from its rate and only
-the rate has to be guessed. The other is to start the test, compute the
-standard deviation from the first users whose values are complete, with both
-groups pooled, and set the plan before reading any result. The pooled
-standard deviation barely moves with the effect, so a plan set from it is
-not one chosen after looking at the results. The reason is in
-`docs/NOTES.md`. Take that standard deviation from the raw export, because
-the readout prints the effect.
+With no past data, one way to plan is to make a yes/no version of the metric
+the primary one, such as whether a user bought anything. A yes/no metric's
+spread follows from its rate, so only the rate has to be guessed. Otherwise
+the standard deviation has to be guessed.
 
 Either command prints the users needed per group, at 80% power and alpha
 0.05 unless told otherwise. Put that number in the config as
