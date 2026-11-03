@@ -9,11 +9,11 @@ alpha = 0.05
 path = "user_rows_ok.csv"
 
 [columns]
-arm = "group"
+group = "group"
 day = "day"
 user_id = "user_id"
 
-[arms]
+[groups]
 labels = ["control", "treatment"]
 intended_split = [0.5, 0.5]
 

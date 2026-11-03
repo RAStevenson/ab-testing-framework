@@ -24,8 +24,8 @@ def _user_rows_lines(tmp_path: Path, planned_users_per_group: int | None = None)
     text = (
         f'[experiment]\nname = "fixture experiment"\nalpha = 0.05\n{plan}\n'
         '[input]\npath = "user_rows_ok.csv"\n\n'
-        '[columns]\narm = "group"\nday = "day"\nuser_id = "user_id"\n\n'
-        '[arms]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.5]\n\n'
+        '[columns]\ngroup = "group"\nday = "day"\nuser_id = "user_id"\n\n'
+        '[groups]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.5]\n\n'
         '[[metrics]]\nname = "converted"\ncolumn = "converted"\nkind = "binary"\nprimary = true\n\n'
         '[[metrics]]\nname = "spend"\ncolumn = "spend"\nkind = "continuous"\nnonnegative = true\n\n'
         '[[metrics]]\nname = "converted_again"\ncolumn = "converted"\nkind = "binary"\n\n'
@@ -111,9 +111,9 @@ def test_several_treatments_get_a_decision_and_sensitivity_each(tmp_path: Path) 
     text = (
         '[experiment]\nname = "hillstrom-fixture"\nalpha = 0.05\n\n'
         ""
-        '[columns]\narm = "segment"\n\n'
+        '[columns]\ngroup = "segment"\n\n'
         '[columns.aliases.zip_code]\n"Surburban" = "Suburban"\n\n'
-        '[arms]\nlabels = ["No E-Mail", "Mens E-Mail", "Womens E-Mail"]\n'
+        '[groups]\nlabels = ["No E-Mail", "Mens E-Mail", "Womens E-Mail"]\n'
         "intended_split = [0.3334, 0.3333, 0.3333]\n\n"
         '[[metrics]]\nname = "visit"\nkind = "binary"\nprimary = true\n\n'
         '[[metrics]]\nname = "spend"\nkind = "continuous"\nnonnegative = true\n'
@@ -183,8 +183,8 @@ def test_a_crossing_in_flight_allows_a_stop_with_that_looks_interval(tmp_path: P
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         '[experiment]\nname = "t"\nplanned_users_per_group = 2000\n\n'
-        '[columns]\narm = "group"\nday = "day"\n\n'
-        '[arms]\nlabels = ["control", "treatment", "other"]\n\n'
+        '[columns]\ngroup = "group"\nday = "day"\n\n'
+        '[groups]\nlabels = ["control", "treatment", "other"]\n\n'
         '[[metrics]]\nname = "converted"\nkind = "binary"\nprimary = true\n',
         encoding="utf-8",
     )

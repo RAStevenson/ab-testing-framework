@@ -65,7 +65,7 @@ def cuped_mean_diff(
         )
     if control_values.size < 2 or treatment_values.size < 2:
         raise ValueError(
-            f"need at least 2 observations per arm, got {control_values.size} "
+            f"need at least 2 observations per group, got {control_values.size} "
             f"and {treatment_values.size}"
         )
     if not 0.0 < confidence < 1.0:

@@ -196,7 +196,7 @@ def _group_split_block(readout: ExperimentReadout) -> list[str]:
             )
         lines.append(_INDENT + "result   " + _SPLIT_RESULTS["ok" if worst >= 1e-3 else "fail"])
     else:
-        lines.append(_INDENT + "no intended split on record (arms.intended_split), so no check")
+        lines.append(_INDENT + "no intended split on record (groups.intended_split), so no check")
         lines.append(_INDENT + "result   the Data block's shares are for the reader's own judgment")
     return lines
 
@@ -396,7 +396,7 @@ def _first_treatment_note(readout: ExperimentReadout) -> list[str]:
     several to choose from."""
     if len(readout.primary) < 2:
         return []
-    return [_INDENT + "chosen   first treatment in the arm order, not by its result"]
+    return [_INDENT + "chosen   first treatment in the group order, not by its result"]
 
 
 def _truth_block(readout: ExperimentReadout) -> list[str]:

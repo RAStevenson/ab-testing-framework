@@ -88,10 +88,10 @@ calling the metric heavy-tailed.
 ## The first-treatment rule (2026-10-09)
 
 With several treatments, the monitoring replay runs on one contrast, and the
-readout names which. The rule is the first treatment in `arms.labels`. It
+readout names which. The rule is the first treatment in `groups.labels`. It
 does not look at the results, so the choice cannot favor whichever treatment
 looks best, and the replay block prints the value "first treatment in the
-arm order, not by its result" on its "chosen" line. Until 2026-10-21 the
+group order, not by its result" on its "chosen" line. Until 2026-10-21 the
 same rule also chose the contrast for the cross-check and for a split test
 across checkpoints on per-group totals.
 
@@ -102,7 +102,7 @@ statsmodels. The pooled variance is the right one under the null the test
 evaluates. The interval for the estimate is the unpooled Agresti-Caffo
 interval, also through statsmodels, because the unpooled variance is right
 away from the null, where the interval lives. It also stays wide enough when
-an arm sits at or near 0% or 100%, where the plain unpooled interval comes
+a group sits at or near 0% or 100%, where the plain unpooled interval comes
 out too narrow.
 
 ## Removed features and the ASOS example (history)
@@ -110,7 +110,7 @@ out too narrow.
 ### Bootstrap interval coverage (2026-10-07)
 
 The bootstrap interval was scipy's BCa (bias-corrected and accelerated).
-Measured with a one-off loop that is not in the repo, on lognormal arms of
+Measured with a one-off loop that is not in the repo, on lognormal groups of
 400 users over 1,000 simulations at each of three seeds, BCa covered 92.6 to
 93.7% against a nominal 95%. The percentile interval it replaced covered
 93.9 to 94.7%. BCa was kept because it is scipy's default and the gap is
@@ -145,6 +145,6 @@ The ASOS readout printed variant_0 at -0.01 pp early and -1.26 pp late
 against -0.07 pp over the whole run, and a reader panel could not reconcile
 the three. The late window (the last 31 of 95 usable checkpoints) held
 14,188 variant_0 users against 450,624 control, where the early window held
-69,687 against 2,275,261, and both arms' rates rose from about 0.20 to about
+69,687 against 2,275,261, and both groups' rates rose from about 0.20 to about
 0.36 across the run. The block then printed each window's users under every
 contrast.

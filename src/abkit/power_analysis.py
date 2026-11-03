@@ -56,7 +56,7 @@ def power_two_proportions(
     treatment_size = n_per_arm if n_treatment is None else n_treatment
     if control_size < 2 or treatment_size < 2:
         raise ValueError(
-            f"each arm needs at least 2 users, got {control_size} and {treatment_size}"
+            f"each group needs at least 2 users, got {control_size} and {treatment_size}"
         )
 
     # statsmodels calls the first sample the one at prop2 + diff, so the
@@ -141,7 +141,7 @@ def mde_two_proportions(
         raise ValueError(f"rate_control must be in (0, 1), got {rate_control}")
     _validate_alpha_power(alpha, power)
     if n_per_arm < 2 or (n_treatment is not None and n_treatment < 2):
-        raise ValueError(f"each arm needs at least 2 users, got {n_per_arm} and {n_treatment}")
+        raise ValueError(f"each group needs at least 2 users, got {n_per_arm} and {n_treatment}")
     # power tends to alpha/2 as the lift vanishes, so a target at or below
     # that has no crossing at all and would surface as a raw solver error
     if power <= alpha / 2.0:

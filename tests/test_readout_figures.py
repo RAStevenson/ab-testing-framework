@@ -21,8 +21,8 @@ def _user_rows_experiment(tmp_path: Path):
     text = (
         '[experiment]\nname = "t"\nalpha = 0.05\n\n'
         '[input]\npath = "user_rows_ok.csv"\n\n'
-        '[columns]\narm = "group"\nday = "day"\nuser_id = "user_id"\n\n'
-        '[arms]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.5]\n\n'
+        '[columns]\ngroup = "group"\nday = "day"\nuser_id = "user_id"\n\n'
+        '[groups]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.5]\n\n'
         '[[metrics]]\nname = "converted"\ncolumn = "converted"\nkind = "binary"\nprimary = true\n\n'
         '[[metrics]]\nname = "spend"\ncolumn = "spend"\nkind = "continuous"\nnonnegative = true\n\n'
         '[[metrics]]\nname = "converted_again"\ncolumn = "converted"\nkind = "binary"\n'

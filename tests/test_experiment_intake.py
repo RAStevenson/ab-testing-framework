@@ -23,8 +23,8 @@ def _config_text(**overrides: str) -> str:
     base = {
         "experiment": '[experiment]\nname = "t"\nalpha = 0.05\n',
         "input": '[input]\npath = "user_rows_ok.csv"\n',
-        "columns": '[columns]\narm = "group"\nday = "day"\nuser_id = "user_id"\n',
-        "arms": '[arms]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.5]\n',
+        "columns": '[columns]\ngroup = "group"\nday = "day"\nuser_id = "user_id"\n',
+        "arms": '[groups]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.5]\n',
         "metrics": (
             '[[metrics]]\nname = "converted"\ncolumn = "converted"\nkind = "binary"\n'
             "primary = true\n"
@@ -79,7 +79,7 @@ class TestConfig:
 
     def test_bad_split_rejected(self, tmp_path: Path) -> None:
         text = _config_text(
-            arms='[arms]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.6]\n'
+            arms='[groups]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.6]\n'
         )
         with pytest.raises(ValueError, match="intended_split"):
             load_config(_write_config(tmp_path, text))
@@ -143,7 +143,7 @@ class TestValidatorRules:
     def dirty(self, tmp_path: Path) -> Experiment:
         text = _config_text(
             columns=(
-                '[columns]\narm = "group"\nday = "day"\nuser_id = "user_id"\n'
+                '[columns]\ngroup = "group"\nday = "day"\nuser_id = "user_id"\n'
                 '[columns.aliases.group]\n"treatmnet" = "treatment"\n'
             )
         )
@@ -293,7 +293,7 @@ class TestValidatorRules:
 
     def test_unmapped_arm_raises(self, tmp_path: Path) -> None:
         config = load_config(_write_config(tmp_path, _config_text()))  # no alias table
-        with pytest.raises(ValueError, match="unmapped_arm_error"):
+        with pytest.raises(ValueError, match="unmapped_group_error"):
             load_user_rows(config, FIXTURES / "user_rows_dirty.csv")
 
     def test_events_carry_example_row(self, dirty: Experiment) -> None:
@@ -315,7 +315,7 @@ class TestBatteryRegressions:
             load_config(_write_config(tmp_path, text))
 
     def test_case_colliding_arm_labels_rejected(self, tmp_path: Path) -> None:
-        text = _config_text(arms='[arms]\nlabels = ["control", "Treatment", "treatment"]\n')
+        text = _config_text(arms='[groups]\nlabels = ["control", "Treatment", "treatment"]\n')
         with pytest.raises(ValueError, match="unique ignoring case"):
             load_config(_write_config(tmp_path, text))
 
@@ -423,7 +423,7 @@ class TestBatteryRegressions:
             sum(
                 event.count
                 for event in experiment.validation
-                if event.rule == "arm_label_normalized"
+                if event.rule == "group_label_normalized"
             )
             == 2
         )
@@ -435,9 +435,9 @@ def test_alias_table_on_a_numeric_column_stops_the_run(tmp_path: Path) -> None:
     text = (
         '[experiment]\nname = "aliases on spend"\n\n'
         ""
-        '[columns]\narm = "group"\n\n'
+        '[columns]\ngroup = "group"\n\n'
         '[columns.aliases.spend]\n"" = "0"\n\n'
-        '[arms]\nlabels = ["control", "treatment"]\n\n'
+        '[groups]\nlabels = ["control", "treatment"]\n\n'
         '[[metrics]]\nname = "spend"\nkind = "continuous"\nprimary = true\n'
     )
     config_path = tmp_path / "config.toml"

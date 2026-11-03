@@ -108,7 +108,51 @@ To read a finished run, run the same command on the final export. With no
 day column, the readout is the data checks and the results, with no
 monitoring block. The Hillstrom config, `analysis/hillstrom/config.toml`, is
 a complete working example. Data columns the config does not name are
-ignored. The table lists the keys a config uses.
+ignored.
+
+A config is a plain text file saved with a `.toml` ending. Part of it names
+columns of the CSV. The rest states what the CSV cannot: which group is the
+control, which outcome the decision rests on, and how the users were meant
+to be split. For a file with one row per user and these columns,
+
+```
+variant,converted,spend
+control,0,0
+new_page,1,49.99
+control,1,12.50
+new_page,0,0
+```
+
+this config is complete:
+
+```toml
+[experiment]
+name = "Checkout page test"
+
+[columns]
+group = "variant"
+
+# the first label is the control group
+[groups]
+labels = ["control", "new_page"]
+intended_split = [0.5, 0.5]
+
+# one [[metrics]] block per outcome column
+[[metrics]]
+name = "converted"
+kind = "binary"
+primary = true
+
+[[metrics]]
+name = "spend"
+kind = "continuous"
+nonnegative = true
+```
+
+`[columns]` names the column that holds each user's group, and `[groups]`
+lists the values found in it, control first. Each `[[metrics]]` block names
+one outcome column and says whether it holds yes/no values or amounts. The
+table lists every key a config uses.
 
 | Table and key | Needed | What it does |
 |---|---|---|
@@ -117,12 +161,12 @@ ignored. The table lists the keys a config uses.
 | `[experiment]` `planned_users_per_group` | no | the size each group is planned to reach, the number the planning command prints; with a day column, the monitoring block judges each look against it |
 | `[input]` `path` | no | the data file, relative to the config; `--data` overrides it |
 | `[input]` `md5` | no | the data file's checksum, so a readout cannot be made from the wrong file; a different file stops the run |
-| `[columns]` `arm` | yes | the column holding each user's group |
+| `[columns]` `group` | yes | the column holding each user's group |
 | `[columns]` `day` | no | the day each user entered the experiment, as a whole number such as days since the start, not a date; each distinct value is one look, so a timestamp in seconds would make nearly every user its own look; three or more distinct days turn on the monitoring block |
 | `[columns]` `user_id` | no | turns on the stop for a user appearing twice |
 | `[columns.aliases.<column>]` | no | value replacements for a text column, old = new, counted as repairs; an alias table on a metric, pre-experiment, day, or user id column stops the run |
-| `[arms]` `labels` | yes | the group labels, control first; reversing them flips the sign of every effect |
-| `[arms]` `intended_split` | no | the planned share per group; turns on the check against the plan |
+| `[groups]` `labels` | yes | the group labels, control first; reversing them flips the sign of every effect |
+| `[groups]` `intended_split` | no | the planned share per group; turns on the check against the plan |
 | `[[metrics]]` `name`, `kind` | yes | one entry per metric; `kind` is `binary` or `continuous` |
 | `[[metrics]]` `primary` | one metric | the metric the decisions are made on |
 | `[[metrics]]` `column` | no, the name | the metric's column in the file |
@@ -372,7 +416,7 @@ Flagged in the limitations block:
 - the top 1% of users carrying more than a quarter of a continuous
   metric's total, checked on the first continuous metric (the primary, if it
   is continuous) over the users in the control group and the first treatment
-- fewer than 10 successes or failures in an arm on a binary primary metric
+- fewer than 10 successes or failures in a group on a binary primary metric
 - a smallest detectable effect above a 5% relative lift
 - no pre-experiment column
 - gaps in the day sequence
@@ -480,7 +524,7 @@ Figures:
 On Hillstrom, fewer than 1% of users spent anything, which the limitations
 block flags. The intake also normalizes and counts a misspelled zip-code
 category. Nothing else in the readout reads that column, so the config's
-alias for it is there to show the repair on real data. Both e-mail arms
+alias for it is there to show the repair on real data. Both e-mail groups
 raise visits. Both also raise spend after the Holm correction, though that
 result rests on the fewer than 1% of users who spent. CUPED on the
 past-spending column removes under 1% of the noise, because spend in the

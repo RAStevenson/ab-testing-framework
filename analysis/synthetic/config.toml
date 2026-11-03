@@ -20,12 +20,12 @@ planned_users_per_group = 59000
 path = "../../data/synthetic/synthetic_experiment.csv"
 
 [columns]
-arm = "group"
+group = "group"
 day = "day"
 user_id = "user_id"
 
-# the FIRST label is the control arm
-[arms]
+# the FIRST label is the control group
+[groups]
 labels = ["control", "treatment"]
 intended_split = [0.5, 0.5]
 

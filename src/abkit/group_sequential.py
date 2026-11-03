@@ -301,13 +301,13 @@ def z_from_cumulative_counts(
     ):
         raise ValueError("all four inputs must be 1-d arrays of the same length")
     if np.any(control_counts <= 0.0) or np.any(treatment_counts <= 0.0):
-        raise ValueError("arm sizes must be positive at every look")
+        raise ValueError("group sizes must be positive at every look")
     if np.any(control_conversions < 0.0) or np.any(treatment_conversions < 0.0):
         raise ValueError("conversion counts must be non-negative")
     if np.any(control_conversions > control_counts) or np.any(
         treatment_conversions > treatment_counts
     ):
-        raise ValueError("conversions cannot exceed the arm size at any look")
+        raise ValueError("conversions cannot exceed the group size at any look")
     # conversions matter here as much as arm sizes: a cumulative series that
     # goes backwards is a join or transcription error, and left unchecked it
     # produces a large spurious z that stops the experiment
@@ -373,7 +373,7 @@ def z_from_cumulative_stats(
     if len(shapes) != 1 or control_counts.ndim != 1:
         raise ValueError("all six inputs must be 1-d arrays of the same length")
     if np.any(control_counts < 2.0) or np.any(treatment_counts < 2.0):
-        raise ValueError("arm sizes must be at least 2 at every look")
+        raise ValueError("group sizes must be at least 2 at every look")
     if np.any(np.diff(control_counts) < 0.0) or np.any(np.diff(treatment_counts) < 0.0):
         raise ValueError("counts must be cumulative (non-decreasing)")
     for name, values in (
@@ -389,5 +389,5 @@ def z_from_cumulative_stats(
         control_variances / control_counts + treatment_variances / treatment_counts
     )
     if np.any(standard_error == 0.0):
-        raise ValueError("a look has zero variance in both arms; z is undefined there")
+        raise ValueError("a look has zero variance in both groups; z is undefined there")
     return np.asarray((treatment_means - control_means) / standard_error)

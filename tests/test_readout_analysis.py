@@ -30,8 +30,8 @@ def _user_config_text(
     text = (
         '[experiment]\nname = "t"\nalpha = 0.05\n\n'
         '[input]\npath = "user_rows_ok.csv"\n\n'
-        '[columns]\narm = "group"\nday = "day"\nuser_id = "user_id"\n\n'
-        '[arms]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.5]\n\n'
+        '[columns]\ngroup = "group"\nday = "day"\nuser_id = "user_id"\n\n'
+        '[groups]\nlabels = ["control", "treatment"]\nintended_split = [0.5, 0.5]\n\n'
         '[[metrics]]\nname = "converted"\ncolumn = "converted"\nkind = "binary"\nprimary = true\n\n'
         '[[metrics]]\nname = "spend"\ncolumn = "spend"\nkind = "continuous"\nnonnegative = true\n'
     )
@@ -216,9 +216,9 @@ class TestHillstromShapedFixture:
     def _experiment(self, tmp_path: Path) -> Experiment:
         text = (
             '[experiment]\nname = "hillstrom-fixture"\nalpha = 0.05\n\n'
-            '[columns]\narm = "segment"\n\n'
+            '[columns]\ngroup = "segment"\n\n'
             '[columns.aliases.zip_code]\n"Surburban" = "Suburban"\n\n'
-            '[arms]\nlabels = ["No E-Mail", "Mens E-Mail", "Womens E-Mail"]\n'
+            '[groups]\nlabels = ["No E-Mail", "Mens E-Mail", "Womens E-Mail"]\n'
             "intended_split = [0.3334, 0.3333, 0.3333]\n\n"
             '[[metrics]]\nname = "visit"\nkind = "binary"\nprimary = true\n\n'
             '[[metrics]]\nname = "conversion"\nkind = "binary"\n\n'
@@ -256,7 +256,7 @@ class TestOmittedBlocks:
         ("first_day_rows", "expected_error"),
         [
             ("control,1,0\n" * 20 + "treatment,1,0\n" * 20, "all-identical outcomes"),
-            ("control,1,1\n" * 20, "arm sizes must be positive"),
+            ("control,1,1\n" * 20, "group sizes must be positive"),
         ],
         ids=["no_conversions_on_the_first_day", "an_arm_absent_on_the_first_day"],
     )
@@ -279,8 +279,8 @@ class TestOmittedBlocks:
         )
         config_path = tmp_path / "config.toml"
         config_path.write_text(
-            '[experiment]\nname = "t"\n\n[columns]\narm = "group"\nday = "day"\n\n'
-            '[arms]\nlabels = ["control", "treatment"]\n\n'
+            '[experiment]\nname = "t"\n\n[columns]\ngroup = "group"\nday = "day"\n\n'
+            '[groups]\nlabels = ["control", "treatment"]\n\n'
             '[[metrics]]\nname = "converted"\nkind = "binary"\nprimary = true\n',
             encoding="utf-8",
         )
@@ -309,8 +309,8 @@ class TestOmittedBlocks:
         data_path.write_text("group,day,converted\n" + rows, encoding="utf-8")
         config_path = tmp_path / "config.toml"
         config_path.write_text(
-            '[experiment]\nname = "t"\n\n[columns]\narm = "group"\nday = "day"\n\n'
-            '[arms]\nlabels = ["control", "treatment", "other"]\n\n'
+            '[experiment]\nname = "t"\n\n[columns]\ngroup = "group"\nday = "day"\n\n'
+            '[groups]\nlabels = ["control", "treatment", "other"]\n\n'
             '[[metrics]]\nname = "converted"\nkind = "binary"\nprimary = true\n',
             encoding="utf-8",
         )
@@ -397,9 +397,9 @@ def test_sensitivity_with_several_treatments_is_solved_at_alpha_over_their_numbe
 ):
     text = (
         '[experiment]\nname = "hillstrom-fixture"\nalpha = 0.05\n\n'
-        '[columns]\narm = "segment"\n\n'
+        '[columns]\ngroup = "segment"\n\n'
         '[columns.aliases.zip_code]\n"Surburban" = "Suburban"\n\n'
-        '[arms]\nlabels = ["No E-Mail", "Mens E-Mail", "Womens E-Mail"]\n\n'
+        '[groups]\nlabels = ["No E-Mail", "Mens E-Mail", "Womens E-Mail"]\n\n'
         '[[metrics]]\nname = "visit"\nkind = "binary"\nprimary = true\n'
     )
     config_path = tmp_path / "config.toml"

@@ -20,13 +20,13 @@ path = "../../data/hillstrom/hillstrom.csv"
 md5 = "0af45f3c7ee495ed5654b398b1aab809"
 
 [columns]
-arm = "segment"
+group = "segment"
 
 [columns.aliases.zip_code]
 "Surburban" = "Suburban"
 
-# the FIRST label is the control arm
-[arms]
+# the FIRST label is the control group
+[groups]
 labels = ["No E-Mail", "Mens E-Mail", "Womens E-Mail"]
 intended_split = [0.3334, 0.3333, 0.3333]
 

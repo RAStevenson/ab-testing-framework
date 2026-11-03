@@ -28,7 +28,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 _METRIC_KINDS = ("binary", "continuous")
-_RESERVED_COLUMN_KEYS = ("arm", "day", "user_id")
+_RESERVED_COLUMN_KEYS = ("group", "day", "user_id")
 # share of data rows the drop rules may remove before the run stops; values
 # missing for a reason tied to the outcome can bias the comparison, and the
 # file cannot show why a value is blank or invalid
@@ -163,19 +163,19 @@ def load_config(path: Path) -> dict:
     ):
         raise ValueError("input.md5 must be a 32-character hex digest when present")
 
-    arms = config.get("arms")
+    arms = config.get("groups")
     if not isinstance(arms, dict) or not isinstance(arms.get("labels"), list):
-        raise ValueError("config needs [arms] with a 'labels' list, control first")
+        raise ValueError("config needs [groups] with a 'labels' list, control first")
     labels = arms["labels"]
     if len(labels) < 2 or len(set(labels)) != len(labels):
-        raise ValueError(f"arms.labels needs at least 2 unique labels, got {labels!r}")
+        raise ValueError(f"groups.labels needs at least 2 unique labels, got {labels!r}")
     if not all(isinstance(value, str) and value for value in labels):
-        raise ValueError(f"arms.labels must be non-empty strings, got {labels!r}")
+        raise ValueError(f"groups.labels must be non-empty strings, got {labels!r}")
     folded = [value.casefold() for value in labels]
     if len(set(folded)) != len(folded):
         # row arm values are matched casefolded, so labels differing only
         # by case would collapse into one arm with no error
-        raise ValueError(f"arms.labels must be unique ignoring case, got {labels!r}")
+        raise ValueError(f"groups.labels must be unique ignoring case, got {labels!r}")
     split = arms.get("intended_split")
     if split is not None and (
         not isinstance(split, list)
@@ -183,7 +183,9 @@ def load_config(path: Path) -> dict:
         or not all(isinstance(value, (int, float)) and value > 0 for value in split)
         or abs(sum(split) - 1.0) > 1e-9
     ):
-        raise ValueError("arms.intended_split must be positive shares, one per label, summing to 1")
+        raise ValueError(
+            "groups.intended_split must be positive shares, one per label, summing to 1"
+        )
 
     metrics = config.get("metrics")
     if not isinstance(metrics, list) or not metrics:
@@ -223,8 +225,8 @@ def load_config(path: Path) -> dict:
     columns = config.setdefault("columns", {})
     if not isinstance(columns, dict):
         raise ValueError("[columns] must be a table")
-    if not isinstance(columns.get("arm"), str):
-        raise ValueError("config needs [columns] with an 'arm' column name")
+    if not isinstance(columns.get("group"), str):
+        raise ValueError("config needs [columns] with a 'group' column name")
     for key in ("day", "user_id"):
         # an empty string here silently half-declares the column; normalize
         # to absent so every later check sees one representation
@@ -343,7 +345,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
 
     - ``alias_normalized``: arm and aliased categorical values are stripped
       and mapped through ``[columns.aliases]``.
-    - ``arm_label_normalized``: an arm label matched to ``arms.labels`` only
+    - ``group_label_normalized``: an arm label matched to ``groups.labels`` only
       after trimming spaces or ignoring capitals.
     - ``null_row_dropped``: a row with an empty arm or an empty value in
       any declared metric or pre-experiment column is dropped. Where a
@@ -357,8 +359,8 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     - ``nonbinary_dropped``: a row whose binary metric is not 0 or 1.
 
     Three things stop the run with a ValueError instead of being recorded:
-    an arm label that is not in ``arms.labels`` after normalization
-    (``unmapped_arm_error``: silently dropping an arm would fabricate a
+    an arm label that is not in ``groups.labels`` after normalization
+    (``unmapped_group_error``: silently dropping an arm would fabricate a
     split); a non-blank user id that appears twice when a user_id column is
     declared (``duplicate_user_error``, naming the id and both rows); and
     the drop rules removing more than ``DROPPED_ROW_STOP`` of the data
@@ -371,17 +373,17 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     The metric's nonnegative and binary rules do not reach it.
 
     The returned ``rows`` dict uses CANONICAL keys, not the file's column
-    names: ``"arm"``, ``"day"`` and ``"user_id"`` for the structural
+    names: ``"group"``, ``"day"`` and ``"user_id"`` for the structural
     columns, each metric under its metric NAME, and any extra aliased
     covariate columns under their raw names. Consumers therefore never
     need the config to interpret an Experiment.
     """
     columns = config["columns"]
-    arm_column: str = columns["arm"]
+    arm_column: str = columns["group"]
     day_column: str | None = columns.get("day")
     user_column: str | None = columns.get("user_id")
     aliases: dict[str, dict[str, str]] = columns["aliases"]
-    labels = tuple(config["arms"]["labels"])
+    labels = tuple(config["groups"]["labels"])
     metrics = _metric_specs(config)
 
     declared = [arm_column, *(metric.column for metric in metrics)]
@@ -429,11 +431,11 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
         # README promises none of it happens silently; alias rows are
         # already counted under their own rule
         if arm is not None and (row[arm_column] or "") != arm and arm_aliased == arm_raw:
-            event("arm_label_normalized", index)
+            event("group_label_normalized", index)
         if arm is None:
             raise ValueError(
-                f"unmapped_arm_error: arm value {arm_raw!r} at data row {index} matches no "
-                f"label in {labels}; add it to arms.labels or [columns.aliases.{arm_column}]"
+                f"unmapped_group_error: group value {arm_raw!r} at data row {index} matches no "
+                f"label in {labels}; add it to groups.labels or [columns.aliases.{arm_column}]"
             )
 
         user_id = (row[user_column] or "").strip() if user_column else ""
@@ -536,7 +538,7 @@ def load_user_rows(config: dict, data_path: Path) -> Experiment:
     validation = tuple(
         ValidationEvent(rule, counts[rule], examples[rule]) for rule in sorted(counts)
     )
-    split = config["arms"].get("intended_split")
+    split = config["groups"].get("intended_split")
     return Experiment(
         name=config["experiment"]["name"],
         arms=labels,
