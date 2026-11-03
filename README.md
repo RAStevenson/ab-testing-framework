@@ -280,7 +280,9 @@ in this order:
 - **Other metrics.** The secondary metrics, corrected two ways. Holm, as on
   the primary metric, suits a ship decision. Benjamini-Hochberg caps the
   expected share of false positives among the results it flags, which is
-  enough for a screen of what to test next.
+  enough for a screen of what to test next. Neither correction counts the
+  primary metric's comparisons, so adding a secondary metric never makes the
+  correction on the primary metric stricter.
 - **Decision.** One line per treatment, judged on the primary metric. A "no
   detectable effect" line carries the sensitivity figure, so it says what
   size of effect the run could have seen.
