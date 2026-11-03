@@ -9,9 +9,17 @@ checks and repairs the file before any test runs.
 
 The readout also monitors a run that is still going. It judges each look
 against the size the run was planned to reach and says whether a stop is
-allowed yet. Neither statsmodels nor scipy offers that monitoring. It is
-built for an analyst who has an exported file and no experimentation
-platform, or who wants a second opinion on a dashboard.
+allowed yet. A planning command gives that size before the test starts.
+Neither statsmodels nor scipy offers that monitoring. It is built for an
+analyst who has an exported file and no experimentation platform, or who
+wants a second opinion on a dashboard.
+
+This document covers setup, using the tool on your own experiment, the
+argument reference, how the readout and its monitoring block are read, what
+the intake does to a file, and how the statistics are tested. The two runs
+committed in the repo follow, a demonstration on the Hillstrom e-mail
+experiment and a synthetic check with planted effects. The limitations close
+the document.
 
 ## Setup and run
 
@@ -45,61 +53,49 @@ In a terminal, run the following commands.
    pip install -r requirements.txt
    ```
 
-5. Fetch the Hillstrom dataset, which is the real-data example, and read it:
-
-   ```
-   python scripts/run_fetch_hillstrom.py
-   python scripts/run_analyze_experiment.py --config analysis/hillstrom/config.toml
-   ```
-
-The first command downloads the 2008 dataset from its original URL into
-`data/hillstrom/`, which git ignores, and checks it against a pinned
-checksum. The dataset is not redistributed here because its publisher never
-stated a license. The second command prints the readout quoted under the
-section "The readout" and saves it as `readout.txt` beside the config, with
-the figures in a `figures/` folder.
-
-The other entry points, with every argument listed under [Script
-arguments](#script-arguments) at the end:
-
-```
-python scripts/run_synthetic_check.py
-python scripts/run_plan_experiment.py --baseline-rate 0.05 --minimum-lift 0.005
-pytest
-```
-
-The first command regenerates the synthetic check in `analysis/synthetic/`,
-a run of the pipeline on generated data. The second prints the users needed
-per group for a baseline rate and the smallest lift worth detecting, or for
-a standard deviation and the smallest difference, at the chosen alpha and
-power. The third runs the test suite.
-
 abkit itself is not installed. The entry scripts put `src/` on the import
 path, so a fresh clone runs once the dependencies are installed. The
 versions in `requirements.txt` are the ones the committed readouts were
 produced with, and rerunning a readout with them reproduces `readout.txt`
-byte for byte. The continuous integration checks regenerate the synthetic
-readout on every push to master and fail if the committed copy has drifted.
+byte for byte.
 
 ### Using it on your own data
 
-To read your own experiment, write a config and point the analyze command at
-your file, a comma-separated CSV in UTF-8 with a header row:
+The tool sizes a test before the start, monitors it while it runs, and reads
+the exported file when it is done. The last two take a config, a TOML file
+whose keys the table at the end of this section lists. Every argument is
+listed under [Script arguments](#script-arguments).
+
+To size the test, give the planning command the expected control rate and
+the smallest lift worth acting on, as fractions, or for a continuous metric
+such as spend, the metric's standard deviation and the smallest difference
+in means:
+
+```
+python scripts/run_plan_experiment.py --baseline-rate 0.05 --minimum-lift 0.005
+python scripts/run_plan_experiment.py --standard-deviation 12 --minimum-difference 0.5
+```
+
+Either prints the users needed per group, at 80% power and alpha 0.05 unless
+told otherwise. Put that number in the config as `planned_users_per_group`
+before the first look. A run that will be checked daily can raise it by a
+few percent, for the reason given under "Monitoring a run".
+
+To monitor the run, export the rows so far with a day column and run the
+analyze command on each new export:
 
 ```
 python scripts/run_analyze_experiment.py --config my_experiment.toml --data my_data.csv
 ```
 
-The Hillstrom config, `analysis/hillstrom/config.toml`, is a complete
-working example. Data columns the config does not name are ignored. The
-table lists the keys a config uses.
+The file is a comma-separated CSV in UTF-8 with a header row. The monitoring
+block says whether a stop is allowed yet, and the decision line follows it.
 
-To monitor an experiment while it runs, set `planned_users_per_group` in the
-config before the first look, to the number the planning command printed.
-Export the rows so far with a day column and run the analyze command on each
-new export. The monitoring block then says whether a stop is allowed yet,
-and the decision line follows it. The section "Monitoring a run" shows the
-block.
+To read a finished run, run the same command on the final export. With no
+day column, the readout is the data checks and the results, with no
+monitoring block. The Hillstrom config, `analysis/hillstrom/config.toml`, is
+a complete working example. Data columns the config does not name are
+ignored. The table lists the keys a config uses.
 
 | Table and key | Needed | What it does |
 |---|---|---|
@@ -121,6 +117,64 @@ block.
 | `[[metrics]]` `pre_column` | no | a column measured before assignment; turns on CUPED for that metric, and a row with no number there is dropped |
 | `[truth]` | no | the synthetic check's generation settings; prints the planted-versus-found block and labels the closing lines and the monitoring figure as synthetic |
 
+## Script arguments
+
+This lists every argument of every user-facing script, mirroring `--help`,
+which each script prints with `-h`.
+
+### `run_fetch_hillstrom.py`
+
+Takes no arguments. It downloads the Hillstrom file from its original URL
+into `data/hillstrom/`, checks the download against the SHA-256 pinned in
+the script, and refuses a file that does not match, keeping the rejected
+bytes beside the cache for review. A cached file that matches is not
+downloaded again.
+
+### `run_analyze_experiment.py`
+
+Required:
+
+- `--config`: the experiment TOML, with the keys listed under "Using it on
+  your own data". The Hillstrom config is a complete example.
+
+Optional:
+
+- `--data`: the data file to read, overriding the config's `[input]`
+  `path`. The config's `md5`, when set, is still checked against this file.
+- `--out`: the directory for `readout.txt` and the `figures/` folder.
+  Default is the config's directory.
+
+### `run_synthetic_check.py`
+
+Optional:
+
+- `--config`: the recipe TOML, an experiment config with a `[truth]` table
+  of generation settings. Default `analysis/synthetic/config.toml`.
+- `--out`: the directory for the readout and figures. Default is the
+  config's directory. The generated rows go to the config's `[input]`
+  `path`, which for the default recipe is `data/synthetic/`, ignored by
+  git.
+
+### `run_plan_experiment.py`
+
+Required, one pair or the other:
+
+- `--baseline-rate` with `--minimum-lift`: for a yes/no metric, the
+  control rate and the smallest absolute lift worth detecting, as fractions
+  such as 0.05 and 0.005.
+- `--standard-deviation` with `--minimum-difference`: for a continuous
+  metric, its standard deviation and the smallest difference in means worth
+  detecting, in the metric's own units.
+
+Passing both pairs, or neither, stops the command with an error naming the
+choice.
+
+Optional:
+
+- `--alpha`: the false-positive rate. Default 0.05.
+- `--power`: the chance of detecting an effect of the stated size. Default
+  0.8.
+
 ## How it works
 
 A run has three stages. The intake, in `src/abkit/experiment_intake.py`,
@@ -138,72 +192,14 @@ project's own, in `src/abkit/group_sequential.py`.
 
 The readout is a text file of labeled blocks rather than paragraphs. Each
 heading carries a few words on how to read its block, and the file closes
-with one decision line per treatment and the figures' paths.
-
-The committed real-data example is the Hillstrom e-mail experiment, whose
-data was published by MineThatData in 2008. In the experiment, 64,000
-customers of a retailer were split in thirds between a men's e-mail, a
-women's e-mail, and no e-mail. Its readout follows whole, with a key to its
-blocks after it.
-
-The file is [analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt).
-
-```text
-Hillstrom e-mail experiment
-Data: what the intake did before any statistic
-  users   No E-Mail 21,306 (33.3%)   Mens E-Mail 21,307 (33.3%)   Womens E-Mail 21,387 (33.4%)
-  alias normalized   28,776 rows   zip_code 'Surburban' to 'Suburban', first at data row 2
-
-Limitations (*): read every result below with these in view
-  * the top 1% of users carry 100% of spend, because fewer than 1% have any spend at all
-  * the smallest detectable effect on visit is above a modest 5% lift for Mens E-Mail vs No E-Mail
-      (8.8% of control) and Womens E-Mail vs No E-Mail (8.8% of control); a 'not detected' result
-      there would rule out little
-
-Group split: does assignment match the plan?
-  Mens E-Mail vs No E-Mail   21,307 vs 21,306   chi-square 0.00   p 0.971
-  Womens E-Mail vs No E-Mail   21,387 vs 21,306   chi-square 0.18   p 0.672
-  result   consistent with the plan
-
-Sensitivity: smallest lift this sample could detect, 80% power
-  each at alpha 0.05/2, the strictest level the Holm correction applies
-  Mens E-Mail vs No E-Mail   21,307 vs 21,306 users   control 10.6%   detectable 0.94 pp (8.8% of
-      control)
-  Womens E-Mail vs No E-Mail   21,387 vs 21,306 users   control 10.6%   detectable 0.94 pp (8.8% of
-      control)
-
-Primary metric, visit: effect, 95% interval, p; interval first
-  Mens E-Mail vs No E-Mail   +7.66 pp   +6.99 to +8.32 pp   p 5.7e-112   Holm 1.1e-111   detected,
-      treatment higher
-  Womens E-Mail vs No E-Mail   +4.52 pp   +3.89 to +5.16 pp   p 3.2e-44   Holm 3.2e-44   detected,
-      treatment higher
-  Holm-corrected across the 2 treatments; detection judged on the Holm p; intervals unadjusted
-
-CUPED on spend: adjusted by its pre-experiment column; narrower interval = less noise
-  Mens E-Mail vs No E-Mail   +0.767   +0.483 to +1.052   p 1.2e-07   noise removed 0%
-  Womens E-Mail vs No E-Mail   +0.423   +0.167 to +0.678   p 0.001   noise removed 0%
-
-Other metrics: corrected for 4 comparisons (Holm, and BH = Benjamini-Hochberg)
-  conversion   Mens E-Mail vs No E-Mail   +0.68 pp   p 1.5e-13   Holm 6.1e-13   BH 6.1e-13
-  conversion   Womens E-Mail vs No E-Mail   +0.31 pp   p 0.0002   Holm 0.0003   BH 0.0002
-  spend   Mens E-Mail vs No E-Mail   +0.770   p 1.2e-07   Holm 3.5e-07   BH 2.3e-07
-  spend   Womens E-Mail vs No E-Mail   +0.424   p 0.001   Holm 0.001   BH 0.001
-  result   unadjusted 4 of 4 below 0.05; after Holm 4 survive
-
-Decision for Mens E-Mail vs No E-Mail: higher on visit by +7.66 pp (+6.99 to +8.32 pp)
-Decision for Womens E-Mail vs No E-Mail: higher on visit by +4.52 pp (+3.89 to +5.16 pp)
-Figures:
-  figures/corrections.png
-```
-
-How to read it, block by block:
+with one decision line per treatment and the figures' paths. The blocks come
+in this order:
 
 - **Data.** Each group's user count and its share of the total, then what
   the intake repaired or dropped, with counts.
 - **Limitations.** What the checks flagged. A flag does not stop the run.
   Flags come from the data, never from an effect the readout found, so a
-  flag can sit beside a result it does not affect. Here the sensitivity flag
-  sits above an effect that was detected.
+  flag can sit beside a result it does not affect.
 - **Group split.** A sample ratio mismatch (SRM) check of the group sizes
   against the intended split. A chi-square p below 0.001 counts as broken.
   No statistic repairs a broken split, so one stop line then replaces the
@@ -223,8 +219,7 @@ How to read it, block by block:
 - **CUPED** (controlled-experiment using pre-experiment data). A metric's
   effect with less noise, after a regression removes what each user's
   pre-experiment value already predicted. It runs on each metric that has a
-  pre-experiment column, here spend. Its p is not corrected for the other
-  comparisons.
+  pre-experiment column. Its p is not corrected for the other comparisons.
 - **Other metrics.** The secondary metrics, corrected two ways. Holm, as on
   the primary metric, suits a ship decision. Benjamini-Hochberg caps the
   expected share of false positives among the results it flags, which is
@@ -233,14 +228,8 @@ How to read it, block by block:
   detectable effect" line carries the sensitivity figure, so it says what
   size of effect the run could have seen.
 
-On Hillstrom, fewer than 1% of users spent anything, which the limitations
-block flags. The intake also normalizes and counts a misspelled zip-code
-category. Nothing else in the readout reads that column, so the config's
-alias for it is there to show the repair on real data. Both e-mail arms
-raise visits. Both also raise spend after the Holm correction, though that
-result rests on the fewer than 1% of users who spent. CUPED on the
-past-spending column removes under 1% of the noise, because spend in the
-year before the e-mail barely predicts spend in the two weeks after it.
+The demonstration on the Hillstrom e-mail experiment, later in this
+document, shows a complete readout.
 
 ## Monitoring a run
 
@@ -260,12 +249,10 @@ is allowed yet. A run still going and a run someone stopped early, on a day
 the dashboard looked significant, look the same in the file. For an early
 stop, that answer says whether the stop was allowed.
 
-The quoted readout has no monitoring block, because the Hillstrom file has
-no day column. A file whose day column holds at least three distinct days
-gets the block, printed after the other results. When the data cannot
-support a test on one of those days, such as a first day with no conversions
-in either group, the readout leaves the block out and the console prints the
-error.
+A file whose day column holds at least three distinct days gets the block,
+printed after the other results. When the data cannot support a test on one
+of those days, such as a first day with no conversions in either group, the
+readout leaves the block out and the console prints the error.
 
 A look is one check of the primary metric's running totals, one per day in
 the file. Each look is scored as z, the effect divided by its standard
@@ -327,26 +314,6 @@ is built to cover the true effect at every look at once. With several
 treatments the block runs on the first treatment listed in the config, a
 rule that does not look at the results, and short of the plan the other
 treatments get no decision line.
-
-![The monitoring drawn from the synthetic check](analysis/synthetic/figures/monitoring.png)
-
-*This figure draws the monitoring from the synthetic check, a finished run
-against its plan on generated data, not a real experiment. The observed |z|
-passes the fixed 1.96 cutoff at look 1, but the spending design gives that
-look almost none of the 5% and allows no stop there. The observed |z|
-crosses the spending boundary at look 4 of 14. The panel on the right shows
-each look's effect and its adjusted interval. No interval is drawn at look
-1, where no stop is allowed.*
-
-The run behind the figure is a purely synthetic check, not an example of
-analysis. One generated experiment with planted effects, from
-`src/abkit/synthetic_data.py`, runs through the same intake and readout as a
-real file. It shows the pipeline works from start to finish. The evidence
-that the statistics are right comes from the test suite. Its block headed
-"Planted versus found" lists the generation settings, with what the readout
-found beside the ones it can compare.
-
-The file is [analysis/synthetic/readout.txt](analysis/synthetic/readout.txt).
 
 ## What the intake does to a file
 
@@ -421,11 +388,134 @@ data built to raise it. The readout text is pinned to a saved copy of the
 expected text that is read by eye when it changes.
 
 A test pins that a run read short of its plan gets the same boundaries for
-its looks as the same run read once it reached its plan.
+its looks as the same run read once it reached its plan. The suite runs
+with `pytest`.
 
 [docs/NOTES.md](docs/NOTES.md) holds dated measurements and decisions, how
 the monitoring boundaries are computed, and the record of what was removed
 on 2026-10-21.
+
+## Demonstration on the Hillstrom e-mail experiment
+
+The committed real-data example is the Hillstrom e-mail experiment, whose
+data was published by MineThatData in 2008. In the experiment, 64,000
+customers of a retailer were split in thirds between a men's e-mail, a
+women's e-mail, and no e-mail. Two commands fetch the data and read it:
+
+```
+python scripts/run_fetch_hillstrom.py
+python scripts/run_analyze_experiment.py --config analysis/hillstrom/config.toml
+```
+
+The first downloads the 2008 dataset from its original URL into
+`data/hillstrom/`, which git ignores, and checks it against a pinned
+checksum. The dataset is not redistributed here because its publisher never
+stated a license. The second prints the readout below and saves it as
+`readout.txt` beside the config, with the figures in a `figures/` folder.
+The dataset has no day column, so the readout has no monitoring block.
+
+The file is [analysis/hillstrom/readout.txt](analysis/hillstrom/readout.txt).
+
+```text
+Hillstrom e-mail experiment
+Data: what the intake did before any statistic
+  users   No E-Mail 21,306 (33.3%)   Mens E-Mail 21,307 (33.3%)   Womens E-Mail 21,387 (33.4%)
+  alias normalized   28,776 rows   zip_code 'Surburban' to 'Suburban', first at data row 2
+
+Limitations (*): read every result below with these in view
+  * the top 1% of users carry 100% of spend, because fewer than 1% have any spend at all
+  * the smallest detectable effect on visit is above a modest 5% lift for Mens E-Mail vs No E-Mail
+      (8.8% of control) and Womens E-Mail vs No E-Mail (8.8% of control); a 'not detected' result
+      there would rule out little
+
+Group split: does assignment match the plan?
+  Mens E-Mail vs No E-Mail   21,307 vs 21,306   chi-square 0.00   p 0.971
+  Womens E-Mail vs No E-Mail   21,387 vs 21,306   chi-square 0.18   p 0.672
+  result   consistent with the plan
+
+Sensitivity: smallest lift this sample could detect, 80% power
+  each at alpha 0.05/2, the strictest level the Holm correction applies
+  Mens E-Mail vs No E-Mail   21,307 vs 21,306 users   control 10.6%   detectable 0.94 pp (8.8% of
+      control)
+  Womens E-Mail vs No E-Mail   21,387 vs 21,306 users   control 10.6%   detectable 0.94 pp (8.8% of
+      control)
+
+Primary metric, visit: effect, 95% interval, p; interval first
+  Mens E-Mail vs No E-Mail   +7.66 pp   +6.99 to +8.32 pp   p 5.7e-112   Holm 1.1e-111   detected,
+      treatment higher
+  Womens E-Mail vs No E-Mail   +4.52 pp   +3.89 to +5.16 pp   p 3.2e-44   Holm 3.2e-44   detected,
+      treatment higher
+  Holm-corrected across the 2 treatments; detection judged on the Holm p; intervals unadjusted
+
+CUPED on spend: adjusted by its pre-experiment column; narrower interval = less noise
+  Mens E-Mail vs No E-Mail   +0.767   +0.483 to +1.052   p 1.2e-07   noise removed 0%
+  Womens E-Mail vs No E-Mail   +0.423   +0.167 to +0.678   p 0.001   noise removed 0%
+
+Other metrics: corrected for 4 comparisons (Holm, and BH = Benjamini-Hochberg)
+  conversion   Mens E-Mail vs No E-Mail   +0.68 pp   p 1.5e-13   Holm 6.1e-13   BH 6.1e-13
+  conversion   Womens E-Mail vs No E-Mail   +0.31 pp   p 0.0002   Holm 0.0003   BH 0.0002
+  spend   Mens E-Mail vs No E-Mail   +0.770   p 1.2e-07   Holm 3.5e-07   BH 2.3e-07
+  spend   Womens E-Mail vs No E-Mail   +0.424   p 0.001   Holm 0.001   BH 0.001
+  result   unadjusted 4 of 4 below 0.05; after Holm 4 survive
+
+Decision for Mens E-Mail vs No E-Mail: higher on visit by +7.66 pp (+6.99 to +8.32 pp)
+Decision for Womens E-Mail vs No E-Mail: higher on visit by +4.52 pp (+3.89 to +5.16 pp)
+Figures:
+  figures/corrections.png
+```
+
+On Hillstrom, fewer than 1% of users spent anything, which the limitations
+block flags. The intake also normalizes and counts a misspelled zip-code
+category. Nothing else in the readout reads that column, so the config's
+alias for it is there to show the repair on real data. Both e-mail arms
+raise visits. Both also raise spend after the Holm correction, though that
+result rests on the fewer than 1% of users who spent. CUPED on the
+past-spending column removes under 1% of the noise, because spend in the
+year before the e-mail barely predicts spend in the two weeks after it.
+
+## Synthetic check with planted effects
+
+The synthetic check runs the pipeline on generated data and is not an
+example of analysis. One generated experiment with planted effects, from
+`src/abkit/synthetic_data.py`, runs through the same intake and readout as a
+real file. It shows the pipeline works from start to finish. The evidence
+that the statistics are right comes from the test suite. The readout's block
+headed "Planted versus found" lists the generation settings, with what the
+readout found beside the ones it can compare. One command regenerates it:
+
+```
+python scripts/run_synthetic_check.py
+```
+
+It writes to `analysis/synthetic/`. The continuous integration checks
+regenerate the readout on every push to master and fail if the committed
+copy has drifted.
+
+![The monitoring drawn from the synthetic check](analysis/synthetic/figures/monitoring.png)
+
+*This figure draws the monitoring from the synthetic check, a finished run
+against its plan on generated data, not a real experiment. The observed |z|
+passes the fixed 1.96 cutoff at look 1, but the spending design gives that
+look almost none of the 5% and allows no stop there. The observed |z|
+crosses the spending boundary at look 4 of 14. The panel on the right shows
+each look's effect and its adjusted interval. No interval is drawn at look
+1, where no stop is allowed.*
+
+The file is [analysis/synthetic/readout.txt](analysis/synthetic/readout.txt).
+
+## Conventions
+
+Every public function carries full type hints, and every statistical test
+returns a frozen dataclass from `src/abkit/result_types.py` rather than a
+tuple. Randomness always flows through an explicit `numpy.random.Generator`
+parameter, with no module-level seeding. Inputs fail with an explicit
+`ValueError`, except in two places. The intake's coercion catch turns an
+unreadable value into a counted and reported row drop, and the monitoring
+block omits itself on a data error after printing it in full. Tests are
+two-sided unless the function name says otherwise, p-value adjustments take
+and return arrays in the original order, and anything approximate states its
+accuracy in its docstring and has a test pinning it against a published or
+simulated value. Spelling is US throughout.
 
 ## Limitations
 
@@ -446,75 +536,3 @@ holds the users enrolled by then with their final outcomes, so the replay
 sees outcomes a live look would not yet have had. Every metric is one value
 per user and every comparison is a difference in means, so a ratio such as
 revenue per order, whose denominator varies by user, is out of scope.
-
-## Conventions
-
-Every public function carries full type hints, and every statistical test
-returns a frozen dataclass from `src/abkit/result_types.py` rather than a
-tuple. Randomness always flows through an explicit `numpy.random.Generator`
-parameter, with no module-level seeding. Inputs fail with an explicit
-`ValueError`, except in two places. The intake's coercion catch turns an
-unreadable value into a counted and reported row drop, and the monitoring
-block omits itself on a data error after printing it in full. Tests are
-two-sided unless the function name says otherwise, p-value adjustments take
-and return arrays in the original order, and anything approximate states its
-accuracy in its docstring and has a test pinning it against a published or
-simulated value. Spelling is US throughout.
-
-## Script arguments
-
-This lists every argument of every user-facing script, mirroring `--help`,
-which each script prints with `-h`.
-
-### `run_fetch_hillstrom.py`
-
-Takes no arguments. It downloads the Hillstrom file from its original URL
-into `data/hillstrom/`, checks the download against the SHA-256 pinned in
-the script, and refuses a file that does not match, keeping the rejected
-bytes beside the cache for review. A cached file that matches is not
-downloaded again.
-
-### `run_analyze_experiment.py`
-
-Required:
-
-- `--config`: the experiment TOML, with the keys listed under "Using it on
-  your own data". The Hillstrom config is a complete example.
-
-Optional:
-
-- `--data`: the data file to read, overriding the config's `[input]`
-  `path`. The config's `md5`, when set, is still checked against this file.
-- `--out`: the directory for `readout.txt` and the `figures/` folder.
-  Default is the config's directory.
-
-### `run_synthetic_check.py`
-
-Optional:
-
-- `--config`: the recipe TOML, an experiment config with a `[truth]` table
-  of generation settings. Default `analysis/synthetic/config.toml`.
-- `--out`: the directory for the readout and figures. Default is the
-  config's directory. The generated rows go to the config's `[input]`
-  `path`, which for the default recipe is `data/synthetic/`, ignored by
-  git.
-
-### `run_plan_experiment.py`
-
-Required, one pair or the other:
-
-- `--baseline-rate` with `--minimum-lift`: for a yes/no metric, the
-  control rate and the smallest absolute lift worth detecting, as fractions
-  such as 0.05 and 0.005.
-- `--standard-deviation` with `--minimum-difference`: for a continuous
-  metric, its standard deviation and the smallest difference in means worth
-  detecting, in the metric's own units.
-
-Passing both pairs, or neither, stops the command with an error naming the
-choice.
-
-Optional:
-
-- `--alpha`: the false-positive rate. Default 0.05.
-- `--power`: the chance of detecting an effect of the stated size. Default
-  0.8.
