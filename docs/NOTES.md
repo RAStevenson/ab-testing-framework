@@ -18,59 +18,58 @@ earlier look has crossed and solves each look's cutoff from it. The adjusted
 intervals are each look's estimate plus or minus that look's boundary times
 its standard error.
 
-## What the full reader panel changed (2026-11-03)
+## Changes after a fresh read of the README and tool (2026-11-03)
 
-A panel of simulated readers, one with an export of their own, read the
-README and ran the tool after Robert's structural read. Three of its
-findings changed what the readout prints, and each is a decision worth a
-record. A lone secondary metric used to print nowhere, because the
-corrections block needed two comparisons; it now prints with Holm and BH
-equal to its own p, since both corrections leave a single p-value
-unchanged. The row number in every intake message is the file's line
-number, the header being line 1, and the messages now call it a line. And
-the monitoring block names the earliest look a stop is possible, because
-the boundary is infinite while too little of the budget is spent for any z
-to cross, and the figure draws nothing there. The same panel found that a
-file every row of which fails one rule, such as a day column holding
-dates, stopped with "no usable rows" and named nothing. That stop now
-prints the rule, the column, and the line, as the 1% stop always did. One
-new stop came from the interviewer's read. A config that plans a size and
-also plans an unequal split is refused, because the plan is one size every
-group reaches. The README had said so and the intake had not enforced it.
+A fresh read of the README, with the tool run on an export other than the
+committed ones, produced findings, three of which changed what the readout
+prints, and each is a decision worth a record. A lone secondary metric used
+to print nowhere, because the corrections block needed two comparisons; it
+now prints with Holm and BH equal to its own p, since both corrections leave
+a single p-value unchanged. The row number in every intake message is the
+file's line number, the header being line 1, and the messages now call it a
+line. And the monitoring block names the earliest look a stop is possible,
+because the boundary is infinite while too little of the budget is spent for
+any z to cross, and the figure draws nothing there. The same read found that
+a file every row of which fails one rule, such as a day column holding
+dates, stopped with "no usable rows" and named nothing. That stop now prints
+the rule, the column, and the line, as the 1% stop always did. One new stop
+came from a second read. A config that plans a size and also plans an
+unequal split is refused, because the plan is one size every group reaches.
+The README had said so and the intake had not enforced it.
 
-The interviewer's read also found that detection was judged at alpha while
-the primary and CUPED intervals stayed at 95% whatever alpha was, so at a
-looser alpha a detected effect could carry an interval that included zero.
-Every interval the readout prints is now at one minus alpha, the level the
-monitoring block's adjusted interval already used. Neither committed readout
-changes, since both run at 0.05. Robert ruled this a defect rather than
-creep, and three one-sentence README additions the same panel asked for
-were dropped on the same ruling.
+That read also found that detection was judged at alpha while the primary
+and CUPED intervals stayed at 95% whatever alpha was, so at a looser alpha a
+detected effect could carry an interval that included zero. Every interval
+the readout prints is now at one minus alpha, the level the monitoring
+block's adjusted interval already used. Neither committed readout changes,
+since both run at 0.05. This was judged a defect rather than scope creep.
+Three one-sentence README additions asked for in these reads were judged
+scope creep and dropped.
 
 ## The committed runs use the same function as a user's run (a design decision, 2026-11-03)
 
-Robert asked on his structural read whether the Hillstrom demonstration and
-the synthetic check had paths of their own, which would make neither a test
-of what a user runs. Hillstrom already ran the user's command,
-`run_analyze_experiment.py`, on its config. The synthetic script called the
-same library steps but not that script's two checks, that the data file
-exists and that it matches the md5 its config pins. Neither check could have
-stopped the synthetic run, because the script writes the file just before
-reading it and its config pins no md5, so the change gives both scripts one
-function rather than closing a gap.
+A later check asked whether the Hillstrom demonstration and the synthetic
+check had paths of their own, which would make neither a test of what a user
+runs. Hillstrom already ran the user's command, `run_analyze_experiment.py`,
+on its config. The synthetic script called the same library steps but not
+that script's two checks, that the data file exists and that it matches the
+md5 its config pins. Neither check could have stopped the synthetic run,
+because the script writes the file just before reading it and its config
+pins no md5, so the change gives both scripts one function rather than
+closing a gap.
 
 Both checks and the library calls now sit in `write_experiment_readout`, in
 `src/abkit/experiment_readout.py`, which both scripts call. The synthetic
 script only generates and writes the rows before that call. The only
 Hillstrom-specific code left in `run_analyze_experiment.py` is the hint to
-run the fetch script when the Hillstrom file is missing. Robert ruled to
-keep it. It sits in that script's error handler rather than in the library,
-and it fires only when the missing file is the data file.
+run the fetch script when the Hillstrom file is missing. The hint was kept.
+It sits in that script's error handler rather than in the library, and it
+fires only when the missing file is the data file.
 
 ## What the test suite pins (moved from the README, 2026-11-03)
 
-Robert cut the README's testing section on his structural read of
-2026-11-03 as padding. Its measurements keep their record here, verbatim.
+The README's testing section was cut on 2026-11-03 as padding. Its
+measurements keep their record here, verbatim.
 
 A statistical routine can be wrong and still return plausible numbers, so
 the suite tests statistical properties. The false-positive rates of the
@@ -214,9 +213,9 @@ run was made in a separate environment, not in the repo. The install brought
 ### The early-versus-late users line (2026-10-20)
 
 The ASOS readout printed variant_0 at -0.01 pp early and -1.26 pp late
-against -0.07 pp over the whole run, and a reader panel could not reconcile
-the three. The late window (the last 31 of 95 usable checkpoints) held
-14,188 variant_0 users against 450,624 control, where the early window held
-69,687 against 2,275,261, and both groups' rates rose from about 0.20 to about
-0.36 across the run. The block then printed each window's users under every
+against -0.07 pp over the whole run, and readers could not reconcile the
+three. The late window (the last 31 of 95 usable checkpoints) held 14,188
+variant_0 users against 450,624 control, where the early window held 69,687
+against 2,275,261, and both groups' rates rose from about 0.20 to about 0.36
+across the run. The block then printed each window's users under every
 contrast.
